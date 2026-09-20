@@ -11,6 +11,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.runtime.NavKey
 import com.example.openruncoach.data.DefaultDataRepository
 import com.example.openruncoach.theme.OpenRunCoachTheme
+import com.example.openruncoach.ui.health.HealthConnectScreen
 
 @Composable
 fun MainScreen(
@@ -34,7 +35,10 @@ fun MainScreen(
 
 @Composable
 internal fun MainScreen(data: List<String>, modifier: Modifier = Modifier) {
-  Column(modifier) { data.forEach { Greeting(it) } }
+  Column(modifier) {
+    data.forEach { Greeting(it) }
+    HealthConnectScreen()
+  }
 }
 
 @Composable
