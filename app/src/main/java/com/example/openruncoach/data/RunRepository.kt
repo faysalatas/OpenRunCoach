@@ -16,6 +16,9 @@ class RunRepository(
   val recentRuns: Flow<List<RunSummary>> =
     runDao.observeRecentRuns().map { runs -> runs.map(RunEntity::toRunSummary) }
 
+  fun observeRun(runId: String): Flow<RunSummary?> =
+    runDao.observeRun(runId).map { it?.toRunSummary() }
+
   suspend fun syncRuns(): Int {
     val runs = healthConnectRepository.runningWorkoutsLast90Days()
     val importedAt = clock.millis()

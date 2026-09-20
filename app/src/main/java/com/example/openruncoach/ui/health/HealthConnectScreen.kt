@@ -9,6 +9,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -31,7 +32,7 @@ import java.util.Locale
 import kotlin.math.roundToLong
 
 @Composable
-fun HealthConnectScreen(modifier: Modifier = Modifier) {
+fun HealthConnectScreen(onRunClick: (String) -> Unit, modifier: Modifier = Modifier) {
   val context = LocalContext.current
   val viewModel: HealthConnectViewModel =
     viewModel {
@@ -59,7 +60,7 @@ fun HealthConnectScreen(modifier: Modifier = Modifier) {
       state.historyError -> Text("Could not load saved runs.")
       recentRuns == null -> Text("Loading saved runs...")
       recentRuns.isEmpty() -> Text("No runs saved yet. Tap Sync runs to import them.")
-      else -> LatestRunDetails(recentRuns.first())
+      else -> LatestRunDetails(recentRuns.first(), onRunClick)
     }
 
     Text("Run History", style = MaterialTheme.typography.titleLarge)
@@ -67,7 +68,7 @@ fun HealthConnectScreen(modifier: Modifier = Modifier) {
       state.historyError -> Text("Could not load run history.")
       recentRuns == null -> Text("Loading run history...")
       recentRuns.isEmpty() -> Text("No runs in history.")
-      else -> recentRuns.forEach { run -> HistoryRunDetails(run) }
+      else -> recentRuns.forEach { run -> HistoryRunDetails(run, onRunClick) }
     }
 
     when {
@@ -97,7 +98,7 @@ fun HealthConnectScreen(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun LatestRunDetails(run: RunSummary) {
+private fun LatestRunDetails(run: RunSummary, onRunClick: (String) -> Unit) {
   Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
     Text("Date: ${formatDate(run.startTime)}")
     Text("Distance: ${formatDistance(run.distanceMeters)}")
@@ -105,32 +106,34 @@ private fun LatestRunDetails(run: RunSummary) {
     Text("Average Pace: ${formatPace(run.averagePaceSecondsPerKm)}")
     Text("Average HR: ${run.averageHeartRate?.let { "${it.roundToLong()} bpm" } ?: "—"}")
     Text("Max HR: ${run.maxHeartRate?.let { "$it bpm" } ?: "—"}")
+    TextButton(onClick = { onRunClick(run.healthConnectRecordId) }) { Text("View feedback") }
   }
 }
 
 @Composable
-private fun HistoryRunDetails(run: RunSummary) {
+private fun HistoryRunDetails(run: RunSummary, onRunClick: (String) -> Unit) {
   Column(modifier = Modifier.padding(bottom = 8.dp)) {
     Text("Date: ${formatDate(run.startTime)}")
     Text("Distance: ${formatDistance(run.distanceMeters)}")
     Text("Duration: ${formatDuration(run.durationSeconds)}")
     Text("Average Pace: ${formatPace(run.averagePaceSecondsPerKm)}")
+    TextButton(onClick = { onRunClick(run.healthConnectRecordId) }) { Text("View feedback") }
   }
 }
 
-private fun formatDate(startTime: Instant): String =
+internal fun formatDate(startTime: Instant): String =
   DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT)
     .withLocale(Locale.getDefault())
     .withZone(ZoneId.systemDefault())
     .format(startTime)
 
-private fun formatDistance(distanceMeters: Double?): String =
+internal fun formatDistance(distanceMeters: Double?): String =
   distanceMeters?.let { "%.2f km".format(Locale.getDefault(), it / 1000) } ?: "—"
 
-private fun formatDuration(seconds: Long): String =
+internal fun formatDuration(seconds: Long): String =
   "%d:%02d:%02d".format(seconds / 3600, (seconds % 3600) / 60, seconds % 60)
 
-private fun formatPace(paceSecondsPerKm: Double?): String =
+internal fun formatPace(paceSecondsPerKm: Double?): String =
   paceSecondsPerKm?.roundToLong()?.let { seconds ->
     "%d:%02d min/km".format(seconds / 60, seconds % 60)
   } ?: "—"

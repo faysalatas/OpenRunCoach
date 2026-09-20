@@ -7,6 +7,9 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface RunDao {
+  @Query("SELECT * FROM runs WHERE healthConnectRecordId = :runId LIMIT 1")
+  fun observeRun(runId: String): Flow<RunEntity?>
+
   @Query("SELECT * FROM runs ORDER BY startTimeEpochMillis DESC LIMIT 10")
   fun observeRecentRuns(): Flow<List<RunEntity>>
 
