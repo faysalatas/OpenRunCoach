@@ -1,0 +1,75 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "167300767cf5b2d8c9f9f0144189cd09",
+    "entities": [
+      {
+        "tableName": "runs",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`healthConnectRecordId` TEXT NOT NULL, `startTimeEpochMillis` INTEGER NOT NULL, `endTimeEpochMillis` INTEGER NOT NULL, `durationSeconds` INTEGER NOT NULL, `distanceMeters` REAL, `averageHeartRate` REAL, `maxHeartRate` INTEGER, `averagePaceSecondsPerKm` REAL, `importedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`healthConnectRecordId`))",
+        "fields": [
+          {
+            "fieldPath": "healthConnectRecordId",
+            "columnName": "healthConnectRecordId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startTimeEpochMillis",
+            "columnName": "startTimeEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endTimeEpochMillis",
+            "columnName": "endTimeEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "durationSeconds",
+            "columnName": "durationSeconds",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "distanceMeters",
+            "columnName": "distanceMeters",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "averageHeartRate",
+            "columnName": "averageHeartRate",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "maxHeartRate",
+            "columnName": "maxHeartRate",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "averagePaceSecondsPerKm",
+            "columnName": "averagePaceSecondsPerKm",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "importedAtEpochMillis",
+            "columnName": "importedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "healthConnectRecordId"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '167300767cf5b2d8c9f9f0144189cd09')"
+    ]
+  }
+}

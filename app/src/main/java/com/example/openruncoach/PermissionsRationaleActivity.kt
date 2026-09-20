@@ -19,8 +19,8 @@ class PermissionsRationaleActivity : ComponentActivity() {
         Column(Modifier.fillMaxSize().padding(24.dp)) {
           Text("Health Connect data")
           Text(
-            "OpenRunCoach requests read access to exercise sessions, heart rate, distance, and speed " +
-              "to support running coaching. Health data stays on this device."
+            "OpenRunCoach reads exercise sessions, heart rate, distance, and speed, including older " +
+              "records when available. Imported runs are stored on this device for your run history."
           )
         }
       }

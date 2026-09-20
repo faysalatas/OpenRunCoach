@@ -3,7 +3,9 @@ package com.example.openruncoach.domain
 import java.time.Instant
 
 data class RunSummary(
+  val healthConnectRecordId: String,
   val startTime: Instant,
+  val endTime: Instant,
   val durationSeconds: Long,
   val distanceMeters: Double?,
   val averageHeartRate: Double?,
