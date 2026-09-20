@@ -8,7 +8,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
-import com.example.openruncoach.ui.main.MainScreen
+import com.example.openruncoach.ui.health.HealthConnectScreen
 
 @Composable
 fun MainNavigation() {
@@ -20,7 +20,7 @@ fun MainNavigation() {
     entryProvider =
       entryProvider {
         entry<Main> {
-          MainScreen(onItemClick = { navKey -> backStack.add(navKey) }, modifier = Modifier.safeDrawingPadding().padding(16.dp))
+          HealthConnectScreen(modifier = Modifier.safeDrawingPadding().padding(16.dp))
         }
       },
   )
