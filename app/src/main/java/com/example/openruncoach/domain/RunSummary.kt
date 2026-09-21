@@ -11,7 +11,23 @@ data class RunSummary(
   val averageHeartRate: Double?,
   val maxHeartRate: Long?,
   val averagePaceSecondsPerKm: Double?,
+  val sourcePackageName: String = "",
+  val sourceAppName: String? = null,
+  val sourceDeviceManufacturer: String? = null,
+  val sourceDeviceModel: String? = null,
+  val sourceDeviceType: SourceDeviceType? = null,
+  val sourceRecordLastModifiedTime: Instant? = null,
+  val duplicateGroupId: String? = null,
+  val isCanonical: Boolean = true,
+  val canonicalSelectionReason: String? = null,
 )
+
+enum class SourceDeviceType { WATCH, OTHER }
+
+val RunSummary.displaySourceName: String
+  get() = sourceAppName?.takeIf(String::isNotBlank)
+    ?: sourcePackageName.takeIf(String::isNotBlank)
+    ?: "Unknown source"
 
 fun averagePaceSecondsPerKm(
   durationSeconds: Long,

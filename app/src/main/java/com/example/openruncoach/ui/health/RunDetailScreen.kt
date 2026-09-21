@@ -24,20 +24,24 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.openruncoach.data.HealthConnectRepository
 import com.example.openruncoach.data.RunFeedbackRepository
 import com.example.openruncoach.data.RunRepository
+import com.example.openruncoach.data.RunSettingsRepository
 import com.example.openruncoach.data.local.OpenRunCoachDatabase
 import com.example.openruncoach.domain.CardioEffort
 import com.example.openruncoach.domain.CompletionStatus
 import com.example.openruncoach.domain.MuscleFatigue
 import com.example.openruncoach.domain.PainLevel
+import com.example.openruncoach.domain.displaySourceName
+import com.example.openruncoach.domain.coaching.CoachingAction
 
 @Composable
 fun RunDetailScreen(runId: String, onBack: () -> Unit, modifier: Modifier = Modifier) {
   val context = LocalContext.current
   val viewModel: RunDetailViewModel = viewModel(key = runId) {
     val database = OpenRunCoachDatabase.getInstance(context)
+    val settingsRepository = RunSettingsRepository(context)
     RunDetailViewModel(
       runId,
-      RunRepository(database.runDao(), HealthConnectRepository(context)),
+      RunRepository(database.runDao(), HealthConnectRepository(context), settingsRepository),
       RunFeedbackRepository(database),
     )
   }
@@ -60,6 +64,22 @@ fun RunDetailScreen(runId: String, onBack: () -> Unit, modifier: Modifier = Modi
         Text("Average Pace: ${formatPace(run.averagePaceSecondsPerKm)}")
         Text("Average HR: ${run.averageHeartRate?.let { "%.0f bpm".format(it) } ?: "—"}")
         Text("Max HR: ${run.maxHeartRate?.let { "$it bpm" } ?: "—"}")
+        Text("Source: ${run.displaySourceName}")
+        if (run.sourcePackageName.isNotBlank()) Text("Source package: ${run.sourcePackageName}")
+        val device = listOfNotNull(run.sourceDeviceManufacturer, run.sourceDeviceModel).joinToString(" ")
+        if (device.isNotBlank()) Text("Device: $device")
+        Text(if (run.isCanonical) "Canonical run" else "Non-canonical duplicate")
+        run.canonicalSelectionReason?.let { Text("Selection: $it") }
+        DuplicateDiagnostics(state.possibleDuplicates)
+        if (state.duplicateRecords.size > 1) {
+          Text("Duplicate records", style = MaterialTheme.typography.titleMedium)
+          state.duplicateRecords.forEach { record ->
+            Text(
+              "${record.displaySourceName} · ${formatDistance(record.distanceMeters)} · " +
+                if (record.isCanonical) "Canonical" else "Non-canonical"
+            )
+          }
+        }
       }
     }
 
@@ -118,10 +138,29 @@ fun RunDetailScreen(runId: String, onBack: () -> Unit, modifier: Modifier = Modi
         }
         if (state.isSaving) Text("Saving feedback...")
         if (state.saved) Text("Feedback saved.")
+
+        if (state.feedback != null) {
+          Text("Coach Analysis", style = MaterialTheme.typography.titleLarge)
+          val decision = state.coachingDecision
+          if (decision == null) {
+            Text("Coach analysis is available for the latest canonical run.")
+          } else {
+            Text(coachingActionLabel(decision.action), style = MaterialTheme.typography.titleMedium)
+            decision.reasons.forEach { reason -> Text("✓ $reason") }
+          }
+        }
       }
     }
     state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
   }
+}
+
+private fun coachingActionLabel(action: CoachingAction): String = when (action) {
+  CoachingAction.PROGRESS -> "Progress"
+  CoachingAction.SMALL_PROGRESS -> "Small progression"
+  CoachingAction.MAINTAIN -> "Maintain"
+  CoachingAction.REDUCE -> "Reduce"
+  CoachingAction.RECOVERY -> "Recovery"
 }
 
 @Composable

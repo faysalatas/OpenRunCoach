@@ -56,6 +56,7 @@ dependencies {
   implementation(libs.androidx.health.connect.client)
   implementation(libs.androidx.room.runtime)
   implementation(libs.androidx.room.ktx)
+  implementation(libs.androidx.datastore.preferences)
   ksp(libs.androidx.room.compiler)
 
   // Arch Components

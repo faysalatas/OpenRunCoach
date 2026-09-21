@@ -1,6 +1,7 @@
 package com.example.openruncoach.data
 
 import android.content.Context
+import android.content.pm.PackageManager
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.HealthConnectFeatures
 import androidx.health.connect.client.permission.HealthPermission
@@ -8,10 +9,12 @@ import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.SpeedRecord
+import androidx.health.connect.client.records.metadata.Device
 import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import com.example.openruncoach.domain.RunSummary
+import com.example.openruncoach.domain.SourceDeviceType
 import com.example.openruncoach.domain.averagePaceSecondsPerKm
 import java.time.Duration
 import java.time.Instant
@@ -60,6 +63,14 @@ class HealthConnectRepository(context: Context) {
     return sessions.sortedByDescending { it.startTime }.map { summarizeSession(client, it) }
   }
 
+  internal suspend fun runningWorkoutSourceById(recordId: String): RunSourceMetadata? {
+    val session = HealthConnectClient.getOrCreate(appContext)
+      .readRecord(ExerciseSessionRecord::class, recordId).record
+    return if (session.exerciseType == ExerciseSessionRecord.EXERCISE_TYPE_RUNNING) {
+      sourceFor(session)
+    } else null
+  }
+
   private suspend fun readRunningSessions(
     client: HealthConnectClient,
     windowStart: Instant,
@@ -92,12 +103,9 @@ class HealthConnectRepository(context: Context) {
     session: ExerciseSessionRecord,
   ): RunSummary {
     val durationSeconds = Duration.between(session.startTime, session.endTime).seconds.coerceAtLeast(0)
-    if (durationSeconds == 0L) {
-      return RunSummary(session.metadata.id, session.startTime, session.endTime, 0, null, null, null, null)
-    }
-
+    val source = sourceFor(session)
     val result =
-      client.aggregate(
+      if (durationSeconds == 0L) null else client.aggregate(
         AggregateRequest(
           metrics =
             setOf(
@@ -109,21 +117,48 @@ class HealthConnectRepository(context: Context) {
           timeRangeFilter = TimeRangeFilter.between(session.startTime, session.endTime),
         )
       )
-    val distanceMeters = result[DistanceRecord.DISTANCE_TOTAL]?.inMeters
+    val distanceMeters = result?.get(DistanceRecord.DISTANCE_TOTAL)?.inMeters
     return RunSummary(
       healthConnectRecordId = session.metadata.id,
       startTime = session.startTime,
       endTime = session.endTime,
       durationSeconds = durationSeconds,
       distanceMeters = distanceMeters,
-      averageHeartRate = result[HeartRateRecord.BPM_AVG]?.toDouble(),
-      maxHeartRate = result[HeartRateRecord.BPM_MAX],
+      averageHeartRate = result?.get(HeartRateRecord.BPM_AVG)?.toDouble(),
+      maxHeartRate = result?.get(HeartRateRecord.BPM_MAX),
       averagePaceSecondsPerKm =
         averagePaceSecondsPerKm(
           durationSeconds,
           distanceMeters,
-          result[SpeedRecord.SPEED_AVG]?.inMetersPerSecond,
+          result?.get(SpeedRecord.SPEED_AVG)?.inMetersPerSecond,
         ),
+      sourcePackageName = source.sourcePackageName,
+      sourceAppName = source.sourceAppName,
+      sourceDeviceManufacturer = source.sourceDeviceManufacturer,
+      sourceDeviceModel = source.sourceDeviceModel,
+      sourceDeviceType = source.sourceDeviceType,
+      sourceRecordLastModifiedTime = source.sourceRecordLastModifiedTime,
     )
   }
+
+  private fun sourceFor(session: ExerciseSessionRecord): RunSourceMetadata = mapRunSource(
+      packageName = session.metadata.dataOrigin.packageName,
+      manufacturer = session.metadata.device?.manufacturer,
+      model = session.metadata.device?.model,
+      deviceType = session.metadata.device?.let { device ->
+        if (device.type == Device.TYPE_WATCH) SourceDeviceType.WATCH else SourceDeviceType.OTHER
+      },
+      sourceRecordLastModifiedTime = session.metadata.lastModifiedTime,
+      resolveAppName = ::resolveAppName,
+    )
+
+  private fun resolveAppName(packageName: String): String? =
+    try {
+      val packageManager = appContext.packageManager
+      packageManager.getApplicationLabel(packageManager.getApplicationInfo(packageName, 0)).toString()
+    } catch (exception: PackageManager.NameNotFoundException) {
+      null
+    } catch (exception: SecurityException) {
+      null
+    }
 }

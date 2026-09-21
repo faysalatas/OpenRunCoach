@@ -8,7 +8,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.execSQL
 
-@Database(entities = [RunEntity::class, RunFeedbackEntity::class], version = 2, exportSchema = true)
+@Database(entities = [RunEntity::class, RunFeedbackEntity::class], version = 4, exportSchema = true)
 abstract class OpenRunCoachDatabase : RoomDatabase() {
   abstract fun runDao(): RunDao
   abstract fun runFeedbackDao(): RunFeedbackDao
@@ -25,6 +25,25 @@ abstract class OpenRunCoachDatabase : RoomDatabase() {
       }
     }
 
+    val MIGRATION_2_3 = object : Migration(2, 3) {
+      override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL("ALTER TABLE `runs` ADD COLUMN `sourcePackageName` TEXT NOT NULL DEFAULT ''")
+        connection.execSQL("ALTER TABLE `runs` ADD COLUMN `sourceAppName` TEXT")
+        connection.execSQL("ALTER TABLE `runs` ADD COLUMN `sourceDeviceManufacturer` TEXT")
+        connection.execSQL("ALTER TABLE `runs` ADD COLUMN `sourceDeviceModel` TEXT")
+      }
+    }
+
+    val MIGRATION_3_4 = object : Migration(3, 4) {
+      override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL("ALTER TABLE `runs` ADD COLUMN `sourceDeviceType` TEXT")
+        connection.execSQL("ALTER TABLE `runs` ADD COLUMN `sourceRecordLastModifiedTimeEpochMillis` INTEGER")
+        connection.execSQL("ALTER TABLE `runs` ADD COLUMN `duplicateGroupId` TEXT")
+        connection.execSQL("ALTER TABLE `runs` ADD COLUMN `isCanonical` INTEGER NOT NULL DEFAULT 1")
+        connection.execSQL("ALTER TABLE `runs` ADD COLUMN `canonicalSelectionReason` TEXT")
+      }
+    }
+
     fun getInstance(context: Context): OpenRunCoachDatabase =
       instance ?: synchronized(this) {
         instance
@@ -32,7 +51,7 @@ abstract class OpenRunCoachDatabase : RoomDatabase() {
               context.applicationContext,
               OpenRunCoachDatabase::class.java,
               "open_run_coach.db",
-            ).addMigrations(MIGRATION_1_2).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
       }
   }
 }

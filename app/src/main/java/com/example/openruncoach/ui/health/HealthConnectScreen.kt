@@ -3,10 +3,13 @@ package com.example.openruncoach.ui.health
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -22,8 +25,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.openruncoach.data.HealthConnectRepository
 import com.example.openruncoach.data.RunRepository
+import com.example.openruncoach.data.RunSettingsRepository
 import com.example.openruncoach.data.local.OpenRunCoachDatabase
 import com.example.openruncoach.domain.RunSummary
+import com.example.openruncoach.domain.PossibleDuplicate
+import com.example.openruncoach.domain.displaySourceName
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -38,7 +44,12 @@ fun HealthConnectScreen(onRunClick: (String) -> Unit, modifier: Modifier = Modif
     viewModel {
       val healthConnectRepository = HealthConnectRepository(context)
       val runDao = OpenRunCoachDatabase.getInstance(context).runDao()
-      HealthConnectViewModel(healthConnectRepository, RunRepository(runDao, healthConnectRepository))
+      val settingsRepository = RunSettingsRepository(context)
+      HealthConnectViewModel(
+        healthConnectRepository,
+        RunRepository(runDao, healthConnectRepository, settingsRepository),
+        settingsRepository,
+      )
     }
   val state by viewModel.uiState.collectAsStateWithLifecycle()
   val permissionLauncher =
@@ -60,7 +71,11 @@ fun HealthConnectScreen(onRunClick: (String) -> Unit, modifier: Modifier = Modif
       state.historyError -> Text("Could not load saved runs.")
       recentRuns == null -> Text("Loading saved runs...")
       recentRuns.isEmpty() -> Text("No runs saved yet. Tap Sync runs to import them.")
-      else -> LatestRunDetails(recentRuns.first(), onRunClick)
+      else -> LatestRunDetails(
+        recentRuns.first(),
+        state.duplicateDiagnostics[recentRuns.first().healthConnectRecordId].orEmpty(),
+        onRunClick,
+      )
     }
 
     Text("Run History", style = MaterialTheme.typography.titleLarge)
@@ -68,8 +83,32 @@ fun HealthConnectScreen(onRunClick: (String) -> Unit, modifier: Modifier = Modif
       state.historyError -> Text("Could not load run history.")
       recentRuns == null -> Text("Loading run history...")
       recentRuns.isEmpty() -> Text("No runs in history.")
-      else -> recentRuns.forEach { run -> HistoryRunDetails(run, onRunClick) }
+      else -> recentRuns.forEach { run ->
+        HistoryRunDetails(run, state.duplicateDiagnostics[run.healthConnectRecordId].orEmpty(), onRunClick)
+      }
     }
+    if (state.duplicateDiagnosticsError) Text("Could not check for duplicate runs.")
+
+    Text("Preferred workout source", style = MaterialTheme.typography.titleLarge)
+    Text("Automatic uses OpenRunCoach's duplicate selection rules.")
+    Row(
+      modifier = Modifier.horizontalScroll(rememberScrollState()),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+      FilterChip(
+        selected = state.preferredSourcePackage == null,
+        onClick = { viewModel.selectPreferredSource(null) },
+        label = { Text("Automatic") },
+      )
+      state.knownSources.forEach { source ->
+        FilterChip(
+          selected = state.preferredSourcePackage == source.packageName,
+          onClick = { viewModel.selectPreferredSource(source.packageName) },
+          label = { Text(source.appName) },
+        )
+      }
+    }
+    if (state.preferredSourceError) Text("Could not update the preferred workout source.")
 
     when {
       state.accessError -> Text("Could not check Health Connect access.")
@@ -98,7 +137,7 @@ fun HealthConnectScreen(onRunClick: (String) -> Unit, modifier: Modifier = Modif
 }
 
 @Composable
-private fun LatestRunDetails(run: RunSummary, onRunClick: (String) -> Unit) {
+private fun LatestRunDetails(run: RunSummary, duplicates: List<PossibleDuplicate>, onRunClick: (String) -> Unit) {
   Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
     Text("Date: ${formatDate(run.startTime)}")
     Text("Distance: ${formatDistance(run.distanceMeters)}")
@@ -106,18 +145,37 @@ private fun LatestRunDetails(run: RunSummary, onRunClick: (String) -> Unit) {
     Text("Average Pace: ${formatPace(run.averagePaceSecondsPerKm)}")
     Text("Average HR: ${run.averageHeartRate?.let { "${it.roundToLong()} bpm" } ?: "—"}")
     Text("Max HR: ${run.maxHeartRate?.let { "$it bpm" } ?: "—"}")
+    Text("Source: ${run.displaySourceName}")
+    DuplicateDiagnostics(duplicates)
     TextButton(onClick = { onRunClick(run.healthConnectRecordId) }) { Text("View feedback") }
   }
 }
 
 @Composable
-private fun HistoryRunDetails(run: RunSummary, onRunClick: (String) -> Unit) {
+private fun HistoryRunDetails(run: RunSummary, duplicates: List<PossibleDuplicate>, onRunClick: (String) -> Unit) {
   Column(modifier = Modifier.padding(bottom = 8.dp)) {
-    Text("Date: ${formatDate(run.startTime)}")
-    Text("Distance: ${formatDistance(run.distanceMeters)}")
-    Text("Duration: ${formatDuration(run.durationSeconds)}")
+    Text("${formatDistance(run.distanceMeters)} · ${formatDuration(run.durationSeconds)}")
+    Text(run.displaySourceName)
+    Text(formatDate(run.startTime))
     Text("Average Pace: ${formatPace(run.averagePaceSecondsPerKm)}")
+    DuplicateDiagnostics(duplicates)
     TextButton(onClick = { onRunClick(run.healthConnectRecordId) }) { Text("View feedback") }
+  }
+}
+
+@Composable
+internal fun DuplicateDiagnostics(duplicates: List<PossibleDuplicate>) {
+  if (duplicates.isEmpty()) return
+  Text("Possible duplicate", color = MaterialTheme.colorScheme.error)
+  duplicates.forEach { duplicate ->
+    Text(
+      "Similar start time (${duplicate.startDifferenceSeconds}s apart), " +
+        "similar duration (${duplicate.durationDifferenceSeconds}s apart), " +
+        "similar distance (%.1f%% apart).".format(Locale.getDefault(), duplicate.distanceDifferencePercent)
+    )
+    if (duplicate.differentSourceApplications) {
+      Text("Different source applications: ${duplicate.otherSourceName}")
+    }
   }
 }
 

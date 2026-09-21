@@ -34,6 +34,11 @@ class RunFeedbackRepositoryTest {
       assertNull(firstRepository.observeFeedbackForRun("run-1").first())
 
       val first = firstRepository.saveFeedback(draft("run-1"))
+      database.runDao().upsertAll(listOf(runEntity("run-1").copy(
+        sourcePackageName = "com.sec.android.app.shealth",
+        sourceAppName = "Samsung Health",
+      )))
+      assertEquals(first.id, firstRepository.getFeedbackForRun("run-1")?.id)
       val second = RunFeedbackRepository(database, fixedClock(2000)).saveFeedback(
         draft("run-1").copy(rpe = 9, readiness = 4, notes = "  Tired legs  "),
       )
@@ -73,13 +78,87 @@ class RunFeedbackRepositoryTest {
     legacy.close()
 
     val database = Room.databaseBuilder(context, OpenRunCoachDatabase::class.java, databaseName)
-      .addMigrations(OpenRunCoachDatabase.MIGRATION_1_2)
+      .addMigrations(
+        OpenRunCoachDatabase.MIGRATION_1_2,
+        OpenRunCoachDatabase.MIGRATION_2_3,
+        OpenRunCoachDatabase.MIGRATION_3_4,
+      )
       .build()
     try {
       assertEquals("run-1", database.runDao().observeRun("run-1").first()?.healthConnectRecordId)
+      assertEquals("", database.runDao().observeRun("run-1").first()?.sourcePackageName)
       val feedback = RunFeedbackRepository(database, fixedClock(2000)).saveFeedback(draft("run-1"))
       assertNotNull(feedback.id)
       assertEquals("run-1", feedback.runId)
+    } finally {
+      database.close()
+      context.deleteDatabase(databaseName)
+    }
+  }
+
+  @Test
+  fun sourceMigrationPreservesRunsAndFeedback() = runBlocking {
+    val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+    val databaseName = "source-migration-test.db"
+    context.deleteDatabase(databaseName)
+    val legacy = context.openOrCreateDatabase(databaseName, android.content.Context.MODE_PRIVATE, null)
+    legacy.execSQL(
+      """CREATE TABLE IF NOT EXISTS `runs` (`healthConnectRecordId` TEXT NOT NULL, `startTimeEpochMillis` INTEGER NOT NULL, `endTimeEpochMillis` INTEGER NOT NULL, `durationSeconds` INTEGER NOT NULL, `distanceMeters` REAL, `averageHeartRate` REAL, `maxHeartRate` INTEGER, `averagePaceSecondsPerKm` REAL, `importedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`healthConnectRecordId`))"""
+    )
+    legacy.execSQL(
+      """CREATE TABLE IF NOT EXISTS `run_feedback` (`id` TEXT NOT NULL, `runId` TEXT NOT NULL, `rpe` INTEGER NOT NULL, `cardioEffort` TEXT NOT NULL, `muscleFatigue` TEXT NOT NULL, `painLevel` TEXT NOT NULL, `completionStatus` TEXT NOT NULL, `readiness` INTEGER, `notes` TEXT, `createdAtEpochMillis` INTEGER NOT NULL, `updatedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`runId`) REFERENCES `runs`(`healthConnectRecordId`) ON UPDATE NO ACTION ON DELETE CASCADE)"""
+    )
+    legacy.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_run_feedback_runId` ON `run_feedback` (`runId`)")
+    legacy.execSQL("INSERT INTO runs VALUES ('run-1', 1000, 2000, 1, NULL, NULL, NULL, NULL, 1000)")
+    legacy.execSQL("INSERT INTO run_feedback VALUES ('feedback-1', 'run-1', 5, 'APPROPRIATE', 'MILD', 'NONE', 'COMPLETED', NULL, NULL, 1000, 1000)")
+    legacy.execSQL("CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)")
+    legacy.execSQL("INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'ca8540ef023383f15b66a21b119d5566')")
+    legacy.version = 2
+    legacy.close()
+
+    val database = Room.databaseBuilder(context, OpenRunCoachDatabase::class.java, databaseName)
+      .addMigrations(OpenRunCoachDatabase.MIGRATION_2_3, OpenRunCoachDatabase.MIGRATION_3_4)
+      .build()
+    try {
+      val run = database.runDao().observeRun("run-1").first()
+      assertEquals("", run?.sourcePackageName)
+      assertNull(run?.sourceAppName)
+      assertEquals("feedback-1", database.runFeedbackDao().getFeedbackForRun("run-1")?.id)
+    } finally {
+      database.close()
+      context.deleteDatabase(databaseName)
+    }
+  }
+
+  @Test
+  fun canonicalMigrationPreservesRunsAndFeedback() = runBlocking {
+    val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+    val databaseName = "canonical-migration-test.db"
+    context.deleteDatabase(databaseName)
+    val legacy = context.openOrCreateDatabase(databaseName, android.content.Context.MODE_PRIVATE, null)
+    legacy.execSQL(
+      """CREATE TABLE IF NOT EXISTS `runs` (`healthConnectRecordId` TEXT NOT NULL, `startTimeEpochMillis` INTEGER NOT NULL, `endTimeEpochMillis` INTEGER NOT NULL, `durationSeconds` INTEGER NOT NULL, `distanceMeters` REAL, `averageHeartRate` REAL, `maxHeartRate` INTEGER, `averagePaceSecondsPerKm` REAL, `importedAtEpochMillis` INTEGER NOT NULL, `sourcePackageName` TEXT NOT NULL DEFAULT '', `sourceAppName` TEXT, `sourceDeviceManufacturer` TEXT, `sourceDeviceModel` TEXT, PRIMARY KEY(`healthConnectRecordId`))"""
+    )
+    legacy.execSQL(
+      """CREATE TABLE IF NOT EXISTS `run_feedback` (`id` TEXT NOT NULL, `runId` TEXT NOT NULL, `rpe` INTEGER NOT NULL, `cardioEffort` TEXT NOT NULL, `muscleFatigue` TEXT NOT NULL, `painLevel` TEXT NOT NULL, `completionStatus` TEXT NOT NULL, `readiness` INTEGER, `notes` TEXT, `createdAtEpochMillis` INTEGER NOT NULL, `updatedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`runId`) REFERENCES `runs`(`healthConnectRecordId`) ON UPDATE NO ACTION ON DELETE CASCADE)"""
+    )
+    legacy.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_run_feedback_runId` ON `run_feedback` (`runId`)")
+    legacy.execSQL("INSERT INTO runs VALUES ('run-1', 1000, 2000, 1, 5000, 140, 160, 360, 1000, 'source.app', 'Source', 'Maker', 'Watch')")
+    legacy.execSQL("INSERT INTO run_feedback VALUES ('feedback-1', 'run-1', 5, 'APPROPRIATE', 'MILD', 'NONE', 'COMPLETED', NULL, NULL, 1000, 1000)")
+    legacy.execSQL("CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)")
+    legacy.execSQL("INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'a5a96e70128299bcd97c4544a64ed149')")
+    legacy.version = 3
+    legacy.close()
+
+    val database = Room.databaseBuilder(context, OpenRunCoachDatabase::class.java, databaseName)
+      .addMigrations(OpenRunCoachDatabase.MIGRATION_3_4)
+      .build()
+    try {
+      val run = database.runDao().observeRun("run-1").first()
+      assertEquals(true, run?.isCanonical)
+      assertNull(run?.duplicateGroupId)
+      assertNull(run?.sourceDeviceType)
+      assertEquals("feedback-1", database.runFeedbackDao().getFeedbackForRun("run-1")?.id)
     } finally {
       database.close()
       context.deleteDatabase(databaseName)

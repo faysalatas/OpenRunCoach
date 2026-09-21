@@ -8,9 +8,12 @@ import com.example.openruncoach.domain.CardioEffort
 import com.example.openruncoach.domain.CompletionStatus
 import com.example.openruncoach.domain.MuscleFatigue
 import com.example.openruncoach.domain.PainLevel
+import com.example.openruncoach.domain.PossibleDuplicate
 import com.example.openruncoach.domain.RunFeedback
 import com.example.openruncoach.domain.RunFeedbackDraft
 import com.example.openruncoach.domain.RunSummary
+import com.example.openruncoach.domain.coaching.CoachingDecision
+import com.example.openruncoach.domain.coaching.CoachingEngine
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,6 +34,8 @@ data class FeedbackForm(
 data class RunDetailUiState(
   val run: RunSummary? = null,
   val runLoaded: Boolean = false,
+  val possibleDuplicates: List<PossibleDuplicate> = emptyList(),
+  val duplicateRecords: List<RunSummary> = emptyList(),
   val feedback: RunFeedback? = null,
   val feedbackLoaded: Boolean = false,
   val form: FeedbackForm = FeedbackForm(),
@@ -38,33 +43,56 @@ data class RunDetailUiState(
   val isSaving: Boolean = false,
   val error: String? = null,
   val saved: Boolean = false,
+  val coachingDecision: CoachingDecision? = null,
 )
 
 class RunDetailViewModel(
   private val runId: String,
   runRepository: RunRepository,
   private val feedbackRepository: RunFeedbackRepository,
+  private val coachingEngine: CoachingEngine = CoachingEngine(),
 ) : ViewModel() {
   private val _uiState = MutableStateFlow(RunDetailUiState())
   val uiState = _uiState.asStateFlow()
+  private var allRuns: List<RunSummary> = emptyList()
+  private var canonicalHistory: List<RunSummary> = emptyList()
 
   init {
     viewModelScope.launch {
       runRepository.observeRun(runId)
         .catch { _uiState.update { it.copy(error = "Could not load run.", runLoaded = true) } }
-        .collect { run -> _uiState.update { it.copy(run = run, runLoaded = true) } }
+        .collect { run -> _uiState.update { it.copy(run = run, runLoaded = true).withDerivedState() } }
+    }
+    viewModelScope.launch {
+      runRepository.allRuns.collect { runs ->
+        allRuns = runs
+        _uiState.update { it.withDerivedState() }
+      }
+    }
+    viewModelScope.launch {
+      runRepository.canonicalRuns.collect { runs ->
+        canonicalHistory = runs
+        _uiState.update { it.withDerivedState() }
+      }
+    }
+    viewModelScope.launch {
+      runRepository.duplicateDiagnostics
+        .catch { _uiState.update { it.copy(error = "Could not check duplicate runs.") } }
+        .collect { diagnostics ->
+          _uiState.update { it.copy(possibleDuplicates = diagnostics[runId].orEmpty()) }
+        }
     }
     viewModelScope.launch {
       feedbackRepository.observeFeedbackForRun(runId)
         .catch { _uiState.update { it.copy(error = "Could not load feedback.", feedbackLoaded = true) } }
         .collect { feedback ->
           _uiState.update { state ->
-            if (state.isDirty) state.copy(feedback = feedback, feedbackLoaded = true)
+            if (state.isDirty) state.copy(feedback = feedback, feedbackLoaded = true).withDerivedState()
             else state.copy(
               feedback = feedback,
               feedbackLoaded = true,
               form = feedback?.toForm() ?: FeedbackForm(),
-            )
+            ).withDerivedState()
           }
         }
     }
@@ -107,13 +135,26 @@ class RunDetailViewModel(
           isDirty = false,
           isSaving = false,
           saved = true,
-        ) }
+        ).withDerivedState() }
       } catch (exception: CancellationException) {
         throw exception
       } catch (exception: Exception) {
         _uiState.update { it.copy(isSaving = false, error = "Could not save feedback.") }
       }
     }
+  }
+
+  private fun RunDetailUiState.withDerivedState(): RunDetailUiState {
+    val selectedRun = run
+    val duplicateRecords = if (selectedRun?.duplicateGroupId == null) emptyList() else {
+      allRuns.filter { it.duplicateGroupId == selectedRun.duplicateGroupId }
+    }
+    return copy(
+      duplicateRecords = duplicateRecords,
+      coachingDecision = if (selectedRun != null && feedback != null) {
+        coachingEngine.analyze(selectedRun, canonicalHistory, feedback)
+      } else null,
+    )
   }
 }
 

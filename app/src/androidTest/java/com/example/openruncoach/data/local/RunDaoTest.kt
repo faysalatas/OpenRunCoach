@@ -23,13 +23,28 @@ class RunDaoTest {
       val dao = database.runDao()
       val firstRun = runEntity("health-connect-id", 1000)
       dao.upsertAll(listOf(firstRun))
-      dao.upsertAll(listOf(firstRun.copy(distanceMeters = 5000.0, importedAtEpochMillis = 2000)))
+      assertEquals(listOf(firstRun), dao.getRunsMissingSourceMetadata())
+      dao.upsertAll(listOf(firstRun.copy(
+        distanceMeters = 5000.0,
+        importedAtEpochMillis = 2000,
+        sourcePackageName = "com.sec.android.app.shealth",
+        sourceAppName = "Samsung Health",
+        sourceDeviceManufacturer = "Samsung",
+        sourceDeviceModel = "Galaxy Watch",
+        sourceDeviceType = "WATCH",
+        sourceRecordLastModifiedTimeEpochMillis = 1500,
+      )))
       dao.upsertAll(emptyList())
 
       val runs = dao.observeRecentRuns().first()
       assertEquals(1, runs.size)
       assertEquals(5000.0, runs.single().distanceMeters!!, 0.001)
       assertEquals(2000, runs.single().importedAtEpochMillis)
+      assertEquals("com.sec.android.app.shealth", runs.single().sourcePackageName)
+      assertEquals("Samsung Health", runs.single().sourceAppName)
+      assertEquals("Samsung", runs.single().sourceDeviceManufacturer)
+      assertEquals("Galaxy Watch", runs.single().sourceDeviceModel)
+      assertEquals(emptyList<RunEntity>(), dao.getRunsMissingSourceMetadata())
     } finally {
       database.close()
     }
@@ -51,6 +66,24 @@ class RunDaoTest {
       assertEquals(10, runs.size)
       assertEquals("run-12", runs.first().healthConnectRecordId)
       assertEquals("run-3", runs.last().healthConnectRecordId)
+    } finally {
+      database.close()
+    }
+  }
+
+  @Test
+  fun recentRunsOnlyReturnsCanonicalRecords() = runBlocking {
+    val database = Room.inMemoryDatabaseBuilder(
+      ApplicationProvider.getApplicationContext(), OpenRunCoachDatabase::class.java,
+    ).build()
+    try {
+      database.runDao().upsertAll(listOf(
+        runEntity("canonical", 2000),
+        runEntity("duplicate", 3000).copy(isCanonical = false, duplicateGroupId = "group-1"),
+      ))
+
+      assertEquals(listOf("canonical"), database.runDao().observeRecentRuns().first().map { it.healthConnectRecordId })
+      assertEquals(2, database.runDao().observeAllRuns().first().size)
     } finally {
       database.close()
     }
