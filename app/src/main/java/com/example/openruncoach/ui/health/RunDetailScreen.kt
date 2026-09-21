@@ -53,6 +53,7 @@ fun RunDetailScreen(
   runId: String,
   onBack: () -> Unit,
   onViewAnalysis: (String) -> Unit,
+  onInspectHealthData: (String) -> Unit,
   modifier: Modifier = Modifier,
 ) {
   val context = LocalContext.current
@@ -78,6 +79,9 @@ fun RunDetailScreen(
       state.run == null -> Text("Run not found.")
       else -> {
         RunCard(state.run!!)
+        if (state.run!!.isCanonical) {
+          Button(onClick = { onInspectHealthData(runId) }) { Text("Inspect Health Data") }
+        }
         FeedbackCard(state, viewModel)
         state.feedback?.let { CoachCard(state) { onViewAnalysis(runId) } }
         SourceCard(state, viewModel::toggleSourceDetails)

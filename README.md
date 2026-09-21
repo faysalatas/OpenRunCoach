@@ -37,6 +37,7 @@ The long-term goal is a transparent, explainable running coach inspired by feedb
 - Rule-based readiness evaluation and safety overrides
 - Basic next-workout generation in the domain workflow
 - Deterministic developer coaching simulator with built-in scenarios
+- Health Connect Data Inspector for canonical runs, with per-metric permission and source diagnostics
 
 Automatic matching between a planned workout and an imported Health Connect run is not implemented yet. Because of that, the production workflow does not automatically create the next real workout after an import; the domain simulator exercises that complete loop today.
 
@@ -204,7 +205,7 @@ OpenRunCoach currently requests read access for:
 
 Only running exercise sessions are imported. Related metrics are read inside the selected session's time range. Missing distance, heart-rate, speed, source, or device fields are treated as optional.
 
-The next data investigation will examine availability and provider behavior for:
+The Health Connect Data Inspector can query API support and provider availability for:
 
 - cadence
 - VO2max
@@ -214,7 +215,13 @@ The next data investigation will examine availability and provider behavior for:
 - device metadata
 - running dynamics, where available
 
-OpenRunCoach does not assume that every Health Connect provider exposes every metric. A dedicated inspection package is reserved for querying raw data for a selected workout without changing production coaching models.
+### Health Connect Data Inspector
+
+Run Detail provides an **Inspect Health Data** action for canonical runs. The inspector reads the selected session directly from Health Connect without persisting new metrics or raw samples. It reports record and sample counts, summaries, permissions, source packages, and unavailable or failed reads independently.
+
+The Android Health Connect API supports record types such as cadence, VO₂ max, elevation, power, calories, steps, and exercise routes. API support does not mean a particular watch or provider actually records or publishes that metric. The inspector exists to show the difference on a real device. It source-filters results to the canonical workout provider and labels data found only from another provider instead of combining it silently.
+
+Route inspection requires an explicit action and consent where Health Connect requires it. Raw route points and series samples are not stored in Room.
 
 ## Data sources and duplicates
 
@@ -298,7 +305,7 @@ The current developer screen is a timeline runner; shared production screens and
 ## Roadmap
 
 - [x] Workout lifecycle and state machine
-- [ ] Health Connect Data Inspector
+- [x] Health Connect Data Inspector
 - [ ] Unified `RunMetrics` model
 - [ ] Athlete Performance Profile
 - [ ] Goal system
@@ -338,4 +345,3 @@ The debug APK is generated at `app/build/outputs/apk/debug/app-debug.apk`.
 ### Repository instructions
 
 [`AGENTS.md`](AGENTS.md) defines the project's architecture, health-data, development, and Git rules. Codex and other automated contributors should read and follow it before changing the project.
-

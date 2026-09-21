@@ -7,4 +7,6 @@ data class HealthConnectInspectionTarget(
   val exerciseSessionRecordId: String,
   val startTime: Instant,
   val endTime: Instant,
+  val sourcePackageName: String?,
+  val sourceAppName: String?,
 )

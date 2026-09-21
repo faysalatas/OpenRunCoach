@@ -24,6 +24,7 @@ import com.example.openruncoach.ui.home.HomeScreen
 import com.example.openruncoach.ui.plan.PlanScreen
 import com.example.openruncoach.ui.settings.SettingsScreen
 import com.example.openruncoach.ui.simulation.SimulationScreen
+import com.example.openruncoach.ui.inspection.HealthDataInspectorScreen
 
 private object Routes {
   const val HOME = "home"
@@ -33,6 +34,7 @@ private object Routes {
   const val RUN_DETAIL = "run"
   const val COACH_DETAIL = "coach"
   const val SIMULATOR = "simulator"
+  const val DATA_INSPECTOR = "data-inspector"
   const val RUN_ID = "runId"
 }
 
@@ -104,6 +106,16 @@ fun MainNavigation() {
           runId = runId,
           onBack = navController::navigateUp,
           onViewAnalysis = { selectedRunId -> navController.navigate(coachDetailRoute(selectedRunId)) },
+          onInspectHealthData = { selectedRunId -> navController.navigate(dataInspectorRoute(selectedRunId)) },
+        )
+      }
+      composable(
+        route = "${Routes.DATA_INSPECTOR}?${Routes.RUN_ID}={${Routes.RUN_ID}}",
+        arguments = listOf(navArgument(Routes.RUN_ID) { type = NavType.StringType }),
+      ) { entry ->
+        HealthDataInspectorScreen(
+          runId = entry.arguments?.getString(Routes.RUN_ID).orEmpty(),
+          onBack = navController::navigateUp,
         )
       }
       composable(
@@ -122,3 +134,5 @@ fun MainNavigation() {
 private fun runDetailRoute(runId: String) = "${Routes.RUN_DETAIL}?${Routes.RUN_ID}=${Uri.encode(runId)}"
 
 private fun coachDetailRoute(runId: String) = "${Routes.COACH_DETAIL}?${Routes.RUN_ID}=${Uri.encode(runId)}"
+
+private fun dataInspectorRoute(runId: String) = "${Routes.DATA_INSPECTOR}?${Routes.RUN_ID}=${Uri.encode(runId)}"
