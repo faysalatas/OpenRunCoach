@@ -23,6 +23,7 @@ import com.example.openruncoach.ui.history.HistoryScreen
 import com.example.openruncoach.ui.home.HomeScreen
 import com.example.openruncoach.ui.plan.PlanScreen
 import com.example.openruncoach.ui.settings.SettingsScreen
+import com.example.openruncoach.ui.simulation.SimulationScreen
 
 private object Routes {
   const val HOME = "home"
@@ -31,6 +32,7 @@ private object Routes {
   const val SETTINGS = "settings"
   const val RUN_DETAIL = "run"
   const val COACH_DETAIL = "coach"
+  const val SIMULATOR = "simulator"
   const val RUN_ID = "runId"
 }
 
@@ -89,7 +91,10 @@ fun MainNavigation() {
         HistoryScreen(onRunClick = { runId -> navController.navigate(runDetailRoute(runId)) })
       }
       composable(Routes.PLAN) { PlanScreen() }
-      composable(Routes.SETTINGS) { SettingsScreen() }
+      composable(Routes.SETTINGS) {
+        SettingsScreen(onOpenSimulator = { navController.navigate(Routes.SIMULATOR) })
+      }
+      composable(Routes.SIMULATOR) { SimulationScreen(onBack = navController::navigateUp) }
       composable(
         route = "${Routes.RUN_DETAIL}?${Routes.RUN_ID}={${Routes.RUN_ID}}",
         arguments = listOf(navArgument(Routes.RUN_ID) { type = NavType.StringType }),

@@ -101,20 +101,20 @@ private fun RunCard(run: RunSummary) {
 
 @Composable
 private fun FeedbackCard(state: RunDetailUiState, viewModel: RunDetailViewModel) {
-  DetailCard("Feedback") {
+  DetailCard("Post-run Checkout") {
     when {
       !state.feedbackLoaded -> Text("Loading feedback…")
       state.isEditingFeedback -> FeedbackEditor(state, viewModel)
       state.feedback == null -> {
         Text("Add how the run felt to receive a coach analysis.")
-        Button(onClick = viewModel::editFeedback) { Text("Add Feedback") }
+        Button(onClick = viewModel::editFeedback) { Text("Complete checkout") }
       }
       else -> {
         FeedbackSummary(state.feedback)
-        Button(onClick = viewModel::editFeedback) { Text("Edit Feedback") }
+        Button(onClick = viewModel::editFeedback) { Text("Edit checkout") }
       }
     }
-    if (state.saved) Text("Feedback saved.", color = MaterialTheme.colorScheme.primary)
+    if (state.saved) Text("Checkout saved.", color = MaterialTheme.colorScheme.primary)
   }
 }
 
@@ -173,11 +173,11 @@ private fun FeedbackEditor(state: RunDetailUiState, viewModel: RunDetailViewMode
   )
   Row(horizontalArrangement = Arrangement.spacedBy(ItemSpacing)) {
     Button(onClick = viewModel::saveFeedback, enabled = !state.isSaving) {
-      Text(if (state.feedback == null) "Save Feedback" else "Update Feedback")
+      Text(if (state.feedback == null) "Save checkout" else "Update checkout")
     }
     TextButton(onClick = viewModel::cancelFeedbackEdit, enabled = !state.isSaving) { Text("Cancel") }
   }
-  if (state.isSaving) Text("Saving feedback…")
+  if (state.isSaving) Text("Saving checkout…")
 }
 
 @Composable

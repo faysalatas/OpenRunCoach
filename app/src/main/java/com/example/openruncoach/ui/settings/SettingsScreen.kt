@@ -19,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import android.content.pm.ApplicationInfo
 import androidx.health.connect.client.PermissionController
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -33,7 +34,7 @@ import com.example.openruncoach.ui.components.ScreenPadding
 import com.example.openruncoach.ui.components.SectionSpacing
 
 @Composable
-fun SettingsScreen(modifier: Modifier = Modifier) {
+fun SettingsScreen(onOpenSimulator: () -> Unit, modifier: Modifier = Modifier) {
   val context = LocalContext.current
   val viewModel: SettingsViewModel = viewModel {
     val healthConnectRepository = HealthConnectRepository(context)
@@ -45,6 +46,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     )
   }
   val state by viewModel.uiState.collectAsStateWithLifecycle()
+  val isDebuggable = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
   val permissionLauncher = rememberLauncherForActivityResult(
     PermissionController.createRequestPermissionResultContract()
   ) { viewModel.refreshStatus() }
@@ -102,6 +104,12 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
       Text("OpenRunCoach")
       Text("Version 1.0", style = MaterialTheme.typography.bodyMedium)
       Text("Health data stays on this device.", style = MaterialTheme.typography.bodyMedium)
+    }
+    if (isDebuggable) {
+      SettingsCard("Developer tools") {
+        Text("Run deterministic coaching scenarios without real user data.")
+        Button(onClick = onOpenSimulator) { Text("Coaching Simulator") }
+      }
     }
   }
 }

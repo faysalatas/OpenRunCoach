@@ -40,6 +40,7 @@ OpenRunCoach is a native Android adaptive running coach.
 - Run a Gradle build after meaningful changes.
 - Do not silently change architecture decisions.
 - Do not implement features that were not requested.
+- Whenever a meaningful feature, architecture change, new metric, new workflow, or roadmap milestone is implemented, update README.md in the same change if documentation would otherwise become outdated.
 
 ## Git
 
