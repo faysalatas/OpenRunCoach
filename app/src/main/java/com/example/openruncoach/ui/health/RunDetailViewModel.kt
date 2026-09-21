@@ -44,6 +44,8 @@ data class RunDetailUiState(
   val error: String? = null,
   val saved: Boolean = false,
   val coachingDecision: CoachingDecision? = null,
+  val isEditingFeedback: Boolean = false,
+  val showSourceDetails: Boolean = false,
 )
 
 class RunDetailViewModel(
@@ -102,6 +104,25 @@ class RunDetailViewModel(
     _uiState.update { it.copy(form = change(it.form), isDirty = true, error = null, saved = false) }
   }
 
+  fun editFeedback() {
+    _uiState.update { it.copy(isEditingFeedback = true, saved = false, error = null) }
+  }
+
+  fun cancelFeedbackEdit() {
+    _uiState.update { state ->
+      state.copy(
+        isEditingFeedback = false,
+        isDirty = false,
+        form = state.feedback?.toForm() ?: FeedbackForm(),
+        error = null,
+      )
+    }
+  }
+
+  fun toggleSourceDetails() {
+    _uiState.update { it.copy(showSourceDetails = !it.showSourceDetails) }
+  }
+
   fun saveFeedback() {
     val state = _uiState.value
     if (state.isSaving || !state.feedbackLoaded || state.run == null) return
@@ -135,6 +156,7 @@ class RunDetailViewModel(
           isDirty = false,
           isSaving = false,
           saved = true,
+          isEditingFeedback = false,
         ).withDerivedState() }
       } catch (exception: CancellationException) {
         throw exception

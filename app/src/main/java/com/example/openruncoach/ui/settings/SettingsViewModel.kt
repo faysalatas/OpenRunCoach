@@ -1,4 +1,4 @@
-package com.example.openruncoach.ui.health
+package com.example.openruncoach.ui.settings
 
 import androidx.health.connect.client.HealthConnectClient
 import androidx.lifecycle.ViewModel
@@ -6,8 +6,6 @@ import androidx.lifecycle.viewModelScope
 import com.example.openruncoach.data.HealthConnectRepository
 import com.example.openruncoach.data.RunRepository
 import com.example.openruncoach.data.RunSettingsRepository
-import com.example.openruncoach.domain.RunSummary
-import com.example.openruncoach.domain.PossibleDuplicate
 import com.example.openruncoach.domain.WorkoutSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -26,11 +24,7 @@ sealed interface SyncState {
   data object Error : SyncState
 }
 
-data class HealthConnectUiState(
-  val recentRuns: List<RunSummary>? = null,
-  val duplicateDiagnostics: Map<String, List<PossibleDuplicate>> = emptyMap(),
-  val duplicateDiagnosticsError: Boolean = false,
-  val historyError: Boolean = false,
+data class SettingsUiState(
   val isAvailable: Boolean? = null,
   val hasAllPermissions: Boolean? = null,
   val accessError: Boolean = false,
@@ -40,12 +34,12 @@ data class HealthConnectUiState(
   val preferredSourceError: Boolean = false,
 )
 
-class HealthConnectViewModel(
+class SettingsViewModel(
   private val healthConnectRepository: HealthConnectRepository,
   private val runRepository: RunRepository,
   private val settingsRepository: RunSettingsRepository,
 ) : ViewModel() {
-  private val _uiState = MutableStateFlow(HealthConnectUiState())
+  private val _uiState = MutableStateFlow(SettingsUiState())
   val uiState = _uiState.asStateFlow()
   val requiredPermissions: Set<String> get() = healthConnectRepository.requiredPermissions
   private var statusJob: Job? = null
@@ -53,39 +47,21 @@ class HealthConnectViewModel(
 
   init {
     viewModelScope.launch {
-      runRepository.recentRuns
-        .catch { _uiState.update { state -> state.copy(historyError = true) } }
-        .collect { runs ->
-          _uiState.update { state -> state.copy(recentRuns = runs, historyError = false) }
-        }
-    }
-    viewModelScope.launch {
-      runRepository.duplicateDiagnostics
-        .catch { _uiState.update { state -> state.copy(duplicateDiagnosticsError = true) } }
-        .collect { diagnostics ->
-          _uiState.update { state ->
-            state.copy(duplicateDiagnostics = diagnostics, duplicateDiagnosticsError = false)
-          }
-        }
-    }
-    viewModelScope.launch {
       runRepository.knownSources
-        .catch { _uiState.update { state -> state.copy(preferredSourceError = true) } }
-        .collect { sources -> _uiState.update { state -> state.copy(knownSources = sources) } }
+        .catch { _uiState.update { it.copy(preferredSourceError = true) } }
+        .collect { sources -> _uiState.update { it.copy(knownSources = sources) } }
     }
     viewModelScope.launch {
       settingsRepository.preferredSourcePackage
-        .catch { _uiState.update { state -> state.copy(preferredSourceError = true) } }
+        .catch { _uiState.update { it.copy(preferredSourceError = true) } }
         .collect { preferredSource ->
           try {
             runRepository.refreshCanonicalSelection(preferredSource)
-            _uiState.update { state ->
-              state.copy(preferredSourcePackage = preferredSource, preferredSourceError = false)
-            }
+            _uiState.update { it.copy(preferredSourcePackage = preferredSource, preferredSourceError = false) }
           } catch (exception: CancellationException) {
             throw exception
           } catch (exception: Exception) {
-            _uiState.update { state -> state.copy(preferredSourceError = true) }
+            _uiState.update { it.copy(preferredSourceError = true) }
           }
         }
     }
@@ -98,7 +74,7 @@ class HealthConnectViewModel(
       } catch (exception: CancellationException) {
         throw exception
       } catch (exception: Exception) {
-        _uiState.update { state -> state.copy(preferredSourceError = true) }
+        _uiState.update { it.copy(preferredSourceError = true) }
       }
     }
   }
@@ -107,19 +83,13 @@ class HealthConnectViewModel(
     statusJob?.cancel()
     statusJob = viewModelScope.launch {
       try {
-        val isAvailable = healthConnectRepository.availabilityStatus() == HealthConnectClient.SDK_AVAILABLE
-        val hasAllPermissions = isAvailable && healthConnectRepository.hasAllPermissions()
-        _uiState.update { state ->
-          state.copy(
-            isAvailable = isAvailable,
-            hasAllPermissions = hasAllPermissions,
-            accessError = false,
-          )
-        }
+        val available = healthConnectRepository.availabilityStatus() == HealthConnectClient.SDK_AVAILABLE
+        val permissions = available && healthConnectRepository.hasAllPermissions()
+        _uiState.update { it.copy(isAvailable = available, hasAllPermissions = permissions, accessError = false) }
       } catch (exception: CancellationException) {
         throw exception
       } catch (exception: Exception) {
-        _uiState.update { state -> state.copy(accessError = true) }
+        _uiState.update { it.copy(accessError = true) }
       }
     }
   }
@@ -128,8 +98,8 @@ class HealthConnectViewModel(
     if (syncJob?.isActive == true) return
     syncJob = viewModelScope.launch {
       try {
-        val isAvailable = healthConnectRepository.availabilityStatus() == HealthConnectClient.SDK_AVAILABLE
-        if (!isAvailable) {
+        val available = healthConnectRepository.availabilityStatus() == HealthConnectClient.SDK_AVAILABLE
+        if (!available) {
           _uiState.update { it.copy(isAvailable = false, hasAllPermissions = false, syncState = SyncState.Unavailable) }
           return@launch
         }
@@ -137,7 +107,6 @@ class HealthConnectViewModel(
           _uiState.update { it.copy(isAvailable = true, hasAllPermissions = false, syncState = SyncState.PermissionRequired) }
           return@launch
         }
-
         _uiState.update { it.copy(isAvailable = true, hasAllPermissions = true, syncState = SyncState.Syncing) }
         val count = runRepository.syncRuns()
         _uiState.update { it.copy(syncState = SyncState.Success(count)) }
