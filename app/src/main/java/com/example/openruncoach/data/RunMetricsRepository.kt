@@ -1,6 +1,7 @@
 package com.example.openruncoach.data
 
 import com.example.openruncoach.data.local.RunMetricValueEntity
+import com.example.openruncoach.data.local.RunMetricSampleEntity
 import com.example.openruncoach.data.local.RunMetricsDao
 import com.example.openruncoach.data.local.RunMetricsEntity
 import com.example.openruncoach.data.local.RunMetricsWithValues
@@ -9,7 +10,10 @@ import com.example.openruncoach.domain.metrics.MetricSource
 import com.example.openruncoach.domain.metrics.MetricValue
 import com.example.openruncoach.domain.metrics.MetricVerification
 import com.example.openruncoach.domain.metrics.RunMetricKey
+import com.example.openruncoach.domain.metrics.RunSampleMetricType
+import com.example.openruncoach.domain.metrics.RunTimeSeries
 import com.example.openruncoach.domain.metrics.RunMetrics
+import com.example.openruncoach.domain.metrics.TimedMetricSample
 import com.example.openruncoach.domain.metrics.metricValues
 import java.time.Instant
 import kotlinx.coroutines.flow.Flow
@@ -32,8 +36,10 @@ class RunMetricsRepository(private val dao: RunMetricsDao) {
         recordingDeviceManufacturer = metrics.recordingDeviceManufacturer,
         recordingDeviceModel = metrics.recordingDeviceModel,
         recordingDeviceName = metrics.recordingDeviceName,
+        dataVersion = metrics.dataVersion,
       ),
       metrics.metricValues().map { (key, metric) -> metric.toEntity(metrics.runId, key) },
+      metrics.toSampleEntities(),
     )
   }
 }
@@ -85,7 +91,60 @@ internal fun RunMetricsWithValues.toDomain(): RunMetrics? {
     recordingDeviceManufacturer = snapshot.recordingDeviceManufacturer,
     recordingDeviceModel = snapshot.recordingDeviceModel,
     recordingDeviceName = snapshot.recordingDeviceName,
+    series = samples.toTimeSeries(),
     generatedAt = Instant.ofEpochMilli(snapshot.generatedAtEpochMillis),
+    dataVersion = snapshot.dataVersion,
+  )
+}
+
+internal fun RunMetrics.toSampleEntities(): List<RunMetricSampleEntity> {
+  fun entities(
+    type: RunSampleMetricType,
+    samples: List<TimedMetricSample<Double>>,
+    metric: MetricValue<Double>?,
+  ) = samples.asSequence()
+    .filter { !it.timestamp.isBefore(startTime) && !it.timestamp.isAfter(endTime) }
+    .filter { it.value.isFinite() }
+    .map { sample ->
+      RunMetricSampleEntity(
+        runId = runId,
+        metricType = type.name,
+        timestampEpochMillis = sample.timestamp.toEpochMilli(),
+        value = sample.value,
+        source = (sample.source ?: metric?.source ?: MetricSource.HEALTH_CONNECT).name,
+        confidence = (sample.confidence ?: metric?.confidence ?: MetricConfidence.LOW).name,
+        sourceAppName = sample.sourceAppName ?: metric?.sourceAppName,
+        sourceDeviceName = sample.sourceDeviceName ?: metric?.sourceDeviceName,
+      )
+    }
+  return sequenceOf(
+    entities(RunSampleMetricType.HEART_RATE, series.heartRate, averageHeartRate),
+    entities(RunSampleMetricType.SPEED, series.speed, averageSpeedMetersPerSecond),
+    entities(RunSampleMetricType.CADENCE, series.cadence, movingAverageCadence ?: averageCadence),
+    entities(RunSampleMetricType.POWER, series.power, averagePowerWatts),
+  ).flatten().distinctBy { listOf(it.runId, it.metricType, it.timestampEpochMillis, it.source) }.toList()
+}
+
+internal fun List<RunMetricSampleEntity>.toTimeSeries(): RunTimeSeries {
+  fun samples(type: RunSampleMetricType) = asSequence()
+    .filter { it.metricType == type.name }
+    .sortedBy(RunMetricSampleEntity::timestampEpochMillis)
+    .map {
+      TimedMetricSample(
+        timestamp = Instant.ofEpochMilli(it.timestampEpochMillis),
+        value = it.value,
+        source = MetricSource.valueOf(it.source),
+        confidence = MetricConfidence.valueOf(it.confidence),
+        sourceAppName = it.sourceAppName,
+        sourceDeviceName = it.sourceDeviceName,
+      )
+    }
+    .toList()
+  return RunTimeSeries(
+    heartRate = samples(RunSampleMetricType.HEART_RATE),
+    speed = samples(RunSampleMetricType.SPEED),
+    cadence = samples(RunSampleMetricType.CADENCE),
+    power = samples(RunSampleMetricType.POWER),
   )
 }
 

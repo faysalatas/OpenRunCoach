@@ -12,6 +12,8 @@ data class RunMetricsWithValues(
   @Embedded val snapshot: RunMetricsEntity,
   @Relation(parentColumn = "runId", entityColumn = "runId")
   val values: List<RunMetricValueEntity>,
+  @Relation(parentColumn = "runId", entityColumn = "runId")
+  val samples: List<RunMetricSampleEntity>,
 )
 
 @Dao
@@ -34,13 +36,25 @@ interface RunMetricsDao {
   @Upsert
   suspend fun upsertValues(values: List<RunMetricValueEntity>)
 
+  @Upsert
+  suspend fun upsertSamples(samples: List<RunMetricSampleEntity>)
+
   @Query("DELETE FROM run_metric_values WHERE runId = :runId")
   suspend fun deleteValues(runId: String)
 
+  @Query("DELETE FROM run_metric_samples WHERE runId = :runId")
+  suspend fun deleteSamples(runId: String)
+
   @Transaction
-  suspend fun replace(snapshot: RunMetricsEntity, values: List<RunMetricValueEntity>) {
+  suspend fun replace(
+    snapshot: RunMetricsEntity,
+    values: List<RunMetricValueEntity>,
+    samples: List<RunMetricSampleEntity>,
+  ) {
     upsertSnapshot(snapshot)
     deleteValues(snapshot.runId)
-    upsertValues(values)
+    deleteSamples(snapshot.runId)
+    if (values.isNotEmpty()) upsertValues(values)
+    if (samples.isNotEmpty()) upsertSamples(samples)
   }
 }

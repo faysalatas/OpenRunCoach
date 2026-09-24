@@ -57,10 +57,18 @@ class SamsungHealthRunMetricsEnricher {
     }
 
     val log = session.exerciseLogSamples
-    val samsungHeartRate = log.mapNotNull { sample -> sample.heartRate?.let { TimedMetricSample(sample.timestamp, it) } }
-    val samsungSpeed = log.mapNotNull { sample -> sample.speedMetersPerSecond?.let { TimedMetricSample(sample.timestamp, it) } }
-    val samsungCadence = log.mapNotNull { sample -> sample.cadence?.let { TimedMetricSample(sample.timestamp, it) } }
-    val samsungPower = log.mapNotNull { sample -> sample.powerWatts?.let { TimedMetricSample(sample.timestamp, it) } }
+    fun sample(timestamp: java.time.Instant, value: Double) = TimedMetricSample(
+      timestamp = timestamp,
+      value = value,
+      source = source,
+      confidence = confidence,
+      sourceAppName = "Samsung Health",
+      sourceDeviceName = sourceDevice,
+    )
+    val samsungHeartRate = log.mapNotNull { item -> item.heartRate?.let { sample(item.timestamp, it) } }
+    val samsungSpeed = log.mapNotNull { item -> item.speedMetersPerSecond?.let { sample(item.timestamp, it) } }
+    val samsungCadence = log.mapNotNull { item -> item.cadence?.let { sample(item.timestamp, it) } }
+    val samsungPower = log.mapNotNull { item -> item.powerWatts?.let { sample(item.timestamp, it) } }
     val movingCadence = movingCadenceAverage(samsungCadence, samsungSpeed)
     val sessionCadence = session.meanCadence ?: samsungCadence.map { it.value }
       .filter { it.isFinite() && it >= 0.0 }
@@ -98,7 +106,7 @@ class SamsungHealthRunMetricsEnricher {
       recordingDeviceName = base.recordingDeviceName ?: candidate.source.deviceName,
       series = RunMetricSeries(
         heartRate = base.series.heartRate.ifEmpty { samsungHeartRate },
-        speed = base.series.speed.ifEmpty { samsungSpeed },
+        speed = samsungSpeed.ifEmpty { base.series.speed },
         cadence = base.series.cadence.ifEmpty { samsungCadence },
         power = base.series.power.ifEmpty { samsungPower },
       ),
@@ -144,17 +152,25 @@ class SamsungHealthRunMetricsEnricher {
     val speedConfidence = clipped.speed.confidenceFor(base)
     val cadenceConfidence = clipped.cadence.confidenceFor(base)
     val powerConfidence = clipped.power.confidenceFor(base)
-    val heartRate = clipped.samples.mapNotNull { sample ->
-      sample.heartRate?.let { TimedMetricSample(sample.timestamp, it) }
+    fun sample(timestamp: java.time.Instant, value: Double, confidence: MetricConfidence?) = TimedMetricSample(
+      timestamp = timestamp,
+      value = value,
+      source = source,
+      confidence = confidence,
+      sourceAppName = "Samsung Health",
+      sourceDeviceName = sourceDevice,
+    )
+    val heartRate = clipped.samples.mapNotNull { item ->
+      item.heartRate?.let { sample(item.timestamp, it, heartRateConfidence) }
     }
-    val speed = clipped.samples.mapNotNull { sample ->
-      sample.speedMetersPerSecond?.let { TimedMetricSample(sample.timestamp, it) }
+    val speed = clipped.samples.mapNotNull { item ->
+      item.speedMetersPerSecond?.let { sample(item.timestamp, it, speedConfidence) }
     }
-    val cadence = clipped.samples.mapNotNull { sample ->
-      sample.cadence?.let { TimedMetricSample(sample.timestamp, it) }
+    val cadence = clipped.samples.mapNotNull { item ->
+      item.cadence?.let { sample(item.timestamp, it, cadenceConfidence) }
     }
-    val power = clipped.samples.mapNotNull { sample ->
-      sample.powerWatts?.let { TimedMetricSample(sample.timestamp, it) }
+    val power = clipped.samples.mapNotNull { item ->
+      item.powerWatts?.let { sample(item.timestamp, it, powerConfidence) }
     }
     val candidate = session.candidate
 
@@ -199,7 +215,7 @@ class SamsungHealthRunMetricsEnricher {
       recordingDeviceName = base.recordingDeviceName,
       series = RunMetricSeries(
         heartRate = base.series.heartRate.ifEmpty { if (heartRateConfidence != null) heartRate else emptyList() },
-        speed = base.series.speed.ifEmpty { if (speedConfidence != null) speed else emptyList() },
+        speed = if (speedConfidence != null && speed.isNotEmpty()) speed else base.series.speed,
         cadence = base.series.cadence.ifEmpty { if (cadenceConfidence != null) cadence else emptyList() },
         power = base.series.power.ifEmpty { if (powerConfidence != null) power else emptyList() },
       ),

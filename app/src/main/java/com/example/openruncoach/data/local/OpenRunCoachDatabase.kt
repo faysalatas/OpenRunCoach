@@ -17,6 +17,7 @@ import androidx.sqlite.execSQL
     WorkoutAdjustmentEntity::class,
     RunMetricsEntity::class,
     RunMetricValueEntity::class,
+    RunMetricSampleEntity::class,
     AthletePerformanceProfileEntity::class,
     AthleteProfileWeeklyVolumeEntity::class,
     AthleteProfileBenchmarkEntity::class,
@@ -28,7 +29,7 @@ import androidx.sqlite.execSQL
     WorkoutIntensityTargetEntity::class,
     WorkoutCueEntity::class,
   ],
-  version = 11,
+  version = 12,
   exportSchema = true,
 )
 abstract class OpenRunCoachDatabase : RoomDatabase() {
@@ -193,6 +194,16 @@ abstract class OpenRunCoachDatabase : RoomDatabase() {
       }
     }
 
+    val MIGRATION_11_12 = object : Migration(11, 12) {
+      override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL("ALTER TABLE `run_metrics` ADD COLUMN `dataVersion` INTEGER NOT NULL DEFAULT 1")
+        connection.execSQL(
+          """CREATE TABLE IF NOT EXISTS `run_metric_samples` (`runId` TEXT NOT NULL, `metricType` TEXT NOT NULL, `timestampEpochMillis` INTEGER NOT NULL, `value` REAL NOT NULL, `source` TEXT NOT NULL, `confidence` TEXT NOT NULL, `sourceAppName` TEXT, `sourceDeviceName` TEXT, PRIMARY KEY(`runId`, `metricType`, `timestampEpochMillis`, `source`), FOREIGN KEY(`runId`) REFERENCES `run_metrics`(`runId`) ON UPDATE NO ACTION ON DELETE CASCADE)"""
+        )
+        connection.execSQL("CREATE INDEX IF NOT EXISTS `index_run_metric_samples_runId` ON `run_metric_samples` (`runId`)")
+      }
+    }
+
     fun getInstance(context: Context): OpenRunCoachDatabase =
       instance ?: synchronized(this) {
         instance
@@ -211,6 +222,7 @@ abstract class OpenRunCoachDatabase : RoomDatabase() {
               MIGRATION_8_9,
               MIGRATION_9_10,
               MIGRATION_10_11,
+              MIGRATION_11_12,
             ).build().also { instance = it }
       }
   }

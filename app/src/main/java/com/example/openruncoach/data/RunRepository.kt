@@ -26,6 +26,7 @@ class RunRepository(
   private val runMetricsRepository: RunMetricsRepository? = null,
   private val healthConnectMetricsProvider: HealthConnectRunMetricsProvider = HealthConnectRunMetricsProvider(clock),
   private val athleteProfileRepository: AthletePerformanceProfileRepository? = null,
+  private val runMetricsRefresher: RunMetricsRefresher? = null,
 ) {
   val recentRuns: Flow<List<RunSummary>> =
     runDao.observeRecentRuns().map { runs -> runs.map(RunEntity::toRunSummary) }
@@ -95,8 +96,19 @@ class RunRepository(
         canonicalSelectionReason = selection.reason,
       )
     })
-    runMetricsRepository?.let { metricsRepository ->
-      runDao.getAllRuns().filter(RunEntity::isCanonical).forEach { entity ->
+    val canonicalEntities = runDao.getAllRuns().filter(RunEntity::isCanonical)
+    if (runMetricsRefresher != null) {
+      canonicalEntities.forEach { entity ->
+        try {
+          runMetricsRefresher.refresh(entity.toRunSummary(), force = false)
+        } catch (exception: CancellationException) {
+          throw exception
+        } catch (_: Exception) {
+          // Metrics are best-effort; imported canonical runs remain available.
+        }
+      }
+    } else runMetricsRepository?.let { metricsRepository ->
+      canonicalEntities.forEach { entity ->
         val existing = metricsRepository.getRunMetrics(entity.healthConnectRecordId)
         val containsSamsungEnrichment = existing?.metricValues()?.values?.any {
           it.source == MetricSource.SAMSUNG_HEALTH || it.secondarySource == MetricSource.SAMSUNG_HEALTH

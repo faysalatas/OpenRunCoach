@@ -24,6 +24,7 @@ data class RunMetricsEntity(
   val recordingDeviceManufacturer: String?,
   val recordingDeviceModel: String?,
   val recordingDeviceName: String?,
+  val dataVersion: Int = 3,
 )
 
 @Entity(
@@ -47,6 +48,28 @@ data class RunMetricValueEntity(
   val secondaryValue: Double?,
   val secondarySource: String?,
   val verificationReason: String?,
+  val sourceAppName: String?,
+  val sourceDeviceName: String?,
+)
+
+@Entity(
+  tableName = "run_metric_samples",
+  primaryKeys = ["runId", "metricType", "timestampEpochMillis", "source"],
+  foreignKeys = [ForeignKey(
+    entity = RunMetricsEntity::class,
+    parentColumns = ["runId"],
+    childColumns = ["runId"],
+    onDelete = ForeignKey.CASCADE,
+  )],
+  indices = [Index("runId")],
+)
+data class RunMetricSampleEntity(
+  val runId: String,
+  val metricType: String,
+  val timestampEpochMillis: Long,
+  val value: Double,
+  val source: String,
+  val confidence: String,
   val sourceAppName: String?,
   val sourceDeviceName: String?,
 )

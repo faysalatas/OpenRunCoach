@@ -3,7 +3,8 @@ package com.example.openruncoach.ui.inspection
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.openruncoach.data.RunRepository
-import com.example.openruncoach.data.RunMetricsRefreshService
+import com.example.openruncoach.data.healthconnect.HealthConnectRunMetricsProvider
+import com.example.openruncoach.data.samsunghealth.SamsungHealthRunMetricsEnricher
 import com.example.openruncoach.data.healthconnect.inspection.HealthConnectDataInspector
 import com.example.openruncoach.data.healthconnect.inspection.HealthConnectInspectionTarget
 import com.example.openruncoach.data.samsunghealth.SamsungHealthAvailabilityState
@@ -49,7 +50,8 @@ class HealthDataInspectorViewModel(
   private val samsungInspector: SamsungHealthExerciseInspector,
   private val samsungPermissionManager: SamsungHealthPermissionManager,
   private val samsungMatchSelectionRepository: SamsungMatchSelectionRepository,
-  private val runMetricsRefreshService: RunMetricsRefreshService,
+  private val healthConnectMetricsProvider: HealthConnectRunMetricsProvider,
+  private val samsungMetricsEnricher: SamsungHealthRunMetricsEnricher,
 ) : ViewModel() {
   private val _uiState = MutableStateFlow(HealthDataInspectorUiState())
   val uiState = _uiState.asStateFlow()
@@ -143,7 +145,10 @@ class HealthDataInspectorViewModel(
       healthConnect,
       selectedCandidateId,
     )
-    val unifiedMetrics = runMetricsRefreshService.refresh(run, healthConnect, result.inspection)
+    val unifiedMetrics = samsungMetricsEnricher.enrich(
+      healthConnectMetricsProvider.build(run, healthConnect),
+      result.inspection,
+    )
     _uiState.update {
       it.copy(
         isInspectingSamsungHealth = false,

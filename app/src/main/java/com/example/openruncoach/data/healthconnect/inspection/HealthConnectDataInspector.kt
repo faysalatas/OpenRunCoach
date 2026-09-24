@@ -46,6 +46,17 @@ import kotlinx.coroutines.coroutineScope
 
 class HealthConnectDataInspector(
   context: Context,
+  clock: Clock = Clock.systemUTC(),
+) {
+  private val reader = HealthConnectRunDataReader(context, clock)
+  val requiredPermissions: Set<String> get() = reader.requiredPermissions
+  suspend fun missingPermissions(): Set<String> = reader.missingPermissions()
+  suspend fun inspect(target: HealthConnectInspectionTarget): RunDataInspection = reader.read(target)
+}
+
+/** Shared Health Connect reader used by normal refresh and diagnostic inspection. */
+class HealthConnectRunDataReader(
+  context: Context,
   private val clock: Clock = Clock.systemUTC(),
 ) {
   private val appContext = context.applicationContext
@@ -60,7 +71,7 @@ class HealthConnectDataInspector(
     return requiredPermissions - granted
   }
 
-  suspend fun inspect(target: HealthConnectInspectionTarget): RunDataInspection {
+  suspend fun read(target: HealthConnectInspectionTarget): RunDataInspection {
     if (HealthConnectClient.getSdkStatus(appContext) != HealthConnectClient.SDK_AVAILABLE) {
       return RunDataInspection(
         target.exerciseSessionRecordId,

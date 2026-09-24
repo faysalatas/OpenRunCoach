@@ -5,7 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.openruncoach.data.RunFeedbackRepository
 import com.example.openruncoach.data.RunRepository
 import com.example.openruncoach.data.RunMetricsRepository
-import com.example.openruncoach.data.healthconnect.HealthConnectRunMetricsProvider
+import com.example.openruncoach.data.RunMetricsRefresher
 import com.example.openruncoach.domain.CardioEffort
 import com.example.openruncoach.domain.CompletionStatus
 import com.example.openruncoach.domain.MuscleFatigue
@@ -17,7 +17,10 @@ import com.example.openruncoach.domain.RunSummary
 import com.example.openruncoach.domain.coaching.CoachingDecision
 import com.example.openruncoach.domain.coaching.CoachingEngine
 import com.example.openruncoach.domain.metrics.RunMetrics
+import com.example.openruncoach.domain.metrics.RunChartData
+import com.example.openruncoach.domain.metrics.RunChartPreparer
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
@@ -51,6 +54,9 @@ data class RunDetailUiState(
   val showSourceDetails: Boolean = false,
   val metrics: RunMetrics? = null,
   val showMetricDetails: Boolean = false,
+  val charts: RunChartData? = null,
+  val isUpdatingMetrics: Boolean = false,
+  val metricsUpdateError: Boolean = false,
 )
 
 class RunDetailViewModel(
@@ -58,13 +64,15 @@ class RunDetailViewModel(
   runRepository: RunRepository,
   private val feedbackRepository: RunFeedbackRepository,
   runMetricsRepository: RunMetricsRepository,
+  private val runMetricsRefresher: RunMetricsRefresher,
   private val coachingEngine: CoachingEngine = CoachingEngine(),
-  private val healthConnectMetricsProvider: HealthConnectRunMetricsProvider = HealthConnectRunMetricsProvider(),
 ) : ViewModel() {
   private val _uiState = MutableStateFlow(RunDetailUiState())
   val uiState = _uiState.asStateFlow()
   private var allRuns: List<RunSummary> = emptyList()
   private var canonicalHistory: List<RunSummary> = emptyList()
+  private var metricsRefreshJob: Job? = null
+  private var autoRefreshRunId: String? = null
 
   init {
     viewModelScope.launch {
@@ -75,15 +83,21 @@ class RunDetailViewModel(
             state.copy(
               run = run,
               runLoaded = true,
-              metrics = state.metrics ?: run?.let { healthConnectMetricsProvider.build(it, null) },
+              charts = state.metrics?.let { metrics -> prepareCharts(metrics, run) },
             ).withDerivedState()
+          }
+          if (run != null && run.isCanonical && autoRefreshRunId != run.healthConnectRecordId) {
+            autoRefreshRunId = run.healthConnectRecordId
+            refreshMetrics(run, force = false)
           }
         }
     }
     viewModelScope.launch {
       runMetricsRepository.observeRunMetrics(runId)
         .catch { _uiState.update { it.copy(error = "Could not load run metrics.") } }
-        .collect { metrics -> if (metrics != null) _uiState.update { it.copy(metrics = metrics) } }
+        .collect { metrics -> if (metrics != null) _uiState.update {
+          it.copy(metrics = metrics, charts = prepareCharts(metrics, it.run))
+        } }
     }
     viewModelScope.launch {
       runRepository.allRuns.collect { runs ->
@@ -146,6 +160,38 @@ class RunDetailViewModel(
   fun toggleMetricDetails() {
     _uiState.update { it.copy(showMetricDetails = !it.showMetricDetails) }
   }
+
+  fun refreshMetrics() {
+    val run = _uiState.value.run ?: return
+    refreshMetrics(run, force = true)
+  }
+
+  private fun refreshMetrics(run: RunSummary, force: Boolean) {
+    if (metricsRefreshJob?.isActive == true) return
+    metricsRefreshJob = viewModelScope.launch {
+      _uiState.update { it.copy(isUpdatingMetrics = true, metricsUpdateError = false) }
+      try {
+        val outcome = runMetricsRefresher.refresh(run, force)
+        _uiState.update {
+          it.copy(
+            metrics = outcome.metrics,
+            charts = prepareCharts(outcome.metrics, run),
+            isUpdatingMetrics = false,
+          )
+        }
+      } catch (error: CancellationException) {
+        throw error
+      } catch (_: Exception) {
+        _uiState.update { it.copy(isUpdatingMetrics = false, metricsUpdateError = true) }
+      }
+    }
+  }
+
+  private fun prepareCharts(metrics: RunMetrics, run: RunSummary?): RunChartData = RunChartPreparer.prepare(
+    metrics = metrics,
+    canonicalDurationSeconds = run?.durationSeconds ?: metrics.durationSeconds.value,
+    canonicalDistanceMeters = run?.distanceMeters ?: metrics.distanceMeters?.value,
+  )
 
   fun saveFeedback() {
     val state = _uiState.value

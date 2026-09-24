@@ -29,6 +29,7 @@ import com.example.openruncoach.data.HealthConnectRepository
 import com.example.openruncoach.data.AthletePerformanceProfileRepository
 import com.example.openruncoach.data.RunRepository
 import com.example.openruncoach.data.RunMetricsRepository
+import com.example.openruncoach.data.RunMetricsAutoRefreshCoordinator
 import com.example.openruncoach.data.RunSettingsRepository
 import com.example.openruncoach.data.local.OpenRunCoachDatabase
 import com.example.openruncoach.ui.components.ItemSpacing
@@ -49,6 +50,7 @@ fun SettingsScreen(
     val settingsRepository = RunSettingsRepository(context)
     val database = OpenRunCoachDatabase.getInstance(context)
     val profileRepository = AthletePerformanceProfileRepository(database)
+    val metricsRefresher = RunMetricsAutoRefreshCoordinator.create(context, database)
     SettingsViewModel(
       healthConnectRepository,
       RunRepository(
@@ -57,6 +59,7 @@ fun SettingsScreen(
         settingsRepository,
         runMetricsRepository = RunMetricsRepository(database.runMetricsDao()),
         athleteProfileRepository = profileRepository,
+        runMetricsRefresher = metricsRefresher,
       ),
       settingsRepository,
     )

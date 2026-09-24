@@ -7,7 +7,7 @@ The long-term goal is a transparent, explainable running coach inspired by feedb
 ## Current features
 
 - Native Android app written in Kotlin and Jetpack Compose
-- Material 3 UI with system light and dark themes
+- Material 3 UI with an anthracite and teal dark palette plus system light-theme support
 - Bottom navigation with Home, History, Plan, and Settings
 - Week and day selector with run indicators
 - Read-only Health Connect integration
@@ -39,6 +39,9 @@ The long-term goal is a transparent, explainable running coach inspired by feedb
 - Deterministic developer coaching simulator with built-in scenarios
 - Health Connect Data Inspector for canonical runs, with per-metric permission and source diagnostics
 - Experimental Samsung Health Data SDK comparison for canonical runs, including ExerciseLog cadence diagnostics
+- Automatic canonical-run metric refresh and best-effort Samsung enrichment in Run Detail and after sync
+- Persisted provider-independent heart-rate, speed, cadence, and power samples
+- Compact Run Detail charts for pace, heart rate, and cadence
 - Persistent athlete goals with profile-based context, target times, optional dates, and explainable assessments
 - Provider-independent structured workouts with ordered segments, repeat blocks, intensity guidance, estimates, purposes, and cues
 
@@ -231,21 +234,23 @@ The Health Connect Data Inspector can query API support and provider availabilit
 
 ### Health Connect Data Inspector
 
-Run Detail provides an **Inspect Health Data** action for canonical runs. The inspector reads the selected session directly from Health Connect, reports record and sample counts, summaries, permissions, source packages, and unavailable or failed reads independently, and refreshes the persisted unified metric summary. Raw samples are not persisted.
+Run Detail provides an **Inspect Health Data** action for canonical runs. The inspector reads the selected session directly from Health Connect and reports record and sample counts, summaries, permissions, source packages, and unavailable or failed reads independently. It is a diagnostic view and does not persist or refresh normal Run Detail data.
+
+Run Detail loads saved unified metrics immediately, then refreshes missing, outdated, or explicitly requested metrics through the normal repository and ViewModel path. The refresh reads Health Connect data, attempts exact-session or overlapping-session Samsung enrichment when available, replaces the saved metric snapshot and sample set atomically, and updates the screen. The same best-effort enrichment runs after canonical selection during normal synchronization. Samsung errors do not make a Health Connect import fail, and Performance Profile recalculation no longer depends on opening the inspector.
 
 The Android Health Connect API supports record types such as cadence, VO₂max, elevation, power, calories, steps, and exercise routes. API support does not mean a particular watch or provider actually records or publishes that metric. The inspector exists to show the difference on a real device. It source-filters results to the canonical workout provider and labels data found only from another provider instead of combining it silently.
 
-Route inspection requires an explicit action and consent where Health Connect requires it. Raw route points and series samples are not stored in Room.
+Route inspection requires an explicit action and consent where Health Connect requires it. Raw route points are not stored in Room.
 
 ### Experimental Samsung Health enrichment
 
-Health Connect remains the primary, provider-independent workout source. The optional Samsung Health Data SDK integration enriches the existing inspector for Samsung users; it does not replace imported Health Connect values or affect canonical selection, coaching, or workout generation.
+Health Connect remains the primary, provider-independent workout source. The optional Samsung Health Data SDK integration supports diagnostics and best-effort normal metric enrichment for Samsung users. It does not replace canonical Health Connect run identity or affect canonical selection, coaching, or workout generation.
 
-For the selected canonical run, the inspector requests read access only to Samsung's `DataTypes.EXERCISE`. It searches all nearby Samsung running and track-running sessions, then makes two decisions. The identity match finds the Samsung provider copy using source application and physical-workout evidence. The enrichment match classifies a candidate as an exact session or an overlapping session. Exact sessions require close boundaries and distance. Overlapping sessions require an extremely close start, high coverage of the canonical activity, a trusted Watch source, and substantial ExerciseLog data; Watch provenance alone is insufficient. Source application equality is not required for enrichment.
+For a selected canonical run, the Samsung adapter requests read access only to Samsung's `DataTypes.EXERCISE`. It searches all nearby Samsung running and track-running sessions, then makes two decisions. The identity match finds the Samsung provider copy using source application and physical-workout evidence. The enrichment match classifies a candidate as an exact session or an overlapping session. Exact sessions require close boundaries and distance. Overlapping sessions require an extremely close start, high coverage of the canonical activity, a trusted Watch source, and substantial ExerciseLog data; Watch provenance alone is insufficient. Source application equality is not required for enrichment.
 
 Provider session boundaries can differ for the same outing. A Strava canonical workout may end before its Galaxy Watch recording while still being fully covered by that recording. In that case, OpenRunCoach clips Samsung heart-rate, speed, cadence, and power samples to the canonical start and end, then recomputes their summaries. Canonical Health Connect distance and duration remain authoritative. Full Samsung session values such as VO₂max, calories, and elevation remain diagnostic context when boundaries materially differ and are not silently applied to the shorter canonical activity. Timestamped route-altitude clipping is planned before overlapping sessions can contribute elevation.
 
-The diagnostic view separates the canonical workout, exact provider copy, and best enrichment candidate. Its expandable candidate list includes the Samsung data-point UID and timestamps, source application, device identity, distance, duration, ExerciseLog presence, and heart-rate, speed, cadence, VO₂max, elevation, and power capabilities. Genuinely ambiguous sensor candidates remain visible and can be selected manually for that run. These metrics remain experimental. Cadence is diagnostic data and is not used by the coaching engine. Raw Samsung samples are not persisted.
+The diagnostic view separates the canonical workout, exact provider copy, and best enrichment candidate. Its expandable candidate list includes the Samsung data-point UID and timestamps, source application, device identity, distance, duration, ExerciseLog presence, and heart-rate, speed, cadence, VO₂max, elevation, and power capabilities. Ambiguous sensor candidates remain visible and can be selected manually for that run. These metrics remain experimental. Cadence is not used by the coaching engine.
 
 The developer diagnostics preserve the Samsung SDK operation, exception class, numeric error code, message, resolution availability, platform detection, exercise permission state, and developer authorization state. Missing exercise permission is reported separately from platform availability. Resolvable platform actions are launched only after the developer selects the resolution button; no external Samsung screen opens automatically.
 
@@ -257,7 +262,13 @@ Samsung support is optional. Health Connect and all normal app features continue
 
 Every stored metric summary preserves its primary provider, confidence, verification state, and optional secondary provider value. Health Connect remains primary for overlapping values such as distance and duration. Exact Samsung sessions can verify shared values within centralized tolerances; material differences are marked as conflicts instead of silently replacing Health Connect data. Overlapping sessions contribute only sufficiently covered clipped sensor series, with confidence based on sample count and time coverage. Low-confidence or ambiguous matches are not used automatically. A saved manual selection must still meet the physical relationship and sensor requirements.
 
-Cadence keeps the Samsung session average and a separate moving average. Raw zero cadence samples remain in the in-memory series, while the moving average excludes zero cadence and samples aligned with effectively zero speed. Raw heart-rate, speed, cadence, and power series are not stored in Room yet. Only summary values and their provenance survive app restarts. Drift, running economy, and technique analysis remain planned work.
+Cadence keeps the Samsung session average and a separate moving average. Raw zero cadence samples remain stored, while the moving average and display line exclude zero cadence and samples aligned with effectively zero speed.
+
+Heart-rate, speed, cadence, and power samples are stored in Room using provider-independent records keyed by run, metric type, timestamp, and source. Each refresh replaces the run's sample set, so repeated refreshes do not duplicate data. Overlapping Samsung sessions are clipped to the canonical Health Connect run window before persistence. Sample provenance and confidence are retained without storing Health Connect or Samsung SDK objects.
+
+Run Detail prepares charts in Android-independent domain code. The pace chart validates raw speed, applies a configurable 10-second rolling speed average, and then converts speed to pace without changing stored samples. Zero, invalid, and missing speed create chart gaps while sustained valid walking speed remains visible. Its average reference comes from canonical distance and duration, and Fastest 30 sec pace uses the best rolling 30-second average speed instead of one instantaneous GPS sample. A dynamic min/km scale keeps faster pace higher and rejects isolated display outliers. Cadence stops also render as gaps. Deterministic downsampling limits normal charts to about 240 points while preserving the overall trend and the first and last samples. Heart-rate and cadence charts appear only when data exists, and the model already supports power samples without showing an empty power chart.
+
+The stored series and chart preparation layer can later support heart-rate drift, aerobic decoupling, cadence and pace drift, walk-break and interval detection, pace-versus-heart-rate analysis, pace-versus-cadence analysis, and technique analysis. Those analyses are not implemented yet.
 
 ## Athlete Performance Profile
 
@@ -312,7 +323,7 @@ Domain
 
 Data
 ├── Health Connect
-├── optional Samsung Health diagnostic enrichment
+├── optional Samsung Health diagnostics and best-effort metric enrichment
 ├── Room
 ├── persistent goals and starting snapshots
 ├── DataStore settings
@@ -362,6 +373,8 @@ The current developer screen is a timeline runner; shared production screens and
 - [x] Health Connect Data Inspector
 - [x] Experimental Samsung Health Data SDK investigation
 - [x] Unified `RunMetrics` model
+- [x] Automatic metric enrichment and Run Detail time-series charts
+- [x] Anthracite and teal application theme
 - [x] Athlete Performance Profile
 - [x] Goal System
 - [x] Structured Workout Model

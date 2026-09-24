@@ -89,6 +89,18 @@ class RunMetricsEnrichmentTest {
   }
 
   @Test
+  fun trustedSamsungSpeedSeriesReplacesLessUsefulHealthConnectSeriesForCharts() {
+    val healthSpeed = listOf(TimedMetricSample(start, 2.4, MetricSource.HEALTH_CONNECT))
+    val result = enricher.enrich(
+      base().copy(series = base().series.copy(speed = healthSpeed)),
+      samsungInspection(SamsungMatchConfidence.HIGH),
+    )
+
+    assertTrue(result.series.speed.size > healthSpeed.size)
+    assertTrue(result.series.speed.all { it.source == MetricSource.SAMSUNG_HEALTH })
+  }
+
+  @Test
   fun overlappingSessionUsesOnlyClippedSensorSamplesAndKeepsCanonicalSessionValues() {
     val inside = (0 until 40).map { index ->
       SamsungExerciseLogSample(

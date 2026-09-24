@@ -1,50 +1,71 @@
 package com.example.openruncoach.theme
 
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.Color
 
-private val DarkColorScheme = darkColorScheme(primary = Purple80, secondary = PurpleGrey80, tertiary = Pink80)
+data class RunChartColors(
+  val pace: Color,
+  val heartRate: Color,
+  val cadence: Color,
+  val power: Color,
+)
 
-private val LightColorScheme =
-  lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40,
+val LocalRunChartColors = staticCompositionLocalOf {
+  RunChartColors(TealAccent, WarmChart, CoolChart, AnthraciteTextSecondary)
+}
 
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    */
-  )
+private val DarkColorScheme = darkColorScheme(
+  primary = TealAccent,
+  onPrimary = TealOnAccent,
+  primaryContainer = Color(0xFF164D45),
+  onPrimaryContainer = Color(0xFFC2FFF5),
+  secondary = CoolChart,
+  onSecondary = Color(0xFF071A32),
+  tertiary = WarmChart,
+  onTertiary = Color(0xFF330805),
+  background = AnthraciteBackground,
+  onBackground = AnthraciteText,
+  surface = AnthraciteSurface,
+  onSurface = AnthraciteText,
+  surfaceVariant = AnthraciteVariant,
+  onSurfaceVariant = AnthraciteTextSecondary,
+  surfaceContainer = AnthraciteSurface,
+  surfaceContainerHigh = AnthraciteElevated,
+  outline = AnthraciteOutline,
+  outlineVariant = AnthraciteOutline,
+)
+
+private val LightColorScheme = lightColorScheme(
+  primary = LightTeal,
+  onPrimary = LightOnTeal,
+  primaryContainer = Color(0xFF9EF2E3),
+  onPrimaryContainer = Color(0xFF00201C),
+  secondary = LightCoolChart,
+  tertiary = LightWarmChart,
+  background = LightSurface,
+  surface = Color.White,
+  surfaceVariant = LightSurfaceVariant,
+  outline = LightOutline,
+)
 
 @Composable
 fun OpenRunCoachTheme(
   darkTheme: Boolean = isSystemInDarkTheme(),
-  // Dynamic color is available on Android 12+
-  dynamicColor: Boolean = true,
   content: @Composable () -> Unit,
 ) {
-  val colorScheme =
-    when {
-      dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-        val context = LocalContext.current
-        if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-      }
-      darkTheme -> DarkColorScheme
-      else -> LightColorScheme
-    }
-
-  MaterialTheme(colorScheme = colorScheme, typography = Typography, content = content)
+  val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+  val chartColors = if (darkTheme) {
+    RunChartColors(TealAccent, WarmChart, CoolChart, AnthraciteTextSecondary)
+  } else {
+    RunChartColors(LightTeal, LightWarmChart, LightCoolChart, LightOutline)
+  }
+  CompositionLocalProvider(LocalRunChartColors provides chartColors) {
+    MaterialTheme(colorScheme = colorScheme, typography = Typography, content = content)
+  }
 }

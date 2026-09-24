@@ -24,17 +24,26 @@ class HealthConnectRunMetricsProvider(
     fun metric(type: RunMetricType) = inspection?.metrics?.firstOrNull { it.metric == type }
     fun seriesSummary(type: RunMetricType) = metric(type)?.summary as? SeriesMetricSummary
     fun total(type: RunMetricType) = (metric(type)?.summary as? TotalMetricSummary)?.value
+    val sourceAppName = run.sourceAppName ?: run.sourcePackageName.takeIf(String::isNotBlank)
+    val sourceDeviceName = listOfNotNull(run.sourceDeviceManufacturer, run.sourceDeviceModel)
+      .joinToString(" ").takeIf(String::isNotBlank)
     fun samples(type: RunMetricType) = metric(type)?.samples.orEmpty().map {
-      TimedMetricSample(it.timestamp, it.value)
+      TimedMetricSample(
+        timestamp = it.timestamp,
+        value = it.value,
+        source = MetricSource.HEALTH_CONNECT,
+        confidence = MetricConfidence.HIGH,
+        sourceAppName = sourceAppName,
+        sourceDeviceName = sourceDeviceName,
+      )
     }
     fun value(value: Double?) = value?.takeIf { it.isFinite() }?.let {
       MetricValue(
         it,
         MetricSource.HEALTH_CONNECT,
         MetricConfidence.HIGH,
-        sourceAppName = run.sourceAppName ?: run.sourcePackageName.takeIf(String::isNotBlank),
-        sourceDeviceName = listOfNotNull(run.sourceDeviceManufacturer, run.sourceDeviceModel)
-          .joinToString(" ").takeIf(String::isNotBlank),
+        sourceAppName = sourceAppName,
+        sourceDeviceName = sourceDeviceName,
       )
     }
 
@@ -58,9 +67,8 @@ class HealthConnectRunMetricsProvider(
         duration,
         MetricSource.HEALTH_CONNECT,
         MetricConfidence.HIGH,
-        sourceAppName = run.sourceAppName ?: run.sourcePackageName.takeIf(String::isNotBlank),
-        sourceDeviceName = listOfNotNull(run.sourceDeviceManufacturer, run.sourceDeviceModel)
-          .joinToString(" ").takeIf(String::isNotBlank),
+        sourceAppName = sourceAppName,
+        sourceDeviceName = sourceDeviceName,
       ),
       distanceMeters = value(distance),
       averagePaceSecondsPerKm = averagePace?.let {

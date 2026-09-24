@@ -30,6 +30,7 @@ import com.example.openruncoach.data.AthletePerformanceProfileRepository
 import com.example.openruncoach.data.RunFeedbackRepository
 import com.example.openruncoach.data.RunRepository
 import com.example.openruncoach.data.RunMetricsRepository
+import com.example.openruncoach.data.RunMetricsAutoRefreshCoordinator
 import com.example.openruncoach.data.RunSettingsRepository
 import com.example.openruncoach.data.local.OpenRunCoachDatabase
 import com.example.openruncoach.domain.CardioEffort
@@ -68,11 +69,13 @@ fun RunDetailScreen(
     val database = OpenRunCoachDatabase.getInstance(context)
     val settingsRepository = RunSettingsRepository(context)
     val profileRepository = AthletePerformanceProfileRepository(database)
+    val metricsRefresher = RunMetricsAutoRefreshCoordinator.create(context, database, profileRepository)
     RunDetailViewModel(
       runId,
       RunRepository(database.runDao(), HealthConnectRepository(context), settingsRepository),
       RunFeedbackRepository(database, athleteProfileRepository = profileRepository),
       RunMetricsRepository(database.runMetricsDao()),
+      metricsRefresher,
     )
   }
   val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -88,7 +91,14 @@ fun RunDetailScreen(
       state.run == null -> Text("Run not found.")
       else -> {
         RunCard(state.run!!)
+        if (state.isUpdatingMetrics) Text("Updating run data…", color = MaterialTheme.colorScheme.onSurfaceVariant)
         state.metrics?.let { RunMetricsCard(it, state.showMetricDetails, viewModel::toggleMetricDetails) }
+        state.metrics?.let { metrics -> state.charts?.let { charts -> RunChartsSection(metrics, charts) } }
+        TextButton(onClick = viewModel::refreshMetrics, enabled = !state.isUpdatingMetrics) { Text("Refresh metrics") }
+        if (state.metricsUpdateError) Text(
+          "Could not update run metrics. Saved data is still available.",
+          color = MaterialTheme.colorScheme.error,
+        )
         if (state.run!!.isCanonical) {
           Button(onClick = { onInspectHealthData(runId) }) { Text("Inspect Health Data") }
         }

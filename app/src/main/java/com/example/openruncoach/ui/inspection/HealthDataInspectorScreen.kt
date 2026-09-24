@@ -27,10 +27,7 @@ import androidx.health.connect.client.contracts.ExerciseRouteRequestContract
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.openruncoach.data.HealthConnectRepository
-import com.example.openruncoach.data.AthletePerformanceProfileRepository
 import com.example.openruncoach.data.RunRepository
-import com.example.openruncoach.data.RunMetricsRefreshService
-import com.example.openruncoach.data.RunMetricsRepository
 import com.example.openruncoach.data.RunSettingsRepository
 import com.example.openruncoach.data.healthconnect.HealthConnectRunMetricsProvider
 import com.example.openruncoach.data.healthconnect.inspection.HealthConnectDataInspector
@@ -96,8 +93,6 @@ fun HealthDataInspectorScreen(runId: String, onBack: () -> Unit, modifier: Modif
     val settings = RunSettingsRepository(context)
     val samsungDataSource = SamsungHealthDataSource(context)
     val samsungPermissionManager = SamsungHealthPermissionManager(samsungDataSource)
-    val metricsRepository = RunMetricsRepository(database.runMetricsDao())
-    val profileRepository = AthletePerformanceProfileRepository(database)
     HealthDataInspectorViewModel(
       runId,
       RunRepository(database.runDao(), HealthConnectRepository(context), settings),
@@ -105,12 +100,8 @@ fun HealthDataInspectorScreen(runId: String, onBack: () -> Unit, modifier: Modif
       SamsungHealthExerciseInspector(samsungDataSource, samsungPermissionManager),
       samsungPermissionManager,
       SamsungMatchSelectionRepository(context),
-      RunMetricsRefreshService(
-        HealthConnectRunMetricsProvider(),
-        SamsungHealthRunMetricsEnricher(),
-        metricsRepository,
-        profileRepository,
-      ),
+      HealthConnectRunMetricsProvider(),
+      SamsungHealthRunMetricsEnricher(),
     )
   }
   val state by viewModel.uiState.collectAsStateWithLifecycle()

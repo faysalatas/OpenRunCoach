@@ -23,14 +23,20 @@ data class MetricValue<T>(
 data class TimedMetricSample<T>(
   val timestamp: Instant,
   val value: T,
+  val source: MetricSource? = null,
+  val confidence: MetricConfidence? = null,
+  val sourceAppName: String? = null,
+  val sourceDeviceName: String? = null,
 )
 
-data class RunMetricSeries(
+data class RunTimeSeries(
   val heartRate: List<TimedMetricSample<Double>> = emptyList(),
   val speed: List<TimedMetricSample<Double>> = emptyList(),
   val cadence: List<TimedMetricSample<Double>> = emptyList(),
   val power: List<TimedMetricSample<Double>> = emptyList(),
 )
+
+typealias RunMetricSeries = RunTimeSeries
 
 data class RunMetrics(
   val runId: String,
@@ -61,9 +67,14 @@ data class RunMetrics(
   val recordingDeviceManufacturer: String? = null,
   val recordingDeviceModel: String? = null,
   val recordingDeviceName: String? = null,
-  val series: RunMetricSeries = RunMetricSeries(),
+  val series: RunTimeSeries = RunTimeSeries(),
   val generatedAt: Instant,
+  val dataVersion: Int = CURRENT_RUN_METRICS_DATA_VERSION,
 )
+
+const val CURRENT_RUN_METRICS_DATA_VERSION = 3
+
+enum class RunSampleMetricType { HEART_RATE, SPEED, CADENCE, POWER }
 
 enum class RunMetricKey {
   DURATION,
