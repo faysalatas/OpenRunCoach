@@ -334,7 +334,7 @@ class HealthConnectDataInspector(
       !sample.timestamp.isBefore(target.startTime) && !sample.timestamp.isAfter(target.endTime)
     }
     val result = summarize(clippedSamples) ?: return@safeMetric notAvailable(metric, records.alternates)
-    availableMetric(metric, records, result, extraNotes(result))
+    availableMetric(metric, records, result, extraNotes(result), clippedSamples)
   }
 
   private suspend fun safeMetric(
@@ -415,6 +415,7 @@ class HealthConnectDataInspector(
     records: SourceRecords<T>,
     summary: com.example.openruncoach.domain.inspection.MetricSummary,
     notes: List<String> = emptyList(),
+    samples: List<TimedNumericSample> = emptyList(),
   ) = MetricInspection(
     metric = metric,
     availability = MetricAvailability.AVAILABLE,
@@ -425,6 +426,7 @@ class HealthConnectDataInspector(
     notes = records.notes + notes,
     recordIds = records.selected.map { it.metadata.id },
     alternateSources = records.alternates,
+    samples = samples,
   )
 
   private fun <T : Record> alternateSources(records: List<T>, excludedPackage: String): List<AlternateSourceInspection> =

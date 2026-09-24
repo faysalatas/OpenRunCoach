@@ -95,6 +95,7 @@ data class MetricInspection(
   val notes: List<String> = emptyList(),
   val recordIds: List<String> = emptyList(),
   val alternateSources: List<AlternateSourceInspection> = emptyList(),
+  val samples: List<TimedNumericSample> = emptyList(),
 )
 
 data class RunDataInspection(

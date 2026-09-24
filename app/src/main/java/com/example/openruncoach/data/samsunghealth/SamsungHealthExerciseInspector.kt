@@ -168,6 +168,7 @@ class SamsungHealthExerciseInspector(
       speedLogSummary = summarizeExerciseLogMetric(logs) { it.speedMetersPerSecond },
       powerLogSummary = summarizeExerciseLogMetric(logs) { it.powerWatts },
       countLogSummary = summarizeExerciseLogMetric(logs) { it.count?.toDouble() },
+      exerciseLogSamples = logs.orEmpty(),
     )
   }
 

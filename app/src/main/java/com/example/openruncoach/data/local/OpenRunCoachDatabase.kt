@@ -15,14 +15,17 @@ import androidx.sqlite.execSQL
     PlannedWorkoutEntity::class,
     PreRunCheckInEntity::class,
     WorkoutAdjustmentEntity::class,
+    RunMetricsEntity::class,
+    RunMetricValueEntity::class,
   ],
-  version = 6,
+  version = 7,
   exportSchema = true,
 )
 abstract class OpenRunCoachDatabase : RoomDatabase() {
   abstract fun runDao(): RunDao
   abstract fun runFeedbackDao(): RunFeedbackDao
   abstract fun coachingWorkflowDao(): CoachingWorkflowDao
+  abstract fun runMetricsDao(): RunMetricsDao
 
   companion object {
     @Volatile private var instance: OpenRunCoachDatabase? = null
@@ -80,6 +83,19 @@ abstract class OpenRunCoachDatabase : RoomDatabase() {
       }
     }
 
+    val MIGRATION_6_7 = object : Migration(6, 7) {
+      override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL(
+          """CREATE TABLE IF NOT EXISTS `run_metrics` (`runId` TEXT NOT NULL, `startTimeEpochMillis` INTEGER NOT NULL, `endTimeEpochMillis` INTEGER NOT NULL, `generatedAtEpochMillis` INTEGER NOT NULL, `recordingSource` TEXT, `recordingDeviceManufacturer` TEXT, `recordingDeviceModel` TEXT, `recordingDeviceName` TEXT, PRIMARY KEY(`runId`), FOREIGN KEY(`runId`) REFERENCES `runs`(`healthConnectRecordId`) ON UPDATE NO ACTION ON DELETE CASCADE)"""
+        )
+        connection.execSQL("CREATE INDEX IF NOT EXISTS `index_run_metrics_runId` ON `run_metrics` (`runId`)")
+        connection.execSQL(
+          """CREATE TABLE IF NOT EXISTS `run_metric_values` (`runId` TEXT NOT NULL, `metric` TEXT NOT NULL, `value` REAL NOT NULL, `source` TEXT NOT NULL, `confidence` TEXT NOT NULL, `verification` TEXT NOT NULL, `secondaryValue` REAL, `secondarySource` TEXT, `verificationReason` TEXT, PRIMARY KEY(`runId`, `metric`), FOREIGN KEY(`runId`) REFERENCES `run_metrics`(`runId`) ON UPDATE NO ACTION ON DELETE CASCADE)"""
+        )
+        connection.execSQL("CREATE INDEX IF NOT EXISTS `index_run_metric_values_runId` ON `run_metric_values` (`runId`)")
+      }
+    }
+
     fun getInstance(context: Context): OpenRunCoachDatabase =
       instance ?: synchronized(this) {
         instance
@@ -93,6 +109,7 @@ abstract class OpenRunCoachDatabase : RoomDatabase() {
               MIGRATION_3_4,
               MIGRATION_4_5,
               MIGRATION_5_6,
+              MIGRATION_6_7,
             ).build().also { instance = it }
       }
   }

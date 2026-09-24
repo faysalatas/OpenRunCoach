@@ -459,6 +459,7 @@ data class SamsungExerciseSessionInspection(
   val speedLogSummary: ExerciseLogMetricSummary?,
   val powerLogSummary: ExerciseLogMetricSummary?,
   val countLogSummary: ExerciseLogMetricSummary?,
+  val exerciseLogSamples: List<SamsungExerciseLogSample> = emptyList(),
 )
 
 enum class ProviderMetric { DISTANCE, DURATION, AVERAGE_HEART_RATE, MAX_HEART_RATE, SPEED, VO2_MAX, CADENCE, POWER, ELEVATION }

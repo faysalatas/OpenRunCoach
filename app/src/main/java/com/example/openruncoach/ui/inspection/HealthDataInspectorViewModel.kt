@@ -3,6 +3,7 @@ package com.example.openruncoach.ui.inspection
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.openruncoach.data.RunRepository
+import com.example.openruncoach.data.RunMetricsRefreshService
 import com.example.openruncoach.data.healthconnect.inspection.HealthConnectDataInspector
 import com.example.openruncoach.data.healthconnect.inspection.HealthConnectInspectionTarget
 import com.example.openruncoach.data.samsunghealth.SamsungHealthAvailabilityState
@@ -20,6 +21,7 @@ import com.example.openruncoach.domain.inspection.RunDataInspection
 import com.example.openruncoach.domain.inspection.RunMetricType
 import com.example.openruncoach.domain.samsunghealth.SamsungHealthInspection
 import com.example.openruncoach.domain.samsunghealth.SamsungWorkoutTarget
+import com.example.openruncoach.domain.metrics.RunMetrics
 import android.app.Activity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -36,6 +38,7 @@ data class HealthDataInspectorUiState(
   val isInspectingSamsungHealth: Boolean = false,
   val samsungHealthAvailability: SamsungHealthAvailabilityState? = null,
   val samsungHealthInspection: SamsungHealthInspection? = null,
+  val unifiedMetrics: RunMetrics? = null,
   val errorMessage: String? = null,
 )
 
@@ -46,6 +49,7 @@ class HealthDataInspectorViewModel(
   private val samsungInspector: SamsungHealthExerciseInspector,
   private val samsungPermissionManager: SamsungHealthPermissionManager,
   private val samsungMatchSelectionRepository: SamsungMatchSelectionRepository,
+  private val runMetricsRefreshService: RunMetricsRefreshService,
 ) : ViewModel() {
   private val _uiState = MutableStateFlow(HealthDataInspectorUiState())
   val uiState = _uiState.asStateFlow()
@@ -139,11 +143,13 @@ class HealthDataInspectorViewModel(
       healthConnect,
       selectedCandidateId,
     )
+    val unifiedMetrics = runMetricsRefreshService.refresh(run, healthConnect, result.inspection)
     _uiState.update {
       it.copy(
         isInspectingSamsungHealth = false,
         samsungHealthAvailability = result.availability,
         samsungHealthInspection = result.inspection,
+        unifiedMetrics = unifiedMetrics,
       )
     }
   }

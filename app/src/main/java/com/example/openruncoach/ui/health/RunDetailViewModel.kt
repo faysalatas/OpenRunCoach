@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.openruncoach.data.RunFeedbackRepository
 import com.example.openruncoach.data.RunRepository
+import com.example.openruncoach.data.RunMetricsRepository
+import com.example.openruncoach.data.healthconnect.HealthConnectRunMetricsProvider
 import com.example.openruncoach.domain.CardioEffort
 import com.example.openruncoach.domain.CompletionStatus
 import com.example.openruncoach.domain.MuscleFatigue
@@ -14,6 +16,7 @@ import com.example.openruncoach.domain.RunFeedbackDraft
 import com.example.openruncoach.domain.RunSummary
 import com.example.openruncoach.domain.coaching.CoachingDecision
 import com.example.openruncoach.domain.coaching.CoachingEngine
+import com.example.openruncoach.domain.metrics.RunMetrics
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -46,13 +49,17 @@ data class RunDetailUiState(
   val coachingDecision: CoachingDecision? = null,
   val isEditingFeedback: Boolean = false,
   val showSourceDetails: Boolean = false,
+  val metrics: RunMetrics? = null,
+  val showMetricDetails: Boolean = false,
 )
 
 class RunDetailViewModel(
   private val runId: String,
   runRepository: RunRepository,
   private val feedbackRepository: RunFeedbackRepository,
+  runMetricsRepository: RunMetricsRepository,
   private val coachingEngine: CoachingEngine = CoachingEngine(),
+  private val healthConnectMetricsProvider: HealthConnectRunMetricsProvider = HealthConnectRunMetricsProvider(),
 ) : ViewModel() {
   private val _uiState = MutableStateFlow(RunDetailUiState())
   val uiState = _uiState.asStateFlow()
@@ -63,7 +70,20 @@ class RunDetailViewModel(
     viewModelScope.launch {
       runRepository.observeRun(runId)
         .catch { _uiState.update { it.copy(error = "Could not load run.", runLoaded = true) } }
-        .collect { run -> _uiState.update { it.copy(run = run, runLoaded = true).withDerivedState() } }
+        .collect { run ->
+          _uiState.update { state ->
+            state.copy(
+              run = run,
+              runLoaded = true,
+              metrics = state.metrics ?: run?.let { healthConnectMetricsProvider.build(it, null) },
+            ).withDerivedState()
+          }
+        }
+    }
+    viewModelScope.launch {
+      runMetricsRepository.observeRunMetrics(runId)
+        .catch { _uiState.update { it.copy(error = "Could not load run metrics.") } }
+        .collect { metrics -> if (metrics != null) _uiState.update { it.copy(metrics = metrics) } }
     }
     viewModelScope.launch {
       runRepository.allRuns.collect { runs ->
@@ -121,6 +141,10 @@ class RunDetailViewModel(
 
   fun toggleSourceDetails() {
     _uiState.update { it.copy(showSourceDetails = !it.showSourceDetails) }
+  }
+
+  fun toggleMetricDetails() {
+    _uiState.update { it.copy(showMetricDetails = !it.showMetricDetails) }
   }
 
   fun saveFeedback() {

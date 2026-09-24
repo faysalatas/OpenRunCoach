@@ -8,6 +8,9 @@ import com.example.openruncoach.domain.SourceDeviceType
 import com.example.openruncoach.domain.WorkoutSource
 import com.example.openruncoach.domain.findPossibleDuplicates
 import com.example.openruncoach.domain.selectCanonicalRuns
+import com.example.openruncoach.data.healthconnect.HealthConnectRunMetricsProvider
+import com.example.openruncoach.domain.metrics.MetricSource
+import com.example.openruncoach.domain.metrics.metricValues
 import java.time.Clock
 import java.time.Instant
 import kotlinx.coroutines.flow.Flow
@@ -20,6 +23,8 @@ class RunRepository(
   private val healthConnectRepository: HealthConnectRepository,
   private val settingsRepository: RunSettingsRepository,
   private val clock: Clock = Clock.systemUTC(),
+  private val runMetricsRepository: RunMetricsRepository? = null,
+  private val healthConnectMetricsProvider: HealthConnectRunMetricsProvider = HealthConnectRunMetricsProvider(clock),
 ) {
   val recentRuns: Flow<List<RunSummary>> =
     runDao.observeRecentRuns().map { runs -> runs.map(RunEntity::toRunSummary) }
@@ -89,6 +94,16 @@ class RunRepository(
         canonicalSelectionReason = selection.reason,
       )
     })
+    val metricsRepository = runMetricsRepository ?: return
+    runDao.getAllRuns().filter(RunEntity::isCanonical).forEach { entity ->
+      val existing = metricsRepository.getRunMetrics(entity.healthConnectRecordId)
+      val containsSamsungEnrichment = existing?.metricValues()?.values?.any {
+        it.source == MetricSource.SAMSUNG_HEALTH || it.secondarySource == MetricSource.SAMSUNG_HEALTH
+      } == true
+      if (!containsSamsungEnrichment) {
+        metricsRepository.save(healthConnectMetricsProvider.build(entity.toRunSummary(), null))
+      }
+    }
   }
 }
 

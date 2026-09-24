@@ -218,7 +218,7 @@ The Health Connect Data Inspector can query API support and provider availabilit
 
 ### Health Connect Data Inspector
 
-Run Detail provides an **Inspect Health Data** action for canonical runs. The inspector reads the selected session directly from Health Connect without persisting new metrics or raw samples. It reports record and sample counts, summaries, permissions, source packages, and unavailable or failed reads independently.
+Run Detail provides an **Inspect Health Data** action for canonical runs. The inspector reads the selected session directly from Health Connect, reports record and sample counts, summaries, permissions, source packages, and unavailable or failed reads independently, and refreshes the persisted unified metric summary. Raw samples are not persisted.
 
 The Android Health Connect API supports record types such as cadence, VO₂ max, elevation, power, calories, steps, and exercise routes. API support does not mean a particular watch or provider actually records or publishes that metric. The inspector exists to show the difference on a real device. It source-filters results to the canonical workout provider and labels data found only from another provider instead of combining it silently.
 
@@ -235,6 +235,14 @@ The diagnostic view compares shared Health Connect and Samsung Health metrics an
 The developer diagnostics preserve the Samsung SDK operation, exception class, numeric error code, message, resolution availability, platform detection, exercise permission state, and developer authorization state. Missing exercise permission is reported separately from platform availability. Resolvable platform actions are launched only after the developer selects the resolution button; no external Samsung screen opens automatically.
 
 Samsung support is optional. Health Connect and all normal app features continue to work when Samsung Health is absent, permission is denied, the platform is unsupported, or Samsung access is unavailable. The Samsung Health Data SDK requires Android 10 or newer, so the enrichment is unavailable on older supported OpenRunCoach devices.
+
+## Unified run metrics
+
+`RunMetrics` is the provider-independent data foundation for workout metrics. Health Connect always owns the canonical run ID, session start and end, and default metric values. An optional trusted Samsung Health match can add metrics that Health Connect did not expose, including the cadence and elevation values confirmed during development.
+
+Every stored metric summary preserves its primary provider, confidence, verification state, and optional secondary provider value. Health Connect remains primary for overlapping values such as distance, duration, heart rate, speed, and VO₂ max. Samsung values verify those metrics within centralized tolerances; material differences are marked as conflicts instead of silently replacing Health Connect data. High-confidence Samsung matches are enriched automatically, medium matches are retained with medium confidence, and low or ambiguous matches are not used automatically. A saved manual selection remains trusted for that run.
+
+Cadence keeps the Samsung session average and a separate moving average. Raw zero cadence samples remain in the in-memory series, while the moving average excludes zero cadence and samples aligned with effectively zero speed. Raw heart-rate, speed, cadence, and power series are not stored in Room yet. Only summary values and their provenance survive app restarts. Drift, running economy, and technique analysis remain planned work.
 
 ## Data sources and duplicates
 
@@ -268,6 +276,7 @@ UI
 
 Domain
 ├── canonical run selection and duplicate diagnostics
+├── provider-independent RunMetrics and verification rules
 ├── coaching rules
 ├── workout lifecycle and readiness evaluation
 ├── next-workout generation
@@ -284,6 +293,8 @@ Data
 Architecture rules:
 
 - Health Connect record classes stay in the Health Connect data layer.
+- Samsung SDK classes stay in the Samsung data adapter.
+- Provider adapters convert health records into `RunMetrics` before general domain or UI use.
 - Room entities are mapped to domain models before reaching Compose.
 - Repositories own data access.
 - Business and transition logic stays outside composables.
@@ -321,7 +332,7 @@ The current developer screen is a timeline runner; shared production screens and
 - [x] Workout lifecycle and state machine
 - [x] Health Connect Data Inspector
 - [x] Experimental Samsung Health Data SDK investigation
-- [ ] Unified `RunMetrics` model
+- [x] Unified `RunMetrics` model
 - [ ] Athlete Performance Profile
 - [ ] Goal system
 - [ ] Structured workout model

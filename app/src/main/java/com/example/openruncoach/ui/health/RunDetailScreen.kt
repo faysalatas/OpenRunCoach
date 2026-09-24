@@ -28,6 +28,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.openruncoach.data.HealthConnectRepository
 import com.example.openruncoach.data.RunFeedbackRepository
 import com.example.openruncoach.data.RunRepository
+import com.example.openruncoach.data.RunMetricsRepository
 import com.example.openruncoach.data.RunSettingsRepository
 import com.example.openruncoach.data.local.OpenRunCoachDatabase
 import com.example.openruncoach.domain.CardioEffort
@@ -38,6 +39,11 @@ import com.example.openruncoach.domain.PossibleDuplicate
 import com.example.openruncoach.domain.RunFeedback
 import com.example.openruncoach.domain.RunSummary
 import com.example.openruncoach.domain.displaySourceName
+import com.example.openruncoach.domain.metrics.MetricConfidence
+import com.example.openruncoach.domain.metrics.MetricSource
+import com.example.openruncoach.domain.metrics.MetricValue
+import com.example.openruncoach.domain.metrics.MetricVerification
+import com.example.openruncoach.domain.metrics.RunMetrics
 import com.example.openruncoach.ui.common.coachingActionLabel
 import com.example.openruncoach.ui.common.formatDistance
 import com.example.openruncoach.ui.common.formatDuration
@@ -64,6 +70,7 @@ fun RunDetailScreen(
       runId,
       RunRepository(database.runDao(), HealthConnectRepository(context), settingsRepository),
       RunFeedbackRepository(database),
+      RunMetricsRepository(database.runMetricsDao()),
     )
   }
   val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -79,6 +86,7 @@ fun RunDetailScreen(
       state.run == null -> Text("Run not found.")
       else -> {
         RunCard(state.run!!)
+        state.metrics?.let { RunMetricsCard(it, state.showMetricDetails, viewModel::toggleMetricDetails) }
         if (state.run!!.isCanonical) {
           Button(onClick = { onInspectHealthData(runId) }) { Text("Inspect Health Data") }
         }
@@ -92,14 +100,68 @@ fun RunDetailScreen(
 }
 
 @Composable
+private fun RunMetricsCard(metrics: RunMetrics, showDetails: Boolean, onToggleDetails: () -> Unit) {
+  DetailCard("Run Metrics") {
+    val heartRate = listOfNotNull(
+      metrics.averageHeartRate?.value?.let { "${formatNumber(it)} bpm avg" },
+      metrics.maxHeartRate?.value?.let { "${formatNumber(it)} max" },
+    ).joinToString(" · ")
+    if (heartRate.isNotBlank()) LabelValue("Heart rate", heartRate)
+    metrics.averagePaceSecondsPerKm?.let { LabelValue("Pace", formatPace(it.value)) }
+    val cadence = listOfNotNull(
+      metrics.movingAverageCadence?.value?.let { "${formatNumber(it)} spm moving avg" },
+      metrics.averageCadence?.value?.let { "${formatNumber(it)} spm session avg" },
+    ).joinToString(" · ")
+    if (cadence.isNotBlank()) LabelValue("Cadence", cadence)
+    metrics.vo2Max?.let { LabelValue("VO₂ max", formatNumber(it.value)) }
+    metrics.elevationGainMeters?.let { LabelValue("Elevation", "+${formatNumber(it.value)} m") }
+    TextButton(onClick = onToggleDetails) { Text(if (showDetails) "Hide metric details" else "Metric details") }
+    if (showDetails) MetricDetails(metrics)
+  }
+}
+
+@Composable
+private fun MetricDetails(metrics: RunMetrics) {
+  val device = listOfNotNull(metrics.recordingDeviceManufacturer, metrics.recordingDeviceModel, metrics.recordingDeviceName)
+    .distinct().joinToString(" ")
+  listOf(
+    Triple("Distance", metrics.distanceMeters, "m"),
+    Triple("Average heart rate", metrics.averageHeartRate, "bpm"),
+    Triple("Maximum heart rate", metrics.maxHeartRate, "bpm"),
+    Triple("Average speed", metrics.averageSpeedMetersPerSecond, "m/s"),
+    Triple("Cadence", metrics.averageCadence, "spm"),
+    Triple("Moving cadence", metrics.movingAverageCadence, "spm"),
+    Triple("VO₂ max", metrics.vo2Max, "ml/kg/min"),
+    Triple("Elevation gain", metrics.elevationGainMeters, "m"),
+  ).forEach { (label, metric, unit) ->
+    if (metric != null) {
+      Text(label, style = MaterialTheme.typography.titleSmall)
+      LabelValue("Value", "${formatNumber(metric.value)} $unit")
+      MetricProvenance(metric)
+      if (metric.source == MetricSource.SAMSUNG_HEALTH && device.isNotBlank()) LabelValue("Device", device)
+    }
+  }
+}
+
+@Composable
+private fun MetricProvenance(metric: MetricValue<out Number>) {
+  LabelValue("Source", metric.source.displayName())
+  LabelValue("Confidence", metric.confidence.displayName())
+  when (metric.verification) {
+    MetricVerification.VERIFIED -> LabelValue("Verification", "Verified against ${metric.secondarySource?.displayName() ?: "another provider"}")
+    MetricVerification.CLOSE_MATCH -> LabelValue("Verification", "Close match with ${metric.secondarySource?.displayName() ?: "another provider"}")
+    MetricVerification.CONFLICT -> LabelValue("Verification", "Provider conflict")
+    MetricVerification.UNVERIFIED -> Unit
+  }
+  metric.verificationReason?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+}
+
+@Composable
 private fun RunCard(run: RunSummary) {
   DetailCard("Run") {
     Text(formatRunDate(run.startTime), style = MaterialTheme.typography.titleMedium)
     LabelValue("Distance", formatDistance(run.distanceMeters))
     LabelValue("Duration", formatDuration(run.durationSeconds))
-    LabelValue("Average pace", formatPace(run.averagePaceSecondsPerKm))
-    LabelValue("Average HR", run.averageHeartRate?.let { "%.0f bpm".format(it) } ?: "—")
-    LabelValue("Max HR", run.maxHeartRate?.let { "$it bpm" } ?: "—")
   }
 }
 
@@ -272,3 +334,13 @@ private fun PainLevel.displayName() = when (this) {
 }
 private fun MuscleFatigue.displayName() = name.lowercase().replaceFirstChar(Char::titlecase)
 private fun CompletionStatus.displayName() = name.lowercase().replaceFirstChar(Char::titlecase)
+
+private fun MetricSource.displayName() = when (this) {
+  MetricSource.HEALTH_CONNECT -> "Health Connect"
+  MetricSource.SAMSUNG_HEALTH -> "Samsung Health"
+  MetricSource.DERIVED -> "Derived"
+}
+
+private fun MetricConfidence.displayName() = name.lowercase().replaceFirstChar(Char::titlecase)
+
+private fun formatNumber(value: Double): String = "%.1f".format(Locale.getDefault(), value)

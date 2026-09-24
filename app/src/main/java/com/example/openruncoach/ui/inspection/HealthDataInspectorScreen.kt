@@ -28,7 +28,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.openruncoach.data.HealthConnectRepository
 import com.example.openruncoach.data.RunRepository
+import com.example.openruncoach.data.RunMetricsRefreshService
+import com.example.openruncoach.data.RunMetricsRepository
 import com.example.openruncoach.data.RunSettingsRepository
+import com.example.openruncoach.data.healthconnect.HealthConnectRunMetricsProvider
 import com.example.openruncoach.data.healthconnect.inspection.HealthConnectDataInspector
 import com.example.openruncoach.data.samsunghealth.SamsungHealthAvailability
 import com.example.openruncoach.data.samsunghealth.SamsungHealthDataSource
@@ -38,6 +41,7 @@ import com.example.openruncoach.data.samsunghealth.SamsungHealthDetection
 import com.example.openruncoach.data.samsunghealth.SamsungHealthExerciseInspector
 import com.example.openruncoach.data.samsunghealth.SamsungHealthPermissionManager
 import com.example.openruncoach.data.samsunghealth.SamsungMatchSelectionRepository
+import com.example.openruncoach.data.samsunghealth.SamsungHealthRunMetricsEnricher
 import com.example.openruncoach.data.local.OpenRunCoachDatabase
 import com.example.openruncoach.domain.RunSummary
 import com.example.openruncoach.domain.displaySourceName
@@ -66,6 +70,8 @@ import com.example.openruncoach.domain.samsunghealth.SamsungMatchReason
 import com.example.openruncoach.domain.samsunghealth.SamsungMatchReasonKind
 import com.example.openruncoach.domain.samsunghealth.SamsungSourceDeviceType
 import com.example.openruncoach.domain.samsunghealth.SamsungWorkoutMatchStatus
+import com.example.openruncoach.domain.metrics.MetricSource
+import com.example.openruncoach.domain.metrics.RunMetrics
 import com.example.openruncoach.ui.common.formatDistance
 import com.example.openruncoach.ui.common.formatDuration
 import com.example.openruncoach.ui.common.formatRunDate
@@ -88,6 +94,7 @@ fun HealthDataInspectorScreen(runId: String, onBack: () -> Unit, modifier: Modif
     val settings = RunSettingsRepository(context)
     val samsungDataSource = SamsungHealthDataSource(context)
     val samsungPermissionManager = SamsungHealthPermissionManager(samsungDataSource)
+    val metricsRepository = RunMetricsRepository(database.runMetricsDao())
     HealthDataInspectorViewModel(
       runId,
       RunRepository(database.runDao(), HealthConnectRepository(context), settings),
@@ -95,6 +102,11 @@ fun HealthDataInspectorScreen(runId: String, onBack: () -> Unit, modifier: Modif
       SamsungHealthExerciseInspector(samsungDataSource, samsungPermissionManager),
       samsungPermissionManager,
       SamsungMatchSelectionRepository(context),
+      RunMetricsRefreshService(
+        HealthConnectRunMetricsProvider(),
+        SamsungHealthRunMetricsEnricher(),
+        metricsRepository,
+      ),
     )
   }
   val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -134,6 +146,7 @@ fun HealthDataInspectorScreen(runId: String, onBack: () -> Unit, modifier: Modif
             onResolveIssue = { activity?.let(viewModel::resolveSamsungHealthIssue) },
             onSelectCandidate = viewModel::selectSamsungWorkout,
           )
+          state.unifiedMetrics?.let { UnifiedMetricsResult(it) }
           Text("Health Connect details", style = MaterialTheme.typography.titleLarge)
           inspection.metrics.forEach { metric ->
             MetricSection(
@@ -151,6 +164,22 @@ fun HealthDataInspectorScreen(runId: String, onBack: () -> Unit, modifier: Modif
       }
     }
     state.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+  }
+}
+
+@Composable
+private fun UnifiedMetricsResult(metrics: RunMetrics) {
+  HorizontalDivider()
+  Text("Unified RunMetrics Result", style = MaterialTheme.typography.titleLarge)
+  listOfNotNull(
+    "Distance" to metrics.distanceMeters?.source,
+    "Heart Rate" to metrics.averageHeartRate?.source,
+    "Speed" to metrics.averageSpeedMetersPerSecond?.source,
+    "Cadence" to (metrics.movingAverageCadence ?: metrics.averageCadence)?.source,
+    "Elevation" to metrics.elevationGainMeters?.source,
+    "VO₂ max" to metrics.vo2Max?.source,
+  ).forEach { (label, source) ->
+    if (source != null) DiagnosticValue(label, source.displayName())
   }
 }
 
@@ -557,6 +586,12 @@ private fun SamsungMatchConfidence.displayName() = name.lowercase()
 
 private fun SamsungSourceDeviceType.displayName() = name.lowercase()
   .replaceFirstChar { it.titlecase() }
+
+private fun MetricSource.displayName() = when (this) {
+  MetricSource.HEALTH_CONNECT -> "Health Connect"
+  MetricSource.SAMSUNG_HEALTH -> "Samsung Health"
+  MetricSource.DERIVED -> "Derived"
+}
 
 private fun metricValue(value: Double?, unit: String): String =
   value?.let { "${formatNumber(it)} $unit" } ?: "Not available"

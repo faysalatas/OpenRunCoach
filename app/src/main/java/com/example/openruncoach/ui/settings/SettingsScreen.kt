@@ -27,6 +27,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.openruncoach.data.HealthConnectRepository
 import com.example.openruncoach.data.RunRepository
+import com.example.openruncoach.data.RunMetricsRepository
 import com.example.openruncoach.data.RunSettingsRepository
 import com.example.openruncoach.data.local.OpenRunCoachDatabase
 import com.example.openruncoach.ui.components.ItemSpacing
@@ -41,7 +42,12 @@ fun SettingsScreen(onOpenSimulator: () -> Unit, modifier: Modifier = Modifier) {
     val settingsRepository = RunSettingsRepository(context)
     SettingsViewModel(
       healthConnectRepository,
-      RunRepository(OpenRunCoachDatabase.getInstance(context).runDao(), healthConnectRepository, settingsRepository),
+      RunRepository(
+        OpenRunCoachDatabase.getInstance(context).runDao(),
+        healthConnectRepository,
+        settingsRepository,
+        runMetricsRepository = RunMetricsRepository(OpenRunCoachDatabase.getInstance(context).runMetricsDao()),
+      ),
       settingsRepository,
     )
   }
