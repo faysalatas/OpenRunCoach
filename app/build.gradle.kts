@@ -2,6 +2,7 @@ plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.compose.compiler)
   alias(libs.plugins.ksp)
+  id("kotlin-parcelize")
 }
 
 android {
@@ -56,6 +57,8 @@ dependencies {
   implementation(libs.androidx.room.runtime)
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.datastore.preferences)
+  implementation(files("libs/samsung-health-data-api.aar"))
+  implementation("com.google.code.gson:gson:2.13.2")
   ksp(libs.androidx.room.compiler)
 
   // Arch Components

@@ -38,6 +38,7 @@ The long-term goal is a transparent, explainable running coach inspired by feedb
 - Basic next-workout generation in the domain workflow
 - Deterministic developer coaching simulator with built-in scenarios
 - Health Connect Data Inspector for canonical runs, with per-metric permission and source diagnostics
+- Experimental Samsung Health Data SDK comparison for canonical runs, including ExerciseLog cadence diagnostics
 
 Automatic matching between a planned workout and an imported Health Connect run is not implemented yet. Because of that, the production workflow does not automatically create the next real workout after an import; the domain simulator exercises that complete loop today.
 
@@ -223,6 +224,18 @@ The Android Health Connect API supports record types such as cadence, VO₂ max,
 
 Route inspection requires an explicit action and consent where Health Connect requires it. Raw route points and series samples are not stored in Room.
 
+### Experimental Samsung Health enrichment
+
+Health Connect remains the primary, provider-independent workout source. The optional Samsung Health Data SDK integration enriches the existing inspector for Samsung users; it does not replace imported Health Connect values or affect canonical selection, coaching, or workout generation.
+
+For the selected canonical run, the inspector requests read access only to Samsung's `DataTypes.EXERCISE`. It searches nearby Samsung running and track-running sessions, then compares source application, source device, start time, duration, distance, and shared metrics. A watch source is preferred only when the canonical Health Connect run is itself a watch-recorded Samsung Health run. The matcher reports its confidence and evidence. Genuinely ambiguous candidates remain visible with full diagnostics and can be selected manually for that run; this choice affects only the Samsung diagnostic view.
+
+The diagnostic view compares shared Health Connect and Samsung Health metrics and inspects optional `ExerciseSession` fields. Candidate diagnostics include the Samsung data-point UID and timestamps, source application ID, resolved device type and identity, match score and reasons, and session-level heart-rate, speed, VO₂ max, and cadence previews. It also summarizes `ExerciseLog` heart-rate, speed, cadence, power, and count availability. These metrics remain experimental. Cadence is diagnostic data and is not used by the coaching engine. Raw Samsung samples are not persisted.
+
+The developer diagnostics preserve the Samsung SDK operation, exception class, numeric error code, message, resolution availability, platform detection, exercise permission state, and developer authorization state. Missing exercise permission is reported separately from platform availability. Resolvable platform actions are launched only after the developer selects the resolution button; no external Samsung screen opens automatically.
+
+Samsung support is optional. Health Connect and all normal app features continue to work when Samsung Health is absent, permission is denied, the platform is unsupported, or Samsung access is unavailable. The Samsung Health Data SDK requires Android 10 or newer, so the enrichment is unavailable on older supported OpenRunCoach devices.
+
 ## Data sources and duplicates
 
 Multiple applications can write copies of the same workout into Health Connect. OpenRunCoach therefore:
@@ -262,6 +275,7 @@ Domain
 
 Data
 ├── Health Connect
+├── optional Samsung Health diagnostic enrichment
 ├── Room
 ├── DataStore settings
 └── repositories
@@ -306,6 +320,7 @@ The current developer screen is a timeline runner; shared production screens and
 
 - [x] Workout lifecycle and state machine
 - [x] Health Connect Data Inspector
+- [x] Experimental Samsung Health Data SDK investigation
 - [ ] Unified `RunMetrics` model
 - [ ] Athlete Performance Profile
 - [ ] Goal system
@@ -331,6 +346,16 @@ The current developer screen is a timeline runner; shared production screens and
 - Android Studio or VS Code
 - ADB for installing and debugging builds
 - An Android phone with Health Connect for real workout import testing
+
+### Optional Samsung Health Data SDK setup
+
+The proprietary Samsung SDK binary is intentionally not stored in this repository and Gradle does not download it. Developers who want to build the Samsung diagnostic integration must:
+
+1. Download the SDK through the [Samsung Health Data SDK app creation page](https://developer.samsung.com/health/data/process.html) after accepting Samsung's SDK terms.
+2. Copy its API AAR to `app/libs/samsung-health-data-api.aar`.
+3. Enable Samsung Health Data SDK Developer Mode for local development and data-read testing. Developer Mode is strictly a development facility and is not an end-user setup step.
+
+The Samsung Health Data SDK connection and exercise reads have been confirmed on a development device with Developer Mode enabled. The app module includes the local Samsung Health Data SDK AAR, applies the Kotlin Parcelize plugin required by the SDK's Parcelable APIs, and includes Gson for SDK serialization. The AAR path is listed in `.gitignore`. Public distribution of an app using the SDK may require Samsung registration and partnership approval for the app package and signing certificate.
 
 ### Common commands
 
