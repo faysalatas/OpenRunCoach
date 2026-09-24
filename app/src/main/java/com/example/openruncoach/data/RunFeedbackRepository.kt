@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.map
 class RunFeedbackRepository(
   private val database: OpenRunCoachDatabase,
   private val clock: Clock = Clock.systemUTC(),
+  private val athleteProfileRepository: AthletePerformanceProfileRepository? = null,
 ) {
   private val dao = database.runFeedbackDao()
 
@@ -34,7 +35,7 @@ class RunFeedbackRepository(
   private suspend fun persist(draft: RunFeedbackDraft, requireExisting: Boolean): RunFeedback {
     require(draft.runId.isNotBlank()) { "Run ID is required." }
     draft.validationError()?.let { throw IllegalArgumentException(it) }
-    return database.withTransaction {
+    val saved = database.withTransaction {
       val existing = dao.getFeedbackForRun(draft.runId)
       if (requireExisting) requireNotNull(existing) { "Feedback does not exist for this run." }
       val now = clock.millis()
@@ -55,10 +56,12 @@ class RunFeedbackRepository(
       if (existing == null) dao.insertFeedback(entity) else dao.updateFeedback(entity)
       entity.toDomain()
     }
+    athleteProfileRepository?.recalculate()
+    return saved
   }
 }
 
-private fun RunFeedbackEntity.toDomain() =
+internal fun RunFeedbackEntity.toDomain() =
   RunFeedback(
     id = id,
     runId = runId,

@@ -17,8 +17,12 @@ import androidx.sqlite.execSQL
     WorkoutAdjustmentEntity::class,
     RunMetricsEntity::class,
     RunMetricValueEntity::class,
+    AthletePerformanceProfileEntity::class,
+    AthleteProfileWeeklyVolumeEntity::class,
+    AthleteProfileBenchmarkEntity::class,
+    AthleteProfileExplanationEntity::class,
   ],
-  version = 7,
+  version = 8,
   exportSchema = true,
 )
 abstract class OpenRunCoachDatabase : RoomDatabase() {
@@ -26,6 +30,7 @@ abstract class OpenRunCoachDatabase : RoomDatabase() {
   abstract fun runFeedbackDao(): RunFeedbackDao
   abstract fun coachingWorkflowDao(): CoachingWorkflowDao
   abstract fun runMetricsDao(): RunMetricsDao
+  abstract fun athletePerformanceProfileDao(): AthletePerformanceProfileDao
 
   companion object {
     @Volatile private var instance: OpenRunCoachDatabase? = null
@@ -96,6 +101,23 @@ abstract class OpenRunCoachDatabase : RoomDatabase() {
       }
     }
 
+    val MIGRATION_7_8 = object : Migration(7, 8) {
+      override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL(
+          """CREATE TABLE IF NOT EXISTS `athlete_performance_profile` (`id` TEXT NOT NULL, `version` INTEGER NOT NULL, `calculatedAtEpochMillis` INTEGER NOT NULL, `totalCanonicalRuns` INTEGER NOT NULL, `runsLast7Days` INTEGER NOT NULL, `runsLast28Days` INTEGER NOT NULL, `activeWeeksLast8Weeks` INTEGER NOT NULL, `distanceLast7DaysMeters` REAL NOT NULL, `durationLast7DaysSeconds` INTEGER NOT NULL, `distanceLast28DaysMeters` REAL NOT NULL, `durationLast28DaysSeconds` INTEGER NOT NULL, `averageWeeklyDistanceLast4WeeksMeters` REAL NOT NULL, `averageWeeklyDurationLast4WeeksSeconds` INTEGER NOT NULL, `longestRunId` TEXT, `longestRunDateEpochMillis` INTEGER, `longestRunDistanceMeters` REAL, `longestRunDurationSeconds` INTEGER, `averageRunsPerWeek` REAL NOT NULL, `currentRunningStreakWeeks` INTEGER NOT NULL, `consistency` TEXT NOT NULL, `recentPaceTrend` TEXT NOT NULL, `easyPaceRepresentative` REAL, `easyPaceMinimum` REAL, `easyPaceMaximum` REAL, `easyPaceRunCount` INTEGER NOT NULL, `easyPaceConfidence` TEXT, `easyHeartRateRepresentative` REAL, `easyHeartRateMinimum` REAL, `easyHeartRateMaximum` REAL, `easyHeartRateRunCount` INTEGER NOT NULL, `easyHeartRateConfidence` TEXT, `recentAverageHeartRate` REAL, `recentHeartRateTrend` TEXT NOT NULL, `vo2MaxLatest` REAL, `vo2MaxPrevious` REAL, `vo2MaxTrend` TEXT NOT NULL, `easyCadenceRepresentative` REAL, `easyCadenceMinimum` REAL, `easyCadenceMaximum` REAL, `easyCadenceRunCount` INTEGER NOT NULL, `easyCadenceConfidence` TEXT, `recentCadenceTrend` TEXT NOT NULL, `feedbackCount` INTEGER NOT NULL, `averageRpe` REAL, `completedFraction` REAL, `partialFraction` REAL, `abortedFraction` REAL, `painFrequency` REAL, `significantPainFrequency` REAL, `averageReadiness` REAL, `profileConfidence` TEXT NOT NULL, PRIMARY KEY(`id`))"""
+        )
+        connection.execSQL(
+          """CREATE TABLE IF NOT EXISTS `athlete_profile_weekly_volume` (`profileId` TEXT NOT NULL, `weekStartEpochDay` INTEGER NOT NULL, `runCount` INTEGER NOT NULL, `distanceMeters` REAL NOT NULL, `durationSeconds` INTEGER NOT NULL, PRIMARY KEY(`profileId`, `weekStartEpochDay`))"""
+        )
+        connection.execSQL(
+          """CREATE TABLE IF NOT EXISTS `athlete_profile_benchmarks` (`profileId` TEXT NOT NULL, `targetDistance` TEXT NOT NULL, `resultType` TEXT NOT NULL, `actualDistanceMeters` REAL NOT NULL, `durationSeconds` INTEGER NOT NULL, `paceSecondsPerKm` REAL NOT NULL, `dateEpochMillis` INTEGER NOT NULL, `runId` TEXT NOT NULL, `confidence` TEXT NOT NULL, `source` TEXT NOT NULL, PRIMARY KEY(`profileId`, `targetDistance`, `resultType`))"""
+        )
+        connection.execSQL(
+          """CREATE TABLE IF NOT EXISTS `athlete_profile_explanations` (`profileId` TEXT NOT NULL, `category` TEXT NOT NULL, `position` INTEGER NOT NULL, `text` TEXT NOT NULL, PRIMARY KEY(`profileId`, `category`, `position`))"""
+        )
+      }
+    }
+
     fun getInstance(context: Context): OpenRunCoachDatabase =
       instance ?: synchronized(this) {
         instance
@@ -110,6 +132,7 @@ abstract class OpenRunCoachDatabase : RoomDatabase() {
               MIGRATION_4_5,
               MIGRATION_5_6,
               MIGRATION_6_7,
+              MIGRATION_7_8,
             ).build().also { instance = it }
       }
   }

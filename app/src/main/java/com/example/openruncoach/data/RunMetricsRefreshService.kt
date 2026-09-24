@@ -12,6 +12,7 @@ class RunMetricsRefreshService(
   private val healthConnectProvider: HealthConnectRunMetricsProvider,
   private val samsungEnricher: SamsungHealthRunMetricsEnricher,
   private val repository: RunMetricsRepository,
+  private val athleteProfileRepository: AthletePerformanceProfileRepository? = null,
 ) {
   suspend fun refresh(
     canonicalRun: RunSummary,
@@ -21,6 +22,7 @@ class RunMetricsRefreshService(
     val base = healthConnectProvider.build(canonicalRun, healthConnectInspection)
     val enriched = samsungEnricher.enrich(base, samsungInspection)
     repository.save(enriched)
+    athleteProfileRepository?.recalculate()
     return enriched
   }
 }

@@ -23,6 +23,9 @@ interface RunDao {
   @Query("SELECT * FROM runs")
   suspend fun getAllRuns(): List<RunEntity>
 
+  @Query("SELECT * FROM runs WHERE isCanonical = 1 ORDER BY startTimeEpochMillis ASC, healthConnectRecordId ASC")
+  suspend fun getCanonicalRuns(): List<RunEntity>
+
   @Query("SELECT * FROM runs WHERE sourcePackageName = '' OR sourceRecordLastModifiedTimeEpochMillis IS NULL")
   suspend fun getRunsMissingSourceMetadata(): List<RunEntity>
 

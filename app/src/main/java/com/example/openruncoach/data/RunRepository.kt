@@ -25,6 +25,7 @@ class RunRepository(
   private val clock: Clock = Clock.systemUTC(),
   private val runMetricsRepository: RunMetricsRepository? = null,
   private val healthConnectMetricsProvider: HealthConnectRunMetricsProvider = HealthConnectRunMetricsProvider(clock),
+  private val athleteProfileRepository: AthletePerformanceProfileRepository? = null,
 ) {
   val recentRuns: Flow<List<RunSummary>> =
     runDao.observeRecentRuns().map { runs -> runs.map(RunEntity::toRunSummary) }
@@ -94,16 +95,18 @@ class RunRepository(
         canonicalSelectionReason = selection.reason,
       )
     })
-    val metricsRepository = runMetricsRepository ?: return
-    runDao.getAllRuns().filter(RunEntity::isCanonical).forEach { entity ->
-      val existing = metricsRepository.getRunMetrics(entity.healthConnectRecordId)
-      val containsSamsungEnrichment = existing?.metricValues()?.values?.any {
-        it.source == MetricSource.SAMSUNG_HEALTH || it.secondarySource == MetricSource.SAMSUNG_HEALTH
-      } == true
-      if (!containsSamsungEnrichment) {
-        metricsRepository.save(healthConnectMetricsProvider.build(entity.toRunSummary(), null))
+    runMetricsRepository?.let { metricsRepository ->
+      runDao.getAllRuns().filter(RunEntity::isCanonical).forEach { entity ->
+        val existing = metricsRepository.getRunMetrics(entity.healthConnectRecordId)
+        val containsSamsungEnrichment = existing?.metricValues()?.values?.any {
+          it.source == MetricSource.SAMSUNG_HEALTH || it.secondarySource == MetricSource.SAMSUNG_HEALTH
+        } == true
+        if (!containsSamsungEnrichment) {
+          metricsRepository.save(healthConnectMetricsProvider.build(entity.toRunSummary(), null))
+        }
       }
     }
+    athleteProfileRepository?.recalculate()
   }
 }
 
@@ -129,7 +132,7 @@ private fun RunSummary.toRunEntity(importedAt: Long) =
     canonicalSelectionReason = canonicalSelectionReason,
   )
 
-private fun RunEntity.toRunSummary() =
+internal fun RunEntity.toRunSummary() =
   RunSummary(
     healthConnectRecordId = healthConnectRecordId,
     startTime = Instant.ofEpochMilli(startTimeEpochMillis),

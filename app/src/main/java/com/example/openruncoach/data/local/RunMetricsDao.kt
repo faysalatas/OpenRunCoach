@@ -24,6 +24,10 @@ interface RunMetricsDao {
   @Query("SELECT * FROM run_metrics WHERE runId = :runId LIMIT 1")
   suspend fun getRunMetrics(runId: String): RunMetricsWithValues?
 
+  @Transaction
+  @Query("SELECT * FROM run_metrics ORDER BY startTimeEpochMillis ASC")
+  suspend fun getAllRunMetrics(): List<RunMetricsWithValues>
+
   @Upsert
   suspend fun upsertSnapshot(snapshot: RunMetricsEntity)
 

@@ -244,6 +244,16 @@ Every stored metric summary preserves its primary provider, confidence, verifica
 
 Cadence keeps the Samsung session average and a separate moving average. Raw zero cadence samples remain in the in-memory series, while the moving average excludes zero cadence and samples aligned with effectively zero speed. Raw heart-rate, speed, cadence, and power series are not stored in Room yet. Only summary values and their provenance survive app restarts. Drift, running economy, and technique analysis remain planned work.
 
+## Athlete Performance Profile
+
+The Performance Profile is reproducible derived data built from canonical runs, unified `RunMetrics`, and post-run feedback. It summarizes 7-day and 28-day volume, completed calendar-week averages, running frequency, active weeks, current weekly streak, longest recent run, subjective feedback, VO₂ max, and conservative observational trends. Duplicate and non-canonical records do not contribute.
+
+Easy-running baselines require a completed run with RPE 4 or lower, easy or appropriate cardio effort, no significant pain, and valid distance, duration, and pace. Missing feedback does not qualify a run as easy. The profile uses medians and observed ranges for easy pace, heart rate, and unified cadence; it does not compare cadence against a universal target or generate technique advice.
+
+Standard session benchmarks are supported for 1K, 5K, 10K, half marathon, and marathon distances using a centralized distance tolerance. Personal best and most recent results are kept separately. A 4.8 km run is not treated as a 5K benchmark. Best-segment detection inside longer runs, manual results, and race-result imports remain planned.
+
+Profile confidence is based on explicit recent-run count, represented weeks, feedback coverage, heart-rate and pace availability, and unified-metric reliability. The Performance screen exposes these reasons and data-quality gaps. The latest snapshot is stored as a rebuildable Room cache and recalculated after run synchronization or canonical changes, feedback changes, and metric enrichment. The future Goal System will use this profile, but no goals, race predictions, zones, or training plans are generated yet.
+
 ## Data sources and duplicates
 
 Multiple applications can write copies of the same workout into Health Connect. OpenRunCoach therefore:
@@ -277,6 +287,7 @@ UI
 Domain
 ├── canonical run selection and duplicate diagnostics
 ├── provider-independent RunMetrics and verification rules
+├── Athlete Performance Profile calculations
 ├── coaching rules
 ├── workout lifecycle and readiness evaluation
 ├── next-workout generation
@@ -333,7 +344,7 @@ The current developer screen is a timeline runner; shared production screens and
 - [x] Health Connect Data Inspector
 - [x] Experimental Samsung Health Data SDK investigation
 - [x] Unified `RunMetrics` model
-- [ ] Athlete Performance Profile
+- [x] Athlete Performance Profile
 - [ ] Goal system
 - [ ] Structured workout model
 - [x] Pre-run check-in

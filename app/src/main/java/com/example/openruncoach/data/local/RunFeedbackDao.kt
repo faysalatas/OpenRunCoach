@@ -14,6 +14,9 @@ interface RunFeedbackDao {
   @Query("SELECT * FROM run_feedback WHERE runId = :runId LIMIT 1")
   fun observeFeedbackForRun(runId: String): Flow<RunFeedbackEntity?>
 
+  @Query("SELECT * FROM run_feedback")
+  suspend fun getAllFeedback(): List<RunFeedbackEntity>
+
   @Insert
   suspend fun insertFeedback(feedback: RunFeedbackEntity)
 

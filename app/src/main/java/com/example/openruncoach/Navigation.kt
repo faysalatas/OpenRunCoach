@@ -22,6 +22,7 @@ import com.example.openruncoach.ui.health.RunDetailScreen
 import com.example.openruncoach.ui.history.HistoryScreen
 import com.example.openruncoach.ui.home.HomeScreen
 import com.example.openruncoach.ui.plan.PlanScreen
+import com.example.openruncoach.ui.profile.PerformanceProfileScreen
 import com.example.openruncoach.ui.settings.SettingsScreen
 import com.example.openruncoach.ui.simulation.SimulationScreen
 import com.example.openruncoach.ui.inspection.HealthDataInspectorScreen
@@ -35,6 +36,7 @@ private object Routes {
   const val COACH_DETAIL = "coach"
   const val SIMULATOR = "simulator"
   const val DATA_INSPECTOR = "data-inspector"
+  const val PERFORMANCE_PROFILE = "performance-profile"
   const val RUN_ID = "runId"
 }
 
@@ -94,8 +96,12 @@ fun MainNavigation() {
       }
       composable(Routes.PLAN) { PlanScreen() }
       composable(Routes.SETTINGS) {
-        SettingsScreen(onOpenSimulator = { navController.navigate(Routes.SIMULATOR) })
+        SettingsScreen(
+          onOpenPerformanceProfile = { navController.navigate(Routes.PERFORMANCE_PROFILE) },
+          onOpenSimulator = { navController.navigate(Routes.SIMULATOR) },
+        )
       }
+      composable(Routes.PERFORMANCE_PROFILE) { PerformanceProfileScreen(onBack = navController::navigateUp) }
       composable(Routes.SIMULATOR) { SimulationScreen(onBack = navController::navigateUp) }
       composable(
         route = "${Routes.RUN_DETAIL}?${Routes.RUN_ID}={${Routes.RUN_ID}}",

@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.openruncoach.data.HealthConnectRepository
+import com.example.openruncoach.data.AthletePerformanceProfileRepository
 import com.example.openruncoach.data.RunFeedbackRepository
 import com.example.openruncoach.data.RunRepository
 import com.example.openruncoach.data.RunMetricsRepository
@@ -66,10 +67,11 @@ fun RunDetailScreen(
   val viewModel: RunDetailViewModel = viewModel(key = runId) {
     val database = OpenRunCoachDatabase.getInstance(context)
     val settingsRepository = RunSettingsRepository(context)
+    val profileRepository = AthletePerformanceProfileRepository(database)
     RunDetailViewModel(
       runId,
       RunRepository(database.runDao(), HealthConnectRepository(context), settingsRepository),
-      RunFeedbackRepository(database),
+      RunFeedbackRepository(database, athleteProfileRepository = profileRepository),
       RunMetricsRepository(database.runMetricsDao()),
     )
   }

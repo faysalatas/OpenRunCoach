@@ -26,6 +26,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.openruncoach.data.HealthConnectRepository
+import com.example.openruncoach.data.AthletePerformanceProfileRepository
 import com.example.openruncoach.data.RunRepository
 import com.example.openruncoach.data.RunMetricsRepository
 import com.example.openruncoach.data.RunSettingsRepository
@@ -35,18 +36,25 @@ import com.example.openruncoach.ui.components.ScreenPadding
 import com.example.openruncoach.ui.components.SectionSpacing
 
 @Composable
-fun SettingsScreen(onOpenSimulator: () -> Unit, modifier: Modifier = Modifier) {
+fun SettingsScreen(
+  onOpenPerformanceProfile: () -> Unit,
+  onOpenSimulator: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
   val context = LocalContext.current
   val viewModel: SettingsViewModel = viewModel {
     val healthConnectRepository = HealthConnectRepository(context)
     val settingsRepository = RunSettingsRepository(context)
+    val database = OpenRunCoachDatabase.getInstance(context)
+    val profileRepository = AthletePerformanceProfileRepository(database)
     SettingsViewModel(
       healthConnectRepository,
       RunRepository(
-        OpenRunCoachDatabase.getInstance(context).runDao(),
+        database.runDao(),
         healthConnectRepository,
         settingsRepository,
-        runMetricsRepository = RunMetricsRepository(OpenRunCoachDatabase.getInstance(context).runMetricsDao()),
+        runMetricsRepository = RunMetricsRepository(database.runMetricsDao()),
+        athleteProfileRepository = profileRepository,
       ),
       settingsRepository,
     )
@@ -64,6 +72,10 @@ fun SettingsScreen(onOpenSimulator: () -> Unit, modifier: Modifier = Modifier) {
     verticalArrangement = Arrangement.spacedBy(SectionSpacing),
   ) {
     Text("Settings", style = MaterialTheme.typography.headlineMedium)
+    SettingsCard("Performance Profile") {
+      Text("View current training volume, benchmarks, easy-running baselines, and data confidence.")
+      Button(onClick = onOpenPerformanceProfile) { Text("Open Performance Profile") }
+    }
     SettingsCard("Preferred workout source") {
       Text("Automatic uses OpenRunCoach's canonical run selection rules.")
       Row(

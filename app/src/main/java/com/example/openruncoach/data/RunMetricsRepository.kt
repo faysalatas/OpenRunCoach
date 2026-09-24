@@ -50,7 +50,7 @@ private fun MetricValue<out Number>.toEntity(runId: String, key: RunMetricKey) =
   verificationReason = verificationReason,
 )
 
-private fun RunMetricsWithValues.toDomain(): RunMetrics? {
+internal fun RunMetricsWithValues.toDomain(): RunMetrics? {
   val metrics = values.associateBy { RunMetricKey.valueOf(it.metric) }
   fun double(key: RunMetricKey): MetricValue<Double>? = metrics[key]?.toDoubleMetric()
   val duration = metrics[RunMetricKey.DURATION]?.toLongMetric() ?: return null
