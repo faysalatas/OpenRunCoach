@@ -21,7 +21,7 @@ class PermissionsRationaleActivity : ComponentActivity() {
           Text(
             "OpenRunCoach reads exercise sessions, heart rate, distance, and speed, including older " +
               "records when available. The optional Data Inspector can also read steps and cadence, " +
-              "VO₂ max, elevation, power, and calories to show what a provider exposes. Imported runs " +
+              "VO₂max, elevation, power, and calories to show what a provider exposes. Imported runs " +
               "and feedback stay on this device; inspector samples and route points are not stored."
           )
         }

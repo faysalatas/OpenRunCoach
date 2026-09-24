@@ -28,7 +28,14 @@ class HealthConnectRunMetricsProvider(
       TimedMetricSample(it.timestamp, it.value)
     }
     fun value(value: Double?) = value?.takeIf { it.isFinite() }?.let {
-      MetricValue(it, MetricSource.HEALTH_CONNECT, MetricConfidence.HIGH)
+      MetricValue(
+        it,
+        MetricSource.HEALTH_CONNECT,
+        MetricConfidence.HIGH,
+        sourceAppName = run.sourceAppName ?: run.sourcePackageName.takeIf(String::isNotBlank),
+        sourceDeviceName = listOfNotNull(run.sourceDeviceManufacturer, run.sourceDeviceModel)
+          .joinToString(" ").takeIf(String::isNotBlank),
+      )
     }
 
     val session = metric(RunMetricType.EXERCISE_SESSION)?.summary as? SessionMetricSummary
@@ -37,6 +44,7 @@ class HealthConnectRunMetricsProvider(
     val heartRate = seriesSummary(RunMetricType.HEART_RATE)
     val speed = seriesSummary(RunMetricType.SPEED)
     val cadence = seriesSummary(RunMetricType.CADENCE)
+    val power = seriesSummary(RunMetricType.POWER)
     val heartRateSamples = samples(RunMetricType.HEART_RATE)
     val speedSamples = samples(RunMetricType.SPEED)
     val cadenceSamples = samples(RunMetricType.CADENCE)
@@ -46,7 +54,14 @@ class HealthConnectRunMetricsProvider(
       runId = run.healthConnectRecordId,
       startTime = session?.startTime ?: run.startTime,
       endTime = session?.endTime ?: run.endTime,
-      durationSeconds = MetricValue(duration, MetricSource.HEALTH_CONNECT, MetricConfidence.HIGH),
+      durationSeconds = MetricValue(
+        duration,
+        MetricSource.HEALTH_CONNECT,
+        MetricConfidence.HIGH,
+        sourceAppName = run.sourceAppName ?: run.sourcePackageName.takeIf(String::isNotBlank),
+        sourceDeviceName = listOfNotNull(run.sourceDeviceManufacturer, run.sourceDeviceModel)
+          .joinToString(" ").takeIf(String::isNotBlank),
+      ),
       distanceMeters = value(distance),
       averagePaceSecondsPerKm = averagePace?.let {
         MetricValue(it, MetricSource.DERIVED, MetricConfidence.HIGH)
@@ -60,6 +75,8 @@ class HealthConnectRunMetricsProvider(
       averageCadence = value(cadence?.average),
       movingAverageCadence = value(movingCadenceAverage(cadenceSamples, speedSamples)),
       maxCadence = value(cadence?.maximum),
+      averagePowerWatts = value(power?.average),
+      maxPowerWatts = value(power?.maximum),
       elevationGainMeters = value(total(RunMetricType.ELEVATION_GAINED)),
       caloriesKilocalories = value(total(RunMetricType.CALORIES)),
       recordingSource = run.sourceAppName ?: run.sourcePackageName.takeIf(String::isNotBlank),

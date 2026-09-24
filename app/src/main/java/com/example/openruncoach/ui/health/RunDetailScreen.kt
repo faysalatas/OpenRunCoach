@@ -115,7 +115,7 @@ private fun RunMetricsCard(metrics: RunMetrics, showDetails: Boolean, onToggleDe
       metrics.averageCadence?.value?.let { "${formatNumber(it)} spm session avg" },
     ).joinToString(" · ")
     if (cadence.isNotBlank()) LabelValue("Cadence", cadence)
-    metrics.vo2Max?.let { LabelValue("VO₂ max", formatNumber(it.value)) }
+    metrics.vo2Max?.let { LabelValue("VO₂max", formatNumber(it.value)) }
     metrics.elevationGainMeters?.let { LabelValue("Elevation", "+${formatNumber(it.value)} m") }
     TextButton(onClick = onToggleDetails) { Text(if (showDetails) "Hide metric details" else "Metric details") }
     if (showDetails) MetricDetails(metrics)
@@ -124,8 +124,6 @@ private fun RunMetricsCard(metrics: RunMetrics, showDetails: Boolean, onToggleDe
 
 @Composable
 private fun MetricDetails(metrics: RunMetrics) {
-  val device = listOfNotNull(metrics.recordingDeviceManufacturer, metrics.recordingDeviceModel, metrics.recordingDeviceName)
-    .distinct().joinToString(" ")
   listOf(
     Triple("Distance", metrics.distanceMeters, "m"),
     Triple("Average heart rate", metrics.averageHeartRate, "bpm"),
@@ -133,21 +131,23 @@ private fun MetricDetails(metrics: RunMetrics) {
     Triple("Average speed", metrics.averageSpeedMetersPerSecond, "m/s"),
     Triple("Cadence", metrics.averageCadence, "spm"),
     Triple("Moving cadence", metrics.movingAverageCadence, "spm"),
-    Triple("VO₂ max", metrics.vo2Max, "ml/kg/min"),
+    Triple("Average power", metrics.averagePowerWatts, "W"),
+    Triple("Maximum power", metrics.maxPowerWatts, "W"),
+    Triple("VO₂max", metrics.vo2Max, "ml/kg/min"),
     Triple("Elevation gain", metrics.elevationGainMeters, "m"),
   ).forEach { (label, metric, unit) ->
     if (metric != null) {
       Text(label, style = MaterialTheme.typography.titleSmall)
       LabelValue("Value", "${formatNumber(metric.value)} $unit")
       MetricProvenance(metric)
-      if (metric.source == MetricSource.SAMSUNG_HEALTH && device.isNotBlank()) LabelValue("Device", device)
     }
   }
 }
 
 @Composable
 private fun MetricProvenance(metric: MetricValue<out Number>) {
-  LabelValue("Source", metric.source.displayName())
+  LabelValue("Source", metric.sourceAppName ?: metric.source.displayName())
+  metric.sourceDeviceName?.let { LabelValue("Device", it) }
   LabelValue("Confidence", metric.confidence.displayName())
   when (metric.verification) {
     MetricVerification.VERIFIED -> LabelValue("Verification", "Verified against ${metric.secondarySource?.displayName() ?: "another provider"}")

@@ -2,6 +2,7 @@ package com.example.openruncoach.ui.common
 
 import com.example.openruncoach.domain.coaching.CoachingAction
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
@@ -19,6 +20,11 @@ fun formatHistoryDate(startTime: Instant): String =
     .withLocale(Locale.getDefault())
     .withZone(ZoneId.systemDefault())
     .format(startTime)
+
+fun formatUserDate(date: LocalDate, locale: Locale = Locale.getDefault()): String =
+  DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)
+    .withLocale(locale)
+    .format(date)
 
 fun formatDistance(distanceMeters: Double?): String =
   distanceMeters?.let { "%.2f km".format(Locale.getDefault(), it / 1000) } ?: "—"

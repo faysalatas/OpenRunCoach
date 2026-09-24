@@ -40,6 +40,8 @@ class AthletePerformanceProfileRepository(
   fun observeProfile(): Flow<AthletePerformanceProfile?> =
     dao.observeProfile().map { it?.toDomain() }
 
+  suspend fun getProfile(): AthletePerformanceProfile? = dao.getProfile()?.toDomain()
+
   suspend fun recalculate(): AthletePerformanceProfile = recalculationMutex.withLock {
     val profile = calculator.calculate(
       runs = database.runDao().getCanonicalRuns().map { it.toRunSummary() },

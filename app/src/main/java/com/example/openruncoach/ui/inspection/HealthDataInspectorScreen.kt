@@ -61,7 +61,6 @@ import com.example.openruncoach.domain.samsunghealth.ProviderMetric
 import com.example.openruncoach.domain.samsunghealth.ExerciseLogMetricSummary
 import com.example.openruncoach.domain.samsunghealth.SampleAlignment
 import com.example.openruncoach.domain.samsunghealth.SampleAlignmentStatus
-import com.example.openruncoach.domain.samsunghealth.SamsungCandidateScore
 import com.example.openruncoach.domain.samsunghealth.SamsungExerciseCandidate
 import com.example.openruncoach.domain.samsunghealth.SamsungExerciseKind
 import com.example.openruncoach.domain.samsunghealth.SamsungExerciseSessionInspection
@@ -69,6 +68,7 @@ import com.example.openruncoach.domain.samsunghealth.SamsungHealthInspection
 import com.example.openruncoach.domain.samsunghealth.SamsungMatchConfidence
 import com.example.openruncoach.domain.samsunghealth.SamsungMatchReason
 import com.example.openruncoach.domain.samsunghealth.SamsungMatchReasonKind
+import com.example.openruncoach.domain.samsunghealth.SamsungPhysicalWorkoutRelationship
 import com.example.openruncoach.domain.samsunghealth.SamsungSourceDeviceType
 import com.example.openruncoach.domain.samsunghealth.SamsungWorkoutMatchStatus
 import com.example.openruncoach.domain.metrics.MetricSource
@@ -80,6 +80,7 @@ import com.example.openruncoach.ui.components.ItemSpacing
 import com.example.openruncoach.ui.components.ScreenPadding
 import com.example.openruncoach.ui.components.SectionSpacing
 import java.time.Instant
+import java.time.Duration
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
@@ -149,7 +150,7 @@ fun HealthDataInspectorScreen(runId: String, onBack: () -> Unit, modifier: Modif
             onResolveIssue = { activity?.let(viewModel::resolveSamsungHealthIssue) },
             onSelectCandidate = viewModel::selectSamsungWorkout,
           )
-          state.unifiedMetrics?.let { UnifiedMetricsResult(it) }
+          state.unifiedMetrics?.let { UnifiedMetricsResult(it, state.run!!, state.samsungHealthInspection) }
           Text("Health Connect details", style = MaterialTheme.typography.titleLarge)
           inspection.metrics.forEach { metric ->
             MetricSection(
@@ -171,18 +172,27 @@ fun HealthDataInspectorScreen(runId: String, onBack: () -> Unit, modifier: Modif
 }
 
 @Composable
-private fun UnifiedMetricsResult(metrics: RunMetrics) {
+private fun UnifiedMetricsResult(
+  metrics: RunMetrics,
+  run: RunSummary,
+  samsungInspection: SamsungHealthInspection?,
+) {
   HorizontalDivider()
   Text("Unified RunMetrics Result", style = MaterialTheme.typography.titleLarge)
   listOfNotNull(
+    "Duration" to metrics.durationSeconds.source,
     "Distance" to metrics.distanceMeters?.source,
     "Heart Rate" to metrics.averageHeartRate?.source,
     "Speed" to metrics.averageSpeedMetersPerSecond?.source,
     "Cadence" to (metrics.movingAverageCadence ?: metrics.averageCadence)?.source,
     "Elevation" to metrics.elevationGainMeters?.source,
-    "VO₂ max" to metrics.vo2Max?.source,
+    "VO₂max" to metrics.vo2Max?.source,
+    "Power" to metrics.averagePowerWatts?.source,
   ).forEach { (label, source) ->
-    if (source != null) DiagnosticValue(label, source.displayName())
+    if (source != null) DiagnosticValue(label, metricSourceDisplayName(source, run, samsungInspection))
+  }
+  if (samsungInspection?.enrichmentMatch?.relationship == SamsungPhysicalWorkoutRelationship.OVERLAPPING_SESSION) {
+    Text("Samsung sensor metrics are derived only from samples inside the canonical activity window.")
   }
 }
 
@@ -229,20 +239,11 @@ private fun SamsungHealthSection(
     state.samsungHealthInspection?.let { inspection ->
       HorizontalDivider()
       Text("Run Data Comparison", style = MaterialTheme.typography.titleLarge)
+      state.run?.let { CanonicalWorkoutSummary(it) }
       ProviderComparison(inspection)
-      when (inspection.match.status) {
-        SamsungWorkoutMatchStatus.NOT_FOUND -> Text("No matching Samsung running workout was found.")
-        SamsungWorkoutMatchStatus.AMBIGUOUS -> AmbiguousMatches(
-          inspection = inspection,
-          onSelectCandidate = onSelectCandidate,
-        )
-        SamsungWorkoutMatchStatus.MATCHED -> inspection.session?.let {
-          MatchExplanation(inspection)
-          SamsungSessionDetails(it)
-          SharedDifferences(inspection)
-          CadenceDetails(it)
-        }
-      }
+      IdentityMatchSection(inspection)
+      EnrichmentMatchSection(inspection, state.run, onSelectCandidate)
+      PlausibleSamsungCandidates(inspection, onSelectCandidate)
     }
   }
 }
@@ -264,68 +265,192 @@ private fun ProviderComparison(inspection: SamsungHealthInspection) {
 }
 
 @Composable
-private fun AmbiguousMatches(
+private fun CanonicalWorkoutSummary(run: RunSummary) {
+  Text("Canonical workout", style = MaterialTheme.typography.titleMedium)
+  DiagnosticValue("Source", run.displaySourceName)
+  DiagnosticValue("Device", listOfNotNull(run.sourceDeviceManufacturer, run.sourceDeviceModel)
+    .joinToString(" ").ifBlank {
+      run.sourceDeviceType?.name?.lowercase()?.replaceFirstChar(Char::titlecase) ?: "Not available"
+    })
+  DiagnosticValue("Distance", formatDistance(run.distanceMeters))
+  DiagnosticValue("Duration", formatDuration(run.durationSeconds))
+}
+
+@Composable
+private fun IdentityMatchSection(inspection: SamsungHealthInspection) {
+  HorizontalDivider()
+  Text("Exact provider copy", style = MaterialTheme.typography.titleMedium)
+  val match = inspection.identityMatch
+  DiagnosticValue("Confidence", match.confidence.displayName())
+  when (match.status) {
+    SamsungWorkoutMatchStatus.NOT_FOUND -> Text("No exact provider copy was found in Samsung Health.")
+    SamsungWorkoutMatchStatus.AMBIGUOUS -> Text("Multiple provider copies are too similar to identify one exactly.")
+    SamsungWorkoutMatchStatus.MATCHED -> inspection.identitySession?.let { session ->
+      SamsungCandidateCapabilitySummary(session)
+    }
+  }
+  match.reasons.forEach { MatchReasonText(it) }
+}
+
+@Composable
+private fun EnrichmentMatchSection(
+  inspection: SamsungHealthInspection,
+  run: RunSummary?,
+  onSelectCandidate: (String) -> Unit,
+) {
+  HorizontalDivider()
+  Text("Best enrichment candidate", style = MaterialTheme.typography.titleMedium)
+  val match = inspection.enrichmentMatch
+  DiagnosticValue("Confidence", match.confidence.displayName())
+  DiagnosticValue("Relationship", match.relationship.displayName())
+  when (match.status) {
+    SamsungWorkoutMatchStatus.NOT_FOUND ->
+      Text("No additional Samsung Health sensor recording was found for this workout.")
+    SamsungWorkoutMatchStatus.AMBIGUOUS -> {
+      Text("Multiple sensor recordings are plausible. No enrichment was applied.")
+      match.candidateScores.filter { score ->
+        score.candidate.metrics.heartRateSampleCount > 0 ||
+          score.candidate.metrics.speedSampleCount > 0 ||
+          score.candidate.metrics.cadenceSampleCount > 0 ||
+          score.candidate.metrics.powerSampleCount > 0 ||
+          score.candidate.metrics.powerAvailable ||
+          score.candidate.metrics.vo2Max != null ||
+          score.candidate.metrics.elevationAvailable
+      }.forEach { score ->
+        Text("${sourceDisplayName(score.candidate.source.applicationId)} · ${deviceDisplayName(score.candidate)}")
+        Button(onClick = { onSelectCandidate(score.candidate.id) }) { Text("Use for enrichment") }
+      }
+    }
+    SamsungWorkoutMatchStatus.MATCHED -> inspection.enrichmentSession?.let { session ->
+      SamsungCandidateCapabilitySummary(session)
+      if (match.manualSelection) Text("This enrichment source was selected manually.")
+      if (run != null) {
+        DiagnosticValue("Canonical window", "${formatInstant(run.startTime)} – ${formatInstant(run.endTime)}")
+        DiagnosticValue("Samsung window", "${formatInstant(session.candidate.startTime)} – ${formatInstant(session.candidate.endTime)}")
+        val sensorStart = if (match.relationship == SamsungPhysicalWorkoutRelationship.OVERLAPPING_SESSION) run.startTime else session.candidate.startTime
+        val sensorEnd = if (match.relationship == SamsungPhysicalWorkoutRelationship.OVERLAPPING_SESSION) run.endTime else session.candidate.endTime
+        DiagnosticValue("Sensor window used", "${formatInstant(sensorStart)} – ${formatInstant(sensorEnd)}")
+        match.canonicalCoverage?.let {
+          DiagnosticValue("Canonical coverage", "${formatNumber(it * 100)}%")
+        }
+        if (match.relationship == SamsungPhysicalWorkoutRelationship.OVERLAPPING_SESSION) {
+          val extraSeconds = Duration.between(run.endTime, session.candidate.endTime).seconds
+          if (extraSeconds > 0) Text("△ Samsung session continues ${formatDuration(extraSeconds)} beyond canonical activity")
+          val distanceDifference = if (run.distanceMeters != null && session.candidate.distanceMeters != null) {
+            kotlin.math.abs(session.candidate.distanceMeters - run.distanceMeters)
+          } else null
+          distanceDifference?.let { Text("△ Samsung total distance differs by ${formatNumber(it)} m") }
+          Text("Enrichment strategy: Use Samsung sensor samples only inside canonical time window.")
+          ClippedSensorSummary(inspection)
+          SessionLevelContext(session)
+        }
+      }
+      if (match.relationship == SamsungPhysicalWorkoutRelationship.EXACT_SESSION) {
+        SharedDifferences(inspection)
+        CadenceDetails(session)
+      }
+    }
+  }
+  match.reasons.forEach { MatchReasonText(it) }
+}
+
+@Composable
+private fun PlausibleSamsungCandidates(
   inspection: SamsungHealthInspection,
   onSelectCandidate: (String) -> Unit,
 ) {
-  Text("Ambiguous match", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error)
-  Text("Multiple Samsung Health workouts match this run.")
-  DiagnosticValue("Confidence", inspection.match.confidence.displayName())
-  inspection.match.reasons.forEach { MatchReasonText(it) }
-  inspection.match.candidateScores.forEachIndexed { index, score ->
+  var expanded by remember(inspection.plausibleSessions) { mutableStateOf(false) }
+  HorizontalDivider()
+  TextButton(onClick = { expanded = !expanded }) {
+    Text(if (expanded) "Hide all plausible Samsung candidates" else "Show all plausible Samsung candidates (${inspection.plausibleSessions.size})")
+  }
+  if (expanded) inspection.plausibleSessions.forEachIndexed { index, session ->
     HorizontalDivider()
     Text("Candidate ${index + 1}", style = MaterialTheme.typography.titleMedium)
-    SamsungCandidateDetails(score.candidate, score)
-    Button(onClick = { onSelectCandidate(score.candidate.id) }) {
-      Text("Use this workout")
+    SamsungCandidateCapabilitySummary(session, includeIdentity = true)
+    inspection.enrichmentMatch.candidateScores.firstOrNull { it.candidate.id == session.candidate.id }?.let { score ->
+      DiagnosticValue("Relationship", score.relationship.displayName())
+      DiagnosticValue("Canonical coverage", "${formatNumber(score.canonicalCoverage * 100)}%")
     }
+    Button(onClick = { onSelectCandidate(session.candidate.id) }) { Text("Use for enrichment") }
   }
 }
 
 @Composable
-private fun MatchExplanation(inspection: SamsungHealthInspection) {
-  Text("Match", style = MaterialTheme.typography.titleMedium)
-  DiagnosticValue("Confidence", inspection.match.confidence.displayName())
-  if (inspection.match.manualSelection) {
-    Text("This workout was selected manually for Samsung diagnostics.")
-  }
-  inspection.match.reasons.forEach { MatchReasonText(it) }
+private fun ClippedSensorSummary(inspection: SamsungHealthInspection) {
+  val clipped = inspection.clippedEnrichment ?: return
+  Text("Clipped sensor summaries", style = MaterialTheme.typography.titleSmall)
+  ClippedMetric("Heart rate", clipped.heartRate, "bpm")
+  ClippedMetric("Speed", clipped.speed, "m/s")
+  ClippedMetric("Cadence", clipped.cadence, "spm")
+  clipped.movingAverageCadence?.let { DiagnosticValue("Moving cadence", "${formatNumber(it)} spm") }
+  ClippedMetric("Power", clipped.power, "W")
 }
 
 @Composable
-private fun SamsungCandidateDetails(candidate: SamsungExerciseCandidate, score: SamsungCandidateScore) {
-  Text("${candidate.exerciseKind.displayName()} · ${formatInstant(candidate.startTime)} – ${formatInstant(candidate.endTime)}")
-  DiagnosticValue("Duration", formatDuration(candidate.durationSeconds))
+private fun ClippedMetric(label: String, summary: ExerciseLogMetricSummary?, unit: String) {
+  if (summary == null) {
+    DiagnosticValue(label, "Not available")
+  } else {
+    DiagnosticValue(
+      label,
+      "${summary.sampleCount} samples · avg ${formatNumber(summary.average)} · " +
+        "min ${formatNumber(summary.minimum)} · max ${formatNumber(summary.maximum)} $unit",
+    )
+  }
+}
+
+@Composable
+private fun SessionLevelContext(session: SamsungExerciseSessionInspection) {
+  Text("Samsung session-level context", style = MaterialTheme.typography.titleSmall)
+  OptionalMetric("Samsung session VO₂max", session.vo2Max, "ml/kg/min")
+  OptionalMetric("Samsung session elevation gain", session.altitudeGainMeters, "m")
+  OptionalMetric("Samsung session altitude min / max", session.minAltitudeMeters, "m", maximum = session.maxAltitudeMeters)
+  OptionalMetric("Samsung session calories", session.caloriesKilocalories, "kcal")
+  Text("Source session extends beyond canonical activity; these full-session values are diagnostic only.")
+}
+
+@Composable
+private fun SamsungCandidateCapabilitySummary(
+  session: SamsungExerciseSessionInspection,
+  includeIdentity: Boolean = false,
+) {
+  val candidate = session.candidate
+  DiagnosticValue("Source", sourceDisplayName(candidate.source.applicationId))
+  DiagnosticValue("Device", deviceDisplayName(candidate))
   DiagnosticValue("Distance", formatDistance(candidate.distanceMeters))
-  DiagnosticValue("Match score", score.score.toString())
-  DiagnosticValue(
-    "Score components",
-    "device ${score.deviceScore}, source ${score.sourceScore}, start ${score.startScore}, " +
-      "duration ${score.durationScore}, distance ${score.distanceScore}, metrics ${score.sharedMetricScore}",
-  )
-  score.reasons.forEach { MatchReasonText(it) }
-
-  Text("Source", style = MaterialTheme.typography.titleSmall)
-  DiagnosticValue("Application ID", candidate.source.applicationId ?: "Not available")
-  DiagnosticValue("Device type", candidate.source.deviceType.displayName())
-  DiagnosticValue("Manufacturer", candidate.source.manufacturer ?: "Not available")
-  DiagnosticValue("Model", candidate.source.model ?: "Not available")
-  DiagnosticValue("Device name", candidate.source.deviceName ?: "Not available")
-  DiagnosticValue("Device ID", candidate.source.deviceId ?: "Not available")
-  DiagnosticValue("Data-point UID", candidate.source.uid)
-  DiagnosticValue("Data-point start", candidate.source.dataPointStartTime?.let(::formatInstant) ?: "Not available")
-  DiagnosticValue("Data-point end", candidate.source.dataPointEndTime?.let(::formatInstant) ?: "Not available")
-  DiagnosticValue("Updated", candidate.source.updateTime?.let(::formatInstant) ?: "Not available")
-
-  Text("Session metrics", style = MaterialTheme.typography.titleSmall)
-  DiagnosticValue("Average / max HR", metricPair(candidate.metrics.averageHeartRate, candidate.metrics.maxHeartRate, "bpm"))
-  DiagnosticValue("Average speed", metricValue(candidate.metrics.averageSpeedMetersPerSecond, "m/s"))
-  DiagnosticValue("VO₂ max", metricValue(candidate.metrics.vo2Max, "ml/kg/min"))
-  DiagnosticValue("Mean / max cadence", metricPair(candidate.metrics.meanCadence, candidate.metrics.maxCadence, "spm"))
-  DiagnosticValue("ExerciseLog exists", yesNo(candidate.metrics.exerciseLogExists))
-  DiagnosticValue("ExerciseLog samples", candidate.metrics.totalLogSamples.toString())
-  DiagnosticValue("Cadence samples", candidate.metrics.cadenceSampleCount.toString())
+  DiagnosticValue("Duration", formatDuration(candidate.durationSeconds))
+  DiagnosticValue("ExerciseLog", if (candidate.metrics.exerciseLogExists) "${candidate.metrics.totalLogSamples} samples" else "Not available")
+  DiagnosticValue("Heart rate", capability(candidate.metrics.heartRateSampleCount, session.meanHeartRate != null || session.maxHeartRate != null))
+  DiagnosticValue("Speed", capability(candidate.metrics.speedSampleCount, session.meanSpeedMetersPerSecond != null))
+  DiagnosticValue("Cadence", capability(candidate.metrics.cadenceSampleCount, session.meanCadence != null))
+  DiagnosticValue("VO₂max", availabilityMark(session.vo2Max != null))
+  DiagnosticValue("Elevation", availabilityMark(candidate.metrics.elevationAvailable))
+  DiagnosticValue("Power", capability(candidate.metrics.powerSampleCount, session.meanPowerWatts != null))
+  if (includeIdentity) {
+    DiagnosticValue("Application ID", candidate.source.applicationId ?: "Not available")
+    DiagnosticValue("Exercise type", candidate.exerciseKind.displayName())
+    DiagnosticValue("Start / end", "${formatInstant(candidate.startTime)} – ${formatInstant(candidate.endTime)}")
+    DiagnosticValue("Data-point UID", candidate.source.uid)
+  }
 }
+
+private fun capability(sampleCount: Int, summaryAvailable: Boolean): String = when {
+  sampleCount > 0 -> "$sampleCount samples"
+  summaryAvailable -> "Summary available"
+  else -> "Not available"
+}
+
+private fun sourceDisplayName(applicationId: String?): String = when (applicationId) {
+  "com.sec.android.app.shealth" -> "Samsung Health"
+  "com.strava" -> "Strava"
+  null, "" -> "Not available"
+  else -> applicationId
+}
+
+private fun deviceDisplayName(candidate: SamsungExerciseCandidate): String =
+  listOfNotNull(candidate.source.manufacturer, candidate.source.deviceName ?: candidate.source.model)
+    .distinct().joinToString(" ").ifBlank { candidate.source.deviceType.displayName() }
 
 @Composable
 private fun MatchReasonText(reason: SamsungMatchReason) {
@@ -348,7 +473,7 @@ private fun SamsungSessionDetails(session: SamsungExerciseSessionInspection) {
   OptionalMetric("Mean / min / max HR", session.meanHeartRate, "bpm", session.minHeartRate, session.maxHeartRate)
   OptionalMetric("Mean / max speed", session.meanSpeedMetersPerSecond, "m/s", maximum = session.maxSpeedMetersPerSecond)
   OptionalMetric("Mean / max power", session.meanPowerWatts, "W", maximum = session.maxPowerWatts)
-  OptionalMetric("VO₂ max", session.vo2Max, "ml/kg/min")
+  OptionalMetric("VO₂max", session.vo2Max, "ml/kg/min")
   OptionalMetric("Altitude gain / loss", session.altitudeGainMeters, "m", maximum = session.altitudeLossMeters)
   OptionalMetric("Min / max altitude", session.minAltitudeMeters, "m", maximum = session.maxAltitudeMeters)
   OptionalMetric("Incline / decline distance", session.inclineDistanceMeters, "m", maximum = session.declineDistanceMeters)
@@ -525,7 +650,7 @@ private fun RunMetricType.displayName() = when (this) {
   RunMetricType.HEART_RATE -> "Heart Rate"
   RunMetricType.SPEED -> "Speed"
   RunMetricType.CADENCE -> "Cadence"
-  RunMetricType.VO2_MAX -> "VO₂ max"
+  RunMetricType.VO2_MAX -> "VO₂max"
   RunMetricType.ELEVATION_GAINED -> "Elevation Gained"
   RunMetricType.POWER -> "Power"
   RunMetricType.CALORIES -> "Calories"
@@ -572,7 +697,7 @@ private fun ProviderMetric.displayName() = when (this) {
   ProviderMetric.AVERAGE_HEART_RATE -> "Average HR"
   ProviderMetric.MAX_HEART_RATE -> "Max HR"
   ProviderMetric.SPEED -> "Speed"
-  ProviderMetric.VO2_MAX -> "VO₂ max"
+  ProviderMetric.VO2_MAX -> "VO₂max"
   ProviderMetric.CADENCE -> "Cadence"
   ProviderMetric.POWER -> "Power"
   ProviderMetric.ELEVATION -> "Elevation"
@@ -587,12 +712,31 @@ private fun SamsungExerciseKind.displayName() = when (this) {
 private fun SamsungMatchConfidence.displayName() = name.lowercase()
   .replaceFirstChar { it.titlecase() }
 
+private fun SamsungPhysicalWorkoutRelationship.displayName() = when (this) {
+  SamsungPhysicalWorkoutRelationship.EXACT_SESSION -> "Exact session"
+  SamsungPhysicalWorkoutRelationship.OVERLAPPING_SESSION -> "Overlapping session"
+  SamsungPhysicalWorkoutRelationship.NO_MATCH -> "No match"
+  SamsungPhysicalWorkoutRelationship.AMBIGUOUS -> "Ambiguous"
+}
+
 private fun SamsungSourceDeviceType.displayName() = name.lowercase()
   .replaceFirstChar { it.titlecase() }
 
 private fun MetricSource.displayName() = when (this) {
   MetricSource.HEALTH_CONNECT -> "Health Connect"
   MetricSource.SAMSUNG_HEALTH -> "Samsung Health"
+  MetricSource.DERIVED -> "Derived"
+}
+
+private fun metricSourceDisplayName(
+  source: MetricSource,
+  run: RunSummary,
+  samsungInspection: SamsungHealthInspection?,
+): String = when (source) {
+  MetricSource.HEALTH_CONNECT -> "Health Connect / ${run.displaySourceName}"
+  MetricSource.SAMSUNG_HEALTH -> samsungInspection?.enrichmentSession?.candidate?.let { candidate ->
+    "Samsung Health / ${deviceDisplayName(candidate)}"
+  } ?: "Samsung Health"
   MetricSource.DERIVED -> "Derived"
 }
 

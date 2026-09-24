@@ -23,6 +23,9 @@ OpenRunCoach is a native Android adaptive running coach.
 - Keep the coaching engine independent from Android UI code.
 - Use repositories for data access.
 - Provider-specific health models must not leak into domain, coaching, or general UI layers. Convert provider data into provider-independent domain models; provider diagnostics may show source details.
+- Workout logic must remain provider-independent.
+- Workout prescriptions must support structured blocks and segments; do not reduce every workout to one total duration.
+- New workout types must use the shared structured workout model.
 
 ## Health data
 

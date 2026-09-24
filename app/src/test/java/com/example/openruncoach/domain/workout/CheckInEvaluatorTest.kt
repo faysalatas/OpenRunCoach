@@ -16,7 +16,7 @@ import org.junit.Test
 class CheckInEvaluatorTest {
   private val now = Instant.parse("2026-09-21T06:00:00Z")
   private val evaluator = CheckInEvaluator(Clock.fixed(now, ZoneOffset.UTC))
-  private val baseline = PlannedWorkout("plan", LocalDate.of(2026, 9, 21), WorkoutType.INTERVALS, 30, 5, 8, now)
+  private val baseline = simpleDurationWorkout("plan", LocalDate.of(2026, 9, 21), WorkoutType.INTERVALS, 30, 5, 8, now)
   private val volume = RecentTrainingVolume(0, 0, 0.0)
 
   @Test

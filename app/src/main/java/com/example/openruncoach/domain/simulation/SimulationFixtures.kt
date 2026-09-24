@@ -14,6 +14,7 @@ import com.example.openruncoach.domain.workout.PreRunCheckIn
 import com.example.openruncoach.domain.workout.ReadinessStatus
 import com.example.openruncoach.domain.workout.SorenessLevel
 import com.example.openruncoach.domain.workout.WorkoutType
+import com.example.openruncoach.domain.workout.simpleDurationWorkout
 import java.time.Instant
 import java.time.LocalDate
 
@@ -115,7 +116,7 @@ object SimulationFixtures {
       name,
       history,
       previousFeedback,
-      PlannedWorkout("baseline-${key.name.lowercase()}", LocalDate.of(2026, 9, 21), baselineType, 30, 3, if (baselineType == WorkoutType.TEMPO_RUN) 7 else 4, fixedInstant.minusSeconds(86_400)),
+      simpleDurationWorkout("baseline-${key.name.lowercase()}", LocalDate.of(2026, 9, 21), baselineType, 30, 3, if (baselineType == WorkoutType.TEMPO_RUN) 7 else 4, fixedInstant.minusSeconds(86_400)),
       checkIn,
       actual,
       feedback,

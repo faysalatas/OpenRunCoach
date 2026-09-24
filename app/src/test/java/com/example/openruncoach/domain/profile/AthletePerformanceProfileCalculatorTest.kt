@@ -51,6 +51,15 @@ class AthletePerformanceProfileCalculatorTest {
   }
 
   @Test
+  fun recentFourPointEightKmCanonicalRunCountsOnceWithDuplicatePresent() {
+    val canonical = run("recent-4-8", 1, distance = 4_800.0)
+    val duplicate = run("recent-4-8-copy", 1, distance = 4_800.0, canonical = false)
+    val profile = calculate(listOf(canonical, duplicate))
+    assertEquals(4_800.0, profile.distanceLast7DaysMeters, 0.01)
+    assertEquals(1, profile.runsLast7Days)
+  }
+
+  @Test
   fun sevenDayVolumeUsesOnlyRunsInsideWindow() {
     val profile = calculate(listOf(
       run("today", 0, 4_000.0, 1_800),

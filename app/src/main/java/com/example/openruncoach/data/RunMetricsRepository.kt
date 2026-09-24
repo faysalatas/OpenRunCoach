@@ -48,6 +48,8 @@ private fun MetricValue<out Number>.toEntity(runId: String, key: RunMetricKey) =
   secondaryValue = secondaryValue?.toDouble(),
   secondarySource = secondarySource?.name,
   verificationReason = verificationReason,
+  sourceAppName = sourceAppName,
+  sourceDeviceName = sourceDeviceName,
 )
 
 internal fun RunMetricsWithValues.toDomain(): RunMetrics? {
@@ -70,6 +72,8 @@ internal fun RunMetricsWithValues.toDomain(): RunMetrics? {
     averageCadence = double(RunMetricKey.AVERAGE_CADENCE),
     movingAverageCadence = double(RunMetricKey.MOVING_AVERAGE_CADENCE),
     maxCadence = double(RunMetricKey.MAX_CADENCE),
+    averagePowerWatts = double(RunMetricKey.AVERAGE_POWER),
+    maxPowerWatts = double(RunMetricKey.MAX_POWER),
     elevationGainMeters = double(RunMetricKey.ELEVATION_GAIN),
     elevationLossMeters = double(RunMetricKey.ELEVATION_LOSS),
     minAltitudeMeters = double(RunMetricKey.MIN_ALTITUDE),
@@ -93,6 +97,8 @@ private fun RunMetricValueEntity.toDoubleMetric() = MetricValue(
   secondaryValue = secondaryValue,
   secondarySource = secondarySource?.let(MetricSource::valueOf),
   verificationReason = verificationReason,
+  sourceAppName = sourceAppName,
+  sourceDeviceName = sourceDeviceName,
 )
 
 private fun RunMetricValueEntity.toLongMetric() = MetricValue(
@@ -103,4 +109,6 @@ private fun RunMetricValueEntity.toLongMetric() = MetricValue(
   secondaryValue = secondaryValue?.toLong(),
   secondarySource = secondarySource?.let(MetricSource::valueOf),
   verificationReason = verificationReason,
+  sourceAppName = sourceAppName,
+  sourceDeviceName = sourceDeviceName,
 )

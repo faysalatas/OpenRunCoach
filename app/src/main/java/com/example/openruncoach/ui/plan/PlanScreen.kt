@@ -39,6 +39,7 @@ import com.example.openruncoach.ui.components.EmptyState
 import com.example.openruncoach.ui.components.ItemSpacing
 import com.example.openruncoach.ui.components.ScreenPadding
 import com.example.openruncoach.ui.components.SectionSpacing
+import com.example.openruncoach.ui.workout.StructuredWorkoutDetail
 
 @Composable
 fun PlanScreen(modifier: Modifier = Modifier) {
@@ -65,10 +66,7 @@ fun PlanScreen(modifier: Modifier = Modifier) {
       else -> {
         val lifecycle = state.lifecycle!!
         val baseline = lifecycle.baselineWorkout
-        WorkoutCard("Baseline Planned Workout") {
-          Text(baseline.type.displayName(), style = MaterialTheme.typography.headlineSmall)
-          Text("${baseline.durationMinutes} min · RPE ${baseline.targetRpeMin}–${baseline.targetRpeMax}")
-        }
+        StructuredWorkoutDetail(baseline, heading = "Baseline Planned Workout")
         when (lifecycle.lifecycleState) {
           WorkoutLifecycleState.PLANNED -> Text("Preparing this workout for check-in.")
           WorkoutLifecycleState.CHECK_IN_REQUIRED -> if (state.showCheckIn) {

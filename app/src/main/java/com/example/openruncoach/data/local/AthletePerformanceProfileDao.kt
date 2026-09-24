@@ -24,6 +24,10 @@ interface AthletePerformanceProfileDao {
   @Query("SELECT * FROM athlete_performance_profile WHERE id = :id LIMIT 1")
   fun observeProfile(id: String = CURRENT_PROFILE_ID): Flow<AthletePerformanceProfileSnapshot?>
 
+  @Transaction
+  @Query("SELECT * FROM athlete_performance_profile WHERE id = :id LIMIT 1")
+  suspend fun getProfile(id: String = CURRENT_PROFILE_ID): AthletePerformanceProfileSnapshot?
+
   @Upsert
   suspend fun upsertProfile(profile: AthletePerformanceProfileEntity)
 

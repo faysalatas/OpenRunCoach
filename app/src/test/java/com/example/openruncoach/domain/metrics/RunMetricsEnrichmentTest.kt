@@ -22,10 +22,13 @@ import com.example.openruncoach.domain.samsunghealth.SamsungExerciseKind
 import com.example.openruncoach.domain.samsunghealth.SamsungExerciseLogSample
 import com.example.openruncoach.domain.samsunghealth.SamsungExerciseSessionInspection
 import com.example.openruncoach.domain.samsunghealth.SamsungHealthInspection
+import com.example.openruncoach.domain.samsunghealth.SamsungEnrichmentMatchResult
 import com.example.openruncoach.domain.samsunghealth.SamsungMatchConfidence
+import com.example.openruncoach.domain.samsunghealth.SamsungPhysicalWorkoutRelationship
 import com.example.openruncoach.domain.samsunghealth.SamsungSourceDeviceType
 import com.example.openruncoach.domain.samsunghealth.SamsungWorkoutMatchResult
 import com.example.openruncoach.domain.samsunghealth.SamsungWorkoutMatchStatus
+import com.example.openruncoach.domain.samsunghealth.clipSamsungSensorData
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -69,7 +72,103 @@ class RunMetricsEnrichmentTest {
     assertEquals(160.0, result.movingAverageCadence!!.value, 0.01)
     assertEquals(16.5, result.elevationGainMeters!!.value, 0.01)
     assertEquals("Galaxy Watch8", result.recordingDeviceName)
+    assertEquals("Samsung Health", result.averageCadence.sourceAppName)
+    assertEquals("Galaxy Watch8", result.averageCadence.sourceDeviceName)
     assertEquals(listOf(0.0, 158.0, 162.0), result.series.cadence.map { it.value })
+  }
+
+  @Test
+  fun watchEnrichmentDoesNotChangeCanonicalRecordingSource() {
+    val result = enricher.enrich(
+      base().copy(recordingSource = "com.strava"),
+      samsungInspection(SamsungMatchConfidence.HIGH),
+    )
+
+    assertEquals("com.strava", result.recordingSource)
+    assertEquals(MetricSource.SAMSUNG_HEALTH, result.averageCadence?.source)
+  }
+
+  @Test
+  fun overlappingSessionUsesOnlyClippedSensorSamplesAndKeepsCanonicalSessionValues() {
+    val inside = (0 until 40).map { index ->
+      SamsungExerciseLogSample(
+        timestamp = start.plusSeconds(index * 49L),
+        heartRate = 140.0,
+        cadence = if (index == 0) 0.0 else 160.0,
+        speedMetersPerSecond = if (index == 0) 0.0 else 2.5,
+        powerWatts = 200.0,
+        count = null,
+      )
+    }
+    val logs = listOf(
+      SamsungExerciseLogSample(start.minusSeconds(10), 250.0, 250.0, 9.0, 500.0, null),
+    ) + inside + listOf(
+      SamsungExerciseLogSample(start.plusSeconds(2_100), 250.0, 250.0, 9.0, 500.0, null),
+    )
+    val exact = samsungSession(logs = logs)
+    val overlapSession = exact.copy(
+      candidate = exact.candidate.copy(
+        startTime = start.minusMillis(200),
+        endTime = start.plusSeconds(2_500),
+        durationSeconds = 2_500,
+        distanceMeters = 6_000.0,
+      ),
+      meanHeartRate = 180.0,
+      maxHeartRate = 250.0,
+      vo2Max = 50.0,
+      altitudeGainMeters = 100.0,
+      caloriesKilocalories = 700.0,
+    )
+    val inspection = overlappingInspection(overlapSession)
+    val canonical = base().copy(
+      averageHeartRate = null,
+      minHeartRate = null,
+      maxHeartRate = null,
+      averageSpeedMetersPerSecond = null,
+      maxSpeedMetersPerSecond = null,
+      averageCadence = null,
+      movingAverageCadence = null,
+      maxCadence = null,
+      averagePowerWatts = null,
+      maxPowerWatts = null,
+      vo2Max = null,
+      elevationGainMeters = null,
+      caloriesKilocalories = null,
+      series = RunMetricSeries(),
+      recordingSource = "Strava",
+      recordingDeviceName = "Phone",
+    )
+
+    val result = enricher.enrich(canonical, inspection)
+
+    assertEquals(1_974L, result.durationSeconds.value)
+    assertEquals(4_802.8, result.distanceMeters!!.value, 0.01)
+    assertEquals(140.0, result.averageHeartRate!!.value, 0.01)
+    assertEquals(140.0, result.maxHeartRate!!.value, 0.01)
+    assertEquals(160.0 * 39 / 40, result.averageCadence!!.value, 0.01)
+    assertEquals(160.0, result.movingAverageCadence!!.value, 0.01)
+    assertEquals(200.0, result.averagePowerWatts!!.value, 0.01)
+    assertEquals(MetricConfidence.HIGH, result.averageHeartRate.confidence)
+    assertEquals("Samsung Health", result.averageHeartRate.sourceAppName)
+    assertEquals("Galaxy Watch8", result.averageHeartRate.sourceDeviceName)
+    assertEquals(40, result.series.heartRate.size)
+    assertEquals("Strava", result.recordingSource)
+    assertEquals("Phone", result.recordingDeviceName)
+    assertNull(result.vo2Max)
+    assertNull(result.elevationGainMeters)
+    assertNull(result.caloriesKilocalories)
+    assertTrue(result.averageHeartRate.verificationReason!!.contains("clipped"))
+  }
+
+  @Test
+  fun overlappingMetricWithPoorSampleCoverageIsNotApplied() {
+    val sparseLogs = (0 until 5).map { index ->
+      SamsungExerciseLogSample(start.plusSeconds(index.toLong()), 140.0, null, null, null, null)
+    }
+    val session = samsungSession(logs = sparseLogs)
+    val result = enricher.enrich(base().copy(averageHeartRate = null), overlappingInspection(session))
+
+    assertNull(result.averageHeartRate)
   }
 
   @Test
@@ -234,6 +333,34 @@ class RunMetricsEnrichmentTest {
       manualSelection = manual,
     )
     return SamsungHealthInspection(match, if (status == SamsungWorkoutMatchStatus.MATCHED) session else null, emptyList(), emptyList())
+  }
+
+  private fun overlappingInspection(session: SamsungExerciseSessionInspection): SamsungHealthInspection {
+    val identity = SamsungWorkoutMatchResult(
+      status = SamsungWorkoutMatchStatus.NOT_FOUND,
+      confidence = SamsungMatchConfidence.LOW,
+    )
+    val enrichment = SamsungEnrichmentMatchResult(
+      status = SamsungWorkoutMatchStatus.MATCHED,
+      selected = session.candidate,
+      plausibleCandidates = listOf(session.candidate),
+      confidence = SamsungMatchConfidence.HIGH,
+      relationship = SamsungPhysicalWorkoutRelationship.OVERLAPPING_SESSION,
+      canonicalCoverage = 1.0,
+      overlapDurationSeconds = 1_974.0,
+    )
+    return SamsungHealthInspection(
+      match = identity,
+      session = null,
+      providerMetrics = emptyList(),
+      sharedDifferences = emptyList(),
+      identityMatch = identity,
+      identitySession = null,
+      enrichmentMatch = enrichment,
+      enrichmentSession = session,
+      plausibleSessions = listOf(session),
+      clippedEnrichment = clipSamsungSensorData(session.exerciseLogSamples, start, start.plusSeconds(1_974)),
+    )
   }
 
   private fun samsungSession(

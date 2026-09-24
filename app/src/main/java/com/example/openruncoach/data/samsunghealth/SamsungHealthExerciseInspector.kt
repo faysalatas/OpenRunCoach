@@ -16,12 +16,14 @@ import com.example.openruncoach.domain.samsunghealth.SamsungExerciseKind
 import com.example.openruncoach.domain.samsunghealth.SamsungExerciseLogSample
 import com.example.openruncoach.domain.samsunghealth.SamsungExerciseSessionInspection
 import com.example.openruncoach.domain.samsunghealth.SamsungHealthInspection
-import com.example.openruncoach.domain.samsunghealth.SamsungWorkoutMatchStatus
 import com.example.openruncoach.domain.samsunghealth.SamsungWorkoutTarget
 import com.example.openruncoach.domain.samsunghealth.SamsungSourceDeviceType
+import com.example.openruncoach.domain.samsunghealth.SamsungPhysicalWorkoutRelationship
 import com.example.openruncoach.domain.samsunghealth.SharedMetricDifference
+import com.example.openruncoach.domain.samsunghealth.clipSamsungSensorData
 import com.example.openruncoach.domain.samsunghealth.investigateCadence
-import com.example.openruncoach.domain.samsunghealth.matchSamsungWorkout
+import com.example.openruncoach.domain.samsunghealth.matchSamsungEnrichment
+import com.example.openruncoach.domain.samsunghealth.matchSamsungIdentity
 import com.example.openruncoach.domain.samsunghealth.summarizeExerciseLogMetric
 import com.samsung.android.sdk.health.data.data.HealthDataPoint
 import com.samsung.android.sdk.health.data.data.entries.ExerciseSession
@@ -52,30 +54,44 @@ class SamsungHealthExerciseInspector(
       return SamsungHealthInspectionResult(availability)
     }
     return try {
-      val toleranceSeconds = 120L
       val records = dataSource.readExerciseData(
-        target.startTime.minusSeconds(toleranceSeconds),
-        target.endTime.plusSeconds(toleranceSeconds),
+        target.startTime.minusSeconds(QUERY_START_PADDING_SECONDS),
+        target.endTime.plusSeconds(QUERY_END_PADDING_SECONDS),
       )
       val sdkCandidates = mutableListOf<SdkCandidate>()
       for (record in records) {
         sdkCandidates += sessions(record)
       }
       val matchTarget = target.withHealthConnectMetrics(healthConnectInspection)
-      val match = matchSamsungWorkout(
-        matchTarget,
-        sdkCandidates.map(SdkCandidate::candidate),
+      val candidates = sdkCandidates.map(SdkCandidate::candidate)
+      val identityMatch = matchSamsungIdentity(matchTarget, candidates)
+      val enrichmentMatch = matchSamsungEnrichment(
+        target = matchTarget,
+        candidates = candidates,
+        identityCandidateId = identityMatch.selected?.id,
         manualSelectionCandidateId = manualSelectionCandidateId,
       )
-      val matchedSdkSession = if (match.status == SamsungWorkoutMatchStatus.MATCHED) {
-        sdkCandidates.singleOrNull { it.candidate.id == match.selected?.id }
-      } else null
-      val session = matchedSdkSession?.toInspection()
+      val plausibleIds = (identityMatch.plausibleCandidates + enrichmentMatch.plausibleCandidates)
+        .mapTo(mutableSetOf(), SamsungExerciseCandidate::id)
+      val plausibleSessions = sdkCandidates
+        .filter { it.candidate.id in plausibleIds }
+        .map { it.toInspection() }
+      val identitySession = plausibleSessions.singleOrNull { it.candidate.id == identityMatch.selected?.id }
+      val enrichmentSession = plausibleSessions.singleOrNull { it.candidate.id == enrichmentMatch.selected?.id }
+      val clippedEnrichment = enrichmentSession?.takeIf {
+        enrichmentMatch.relationship == SamsungPhysicalWorkoutRelationship.OVERLAPPING_SESSION
+      }?.let { clipSamsungSensorData(it.exerciseLogSamples, target.startTime, target.endTime) }
       val inspection = SamsungHealthInspection(
-        match = match,
-        session = session,
-        providerMetrics = providerMetrics(healthConnectInspection, session),
-        sharedDifferences = sharedDifferences(healthConnectInspection, session),
+        match = identityMatch,
+        session = identitySession,
+        providerMetrics = providerMetrics(healthConnectInspection, enrichmentSession),
+        sharedDifferences = sharedDifferences(healthConnectInspection, enrichmentSession),
+        identityMatch = identityMatch,
+        identitySession = identitySession,
+        enrichmentMatch = enrichmentMatch,
+        enrichmentSession = enrichmentSession,
+        plausibleSessions = plausibleSessions,
+        clippedEnrichment = clippedEnrichment,
       )
       SamsungHealthInspectionResult(availability, inspection)
     } catch (error: CancellationException) {
@@ -127,7 +143,17 @@ class SamsungHealthExerciseInspector(
           maxCadence = session.maxCadence.validMetric(),
           exerciseLogExists = session.log != null,
           totalLogSamples = logs.orEmpty().size,
+          heartRateSampleCount = logs.orEmpty().count { it.heartRate != null },
+          speedSampleCount = logs.orEmpty().count { it.speedMetersPerSecond != null },
           cadenceSampleCount = cadence.cadenceSampleCount,
+          powerSampleCount = logs.orEmpty().count { it.powerWatts != null },
+          powerAvailable = session.meanPower.validMetric() != null || session.maxPower.validMetric() != null,
+          elevationAvailable = listOf(
+            session.altitudeGain,
+            session.altitudeLoss,
+            session.minAltitude,
+            session.maxAltitude,
+          ).any { it.validMetric() != null },
         ),
       )
       SdkCandidate(candidate, point, session, device)
@@ -178,6 +204,11 @@ class SamsungHealthExerciseInspector(
     val session: ExerciseSession,
     val device: Device?,
   )
+
+  private companion object {
+    const val QUERY_START_PADDING_SECONDS = 120L
+    const val QUERY_END_PADDING_SECONDS = 30L * 60L
+  }
 }
 
 private fun ExerciseSession.toLogSamples(): List<SamsungExerciseLogSample>? = log?.map { entry ->

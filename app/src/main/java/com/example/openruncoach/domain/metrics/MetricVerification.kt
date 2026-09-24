@@ -18,6 +18,7 @@ object RunMetricTolerances {
   val SPEED = MetricTolerance(0.05, 0.20, unit = "m/s")
   val VO2_MAX = MetricTolerance(0.2, 1.0, unit = "ml/kg/min")
   val CADENCE = MetricTolerance(1.0, 4.0, unit = "spm")
+  val POWER = MetricTolerance(5.0, 20.0, unit = "W")
   val ELEVATION = MetricTolerance(2.0, 10.0, unit = "m")
   val CALORIES = MetricTolerance(5.0, 30.0, unit = "kcal")
 }

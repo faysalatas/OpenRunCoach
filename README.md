@@ -39,6 +39,8 @@ The long-term goal is a transparent, explainable running coach inspired by feedb
 - Deterministic developer coaching simulator with built-in scenarios
 - Health Connect Data Inspector for canonical runs, with per-metric permission and source diagnostics
 - Experimental Samsung Health Data SDK comparison for canonical runs, including ExerciseLog cadence diagnostics
+- Persistent athlete goals with profile-based context, target times, optional dates, and explainable assessments
+- Provider-independent structured workouts with ordered segments, repeat blocks, intensity guidance, estimates, purposes, and cues
 
 Automatic matching between a planned workout and an imported Health Connect run is not implemented yet. Because of that, the production workflow does not automatically create the next real workout after an import; the domain simulator exercises that complete loop today.
 
@@ -78,7 +80,7 @@ Keeping these separate lets OpenRunCoach explain what was planned, why it change
 
 ## Goals
 
-The planned goal system will support:
+The Goal screen, available from Settings, provides a five-step flow in which the athlete chooses the distance and goal type. OpenRunCoach presents current observed context and data limitations, but never silently selects a goal.
 
 ### Race distances
 
@@ -86,7 +88,7 @@ The planned goal system will support:
 - 10K
 - Half Marathon
 - Marathon
-- Custom distances later
+- Custom distances from 0.1 km through 200 km
 
 ### Goal types
 
@@ -94,24 +96,19 @@ The planned goal system will support:
 - Improve performance
 - Reach a target time
 
-Race distance does not equal training distance. A 5K athlete may still perform 8–10 km Zone 2 runs, long easy runs, threshold sessions, intervals, and recovery runs. The goal informs the overall training structure rather than imposing a maximum distance on every session.
+Target-time goals accept a finish duration and show the derived pace per kilometre. When a verified benchmark exists, the review shows the required time and percentage change. An optional future target date can be stored without requiring a race event.
 
-## Planned workout model
+Creating a goal captures a compact starting-performance snapshot: the best and most recent qualifying benchmark, weekly volume, longest recent run, average runs per week, typical easy pace and heart rate, and profile confidence. This snapshot remains fixed while Goal Details shows the latest profile separately. Starting a replacement goal archives the previous active goal; goal history remains in Room.
 
-The current basic workout model supports Easy Run, Recovery Run, Long Run, Tempo Run, Intervals, and Rest. The extensible model is planned to include:
+Goal assessments are descriptive comparisons with observed data. `WELL_SUPPORTED`, `PLAUSIBLE`, `LIMITED_DATA`, and `LARGE_STEP` explain whether a verified benchmark and recent distance history support the selected context. They do not predict success or failure and do not recommend a target automatically.
 
-- Easy Run
-- Recovery Run
-- Long Run
-- Run/Walk
-- Tempo
-- Threshold
-- Intervals
-- Race-specific workouts
-- Technique and drills
-- Strides
+Race goal distance does not constrain workout distance. A 5K athlete may still perform shorter intervals, threshold and tempo sessions, 7–10 km easy or Zone 2 runs, longer aerobic runs, and recovery sessions. The goal determines training demands rather than the distance of every workout.
 
-Workouts will eventually contain structured segments:
+## Structured workout model
+
+`PlannedWorkout` remains the identity used by the workout lifecycle and now contains the provider-independent structured prescription. Supported workout types are Easy Run, Recovery Run, Long Run, Run/Walk, Tempo Run, Threshold, Intervals, Strides, Technique, Race Specific, and Rest.
+
+Workouts contain ordered single-segment blocks and explicit repeat blocks:
 
 ```text
 Workout
@@ -122,7 +119,23 @@ Workout
 └── Cool-down
 ```
 
-Possible segment targets include duration, distance, pace, RPE, heart-rate zone, repetitions, and recovery duration.
+Segments use one primary completion condition: duration, distance, repetitions, or open/manual completion. Segment categories distinguish warm-up, work, recovery, cool-down, easy running, strides, drills, walking, and rest. Repeat blocks preserve structures such as `3 × (8 min threshold + 2 min recovery)` without flattening them into unrelated rows.
+
+Provider-independent intensity guidance supports RPE ranges, pace ranges, heart-rate ranges, heart-rate-zone references, and no explicit target. A segment has one primary intensity and may have secondary guardrails. Heart-rate-zone references are marked uncalibrated because zone calculation is not implemented.
+
+Every workout has a primary purpose, explanation, cues, origin, lifecycle state, and optional Goal reference. The estimate calculator reports duration, distance, work, recovery, warm-up/cool-down time, repeat-block count, and total repeated iterations when the prescription provides enough information. These repeat values stay separate, so two drill rounds plus four stride rounds appear as two repeat blocks and six total iterations. Unknown values remain unknown and known portions are shown as partial minimums; for example, an 8 km run without pace guidance does not receive an invented duration, and an 800 metre interval does not receive one without a pace target.
+
+Examples in the developer Workout Model Preview include:
+
+- 35 minute Easy Run at RPE 3–4
+- 8 km Long Run at RPE 3–4
+- six rounds of 3 minutes running and 1 minute walking
+- 10 minute warm-up, three rounds of 8 minute threshold and 2 minute recovery, then a 10 minute cool-down
+- six 800 metre intervals with timed recoveries
+- fast but relaxed strides
+- open/manual technique drills
+
+The normalized Room representation stores workouts, blocks, segments, intensity targets, and cues separately. Existing simple planned workouts are migrated into one equivalent duration segment while preserving their workout ID and lifecycle state. The model can be copied with changed types, segment targets, recovery, or repetition counts when structured check-in adjustment is implemented later.
 
 ## Pre-run check-in
 
@@ -220,7 +233,7 @@ The Health Connect Data Inspector can query API support and provider availabilit
 
 Run Detail provides an **Inspect Health Data** action for canonical runs. The inspector reads the selected session directly from Health Connect, reports record and sample counts, summaries, permissions, source packages, and unavailable or failed reads independently, and refreshes the persisted unified metric summary. Raw samples are not persisted.
 
-The Android Health Connect API supports record types such as cadence, VO₂ max, elevation, power, calories, steps, and exercise routes. API support does not mean a particular watch or provider actually records or publishes that metric. The inspector exists to show the difference on a real device. It source-filters results to the canonical workout provider and labels data found only from another provider instead of combining it silently.
+The Android Health Connect API supports record types such as cadence, VO₂max, elevation, power, calories, steps, and exercise routes. API support does not mean a particular watch or provider actually records or publishes that metric. The inspector exists to show the difference on a real device. It source-filters results to the canonical workout provider and labels data found only from another provider instead of combining it silently.
 
 Route inspection requires an explicit action and consent where Health Connect requires it. Raw route points and series samples are not stored in Room.
 
@@ -228,9 +241,11 @@ Route inspection requires an explicit action and consent where Health Connect re
 
 Health Connect remains the primary, provider-independent workout source. The optional Samsung Health Data SDK integration enriches the existing inspector for Samsung users; it does not replace imported Health Connect values or affect canonical selection, coaching, or workout generation.
 
-For the selected canonical run, the inspector requests read access only to Samsung's `DataTypes.EXERCISE`. It searches nearby Samsung running and track-running sessions, then compares source application, source device, start time, duration, distance, and shared metrics. A watch source is preferred only when the canonical Health Connect run is itself a watch-recorded Samsung Health run. The matcher reports its confidence and evidence. Genuinely ambiguous candidates remain visible with full diagnostics and can be selected manually for that run; this choice affects only the Samsung diagnostic view.
+For the selected canonical run, the inspector requests read access only to Samsung's `DataTypes.EXERCISE`. It searches all nearby Samsung running and track-running sessions, then makes two decisions. The identity match finds the Samsung provider copy using source application and physical-workout evidence. The enrichment match classifies a candidate as an exact session or an overlapping session. Exact sessions require close boundaries and distance. Overlapping sessions require an extremely close start, high coverage of the canonical activity, a trusted Watch source, and substantial ExerciseLog data; Watch provenance alone is insufficient. Source application equality is not required for enrichment.
 
-The diagnostic view compares shared Health Connect and Samsung Health metrics and inspects optional `ExerciseSession` fields. Candidate diagnostics include the Samsung data-point UID and timestamps, source application ID, resolved device type and identity, match score and reasons, and session-level heart-rate, speed, VO₂ max, and cadence previews. It also summarizes `ExerciseLog` heart-rate, speed, cadence, power, and count availability. These metrics remain experimental. Cadence is diagnostic data and is not used by the coaching engine. Raw Samsung samples are not persisted.
+Provider session boundaries can differ for the same outing. A Strava canonical workout may end before its Galaxy Watch recording while still being fully covered by that recording. In that case, OpenRunCoach clips Samsung heart-rate, speed, cadence, and power samples to the canonical start and end, then recomputes their summaries. Canonical Health Connect distance and duration remain authoritative. Full Samsung session values such as VO₂max, calories, and elevation remain diagnostic context when boundaries materially differ and are not silently applied to the shorter canonical activity. Timestamped route-altitude clipping is planned before overlapping sessions can contribute elevation.
+
+The diagnostic view separates the canonical workout, exact provider copy, and best enrichment candidate. Its expandable candidate list includes the Samsung data-point UID and timestamps, source application, device identity, distance, duration, ExerciseLog presence, and heart-rate, speed, cadence, VO₂max, elevation, and power capabilities. Genuinely ambiguous sensor candidates remain visible and can be selected manually for that run. These metrics remain experimental. Cadence is diagnostic data and is not used by the coaching engine. Raw Samsung samples are not persisted.
 
 The developer diagnostics preserve the Samsung SDK operation, exception class, numeric error code, message, resolution availability, platform detection, exercise permission state, and developer authorization state. Missing exercise permission is reported separately from platform availability. Resolvable platform actions are launched only after the developer selects the resolution button; no external Samsung screen opens automatically.
 
@@ -240,19 +255,19 @@ Samsung support is optional. Health Connect and all normal app features continue
 
 `RunMetrics` is the provider-independent data foundation for workout metrics. Health Connect always owns the canonical run ID, session start and end, and default metric values. An optional trusted Samsung Health match can add metrics that Health Connect did not expose, including the cadence and elevation values confirmed during development.
 
-Every stored metric summary preserves its primary provider, confidence, verification state, and optional secondary provider value. Health Connect remains primary for overlapping values such as distance, duration, heart rate, speed, and VO₂ max. Samsung values verify those metrics within centralized tolerances; material differences are marked as conflicts instead of silently replacing Health Connect data. High-confidence Samsung matches are enriched automatically, medium matches are retained with medium confidence, and low or ambiguous matches are not used automatically. A saved manual selection remains trusted for that run.
+Every stored metric summary preserves its primary provider, confidence, verification state, and optional secondary provider value. Health Connect remains primary for overlapping values such as distance and duration. Exact Samsung sessions can verify shared values within centralized tolerances; material differences are marked as conflicts instead of silently replacing Health Connect data. Overlapping sessions contribute only sufficiently covered clipped sensor series, with confidence based on sample count and time coverage. Low-confidence or ambiguous matches are not used automatically. A saved manual selection must still meet the physical relationship and sensor requirements.
 
 Cadence keeps the Samsung session average and a separate moving average. Raw zero cadence samples remain in the in-memory series, while the moving average excludes zero cadence and samples aligned with effectively zero speed. Raw heart-rate, speed, cadence, and power series are not stored in Room yet. Only summary values and their provenance survive app restarts. Drift, running economy, and technique analysis remain planned work.
 
 ## Athlete Performance Profile
 
-The Performance Profile is reproducible derived data built from canonical runs, unified `RunMetrics`, and post-run feedback. It summarizes 7-day and 28-day volume, completed calendar-week averages, running frequency, active weeks, current weekly streak, longest recent run, subjective feedback, VO₂ max, and conservative observational trends. Duplicate and non-canonical records do not contribute.
+The Performance Profile is reproducible derived data built from canonical runs, unified `RunMetrics`, and post-run feedback. It summarizes 7-day and 28-day volume, completed calendar-week averages, running frequency, active weeks, current weekly streak, longest recent run, subjective feedback, VO₂max, and conservative observational trends. Duplicate and non-canonical records do not contribute.
 
 Easy-running baselines require a completed run with RPE 4 or lower, easy or appropriate cardio effort, no significant pain, and valid distance, duration, and pace. Missing feedback does not qualify a run as easy. The profile uses medians and observed ranges for easy pace, heart rate, and unified cadence; it does not compare cadence against a universal target or generate technique advice.
 
 Standard session benchmarks are supported for 1K, 5K, 10K, half marathon, and marathon distances using a centralized distance tolerance. Personal best and most recent results are kept separately. A 4.8 km run is not treated as a 5K benchmark. Best-segment detection inside longer runs, manual results, and race-result imports remain planned.
 
-Profile confidence is based on explicit recent-run count, represented weeks, feedback coverage, heart-rate and pace availability, and unified-metric reliability. The Performance screen exposes these reasons and data-quality gaps. The latest snapshot is stored as a rebuildable Room cache and recalculated after run synchronization or canonical changes, feedback changes, and metric enrichment. The future Goal System will use this profile, but no goals, race predictions, zones, or training plans are generated yet.
+Profile confidence is based on explicit recent-run count, represented weeks, feedback coverage, heart-rate and pace availability, and unified-metric reliability. The Performance screen exposes these reasons and data-quality gaps. The latest snapshot is stored as a rebuildable Room cache and recalculated after run synchronization or canonical changes, feedback changes, and metric enrichment. The Goal System uses this profile for context and captures a stable starting snapshot. It does not generate race predictions, zones, or training plans.
 
 ## Data sources and duplicates
 
@@ -288,6 +303,8 @@ Domain
 ├── canonical run selection and duplicate diagnostics
 ├── provider-independent RunMetrics and verification rules
 ├── Athlete Performance Profile calculations
+├── goal capability and assessment rules
+├── structured workouts, estimates, and descriptions
 ├── coaching rules
 ├── workout lifecycle and readiness evaluation
 ├── next-workout generation
@@ -297,6 +314,7 @@ Data
 ├── Health Connect
 ├── optional Samsung Health diagnostic enrichment
 ├── Room
+├── persistent goals and starting snapshots
 ├── DataStore settings
 └── repositories
 ```
@@ -345,13 +363,13 @@ The current developer screen is a timeline runner; shared production screens and
 - [x] Experimental Samsung Health Data SDK investigation
 - [x] Unified `RunMetrics` model
 - [x] Athlete Performance Profile
-- [ ] Goal system
-- [ ] Structured workout model
-- [x] Pre-run check-in
-- [x] Adaptive workout adjustment
+- [x] Goal System
+- [x] Structured Workout Model
+- [ ] Training Block / Plan Generation
+- [ ] Pre-run Check-in / Workout Adjustment
+- [x] Basic pre-run check-in and duration adjustment
 - [ ] Planned versus actual workout matching
 - [ ] Post-run checkout lifecycle integration
-- [ ] Training blocks and weekly plans
 - [ ] Technique, cadence, and running economy analysis
 - [ ] Full simulation mode using production screens and isolated storage
 - [ ] Advanced training metrics

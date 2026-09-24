@@ -47,4 +47,6 @@ data class RunMetricValueEntity(
   val secondaryValue: Double?,
   val secondarySource: String?,
   val verificationReason: String?,
+  val sourceAppName: String?,
+  val sourceDeviceName: String?,
 )

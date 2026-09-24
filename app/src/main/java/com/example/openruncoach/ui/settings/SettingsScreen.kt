@@ -38,7 +38,9 @@ import com.example.openruncoach.ui.components.SectionSpacing
 @Composable
 fun SettingsScreen(
   onOpenPerformanceProfile: () -> Unit,
+  onOpenTrainingGoal: () -> Unit,
   onOpenSimulator: () -> Unit,
+  onOpenWorkoutPreview: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
   val context = LocalContext.current
@@ -75,6 +77,10 @@ fun SettingsScreen(
     SettingsCard("Performance Profile") {
       Text("View current training volume, benchmarks, easy-running baselines, and data confidence.")
       Button(onClick = onOpenPerformanceProfile) { Text("Open Performance Profile") }
+    }
+    SettingsCard("Training Goal") {
+      Text("Choose a distance goal using your current performance context.")
+      Button(onClick = onOpenTrainingGoal) { Text("Open Training Goal") }
     }
     SettingsCard("Preferred workout source") {
       Text("Automatic uses OpenRunCoach's canonical run selection rules.")
@@ -124,9 +130,10 @@ fun SettingsScreen(
       Text("Health data stays on this device.", style = MaterialTheme.typography.bodyMedium)
     }
     if (isDebuggable) {
-      SettingsCard("Developer tools") {
+      SettingsCard("Developer / Diagnostics") {
         Text("Run deterministic coaching scenarios without real user data.")
         Button(onClick = onOpenSimulator) { Text("Coaching Simulator") }
+        Button(onClick = onOpenWorkoutPreview) { Text("Workout Model Preview") }
       }
     }
   }

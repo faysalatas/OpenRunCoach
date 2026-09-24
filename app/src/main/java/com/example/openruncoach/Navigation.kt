@@ -20,12 +20,15 @@ import androidx.navigation.navArgument
 import com.example.openruncoach.ui.coach.CoachDetailScreen
 import com.example.openruncoach.ui.health.RunDetailScreen
 import com.example.openruncoach.ui.history.HistoryScreen
+import com.example.openruncoach.ui.goal.GoalScreen
 import com.example.openruncoach.ui.home.HomeScreen
 import com.example.openruncoach.ui.plan.PlanScreen
 import com.example.openruncoach.ui.profile.PerformanceProfileScreen
 import com.example.openruncoach.ui.settings.SettingsScreen
 import com.example.openruncoach.ui.simulation.SimulationScreen
 import com.example.openruncoach.ui.inspection.HealthDataInspectorScreen
+import com.example.openruncoach.ui.workout.WorkoutDetailScreen
+import com.example.openruncoach.ui.workout.WorkoutPreviewScreen
 
 private object Routes {
   const val HOME = "home"
@@ -37,7 +40,11 @@ private object Routes {
   const val SIMULATOR = "simulator"
   const val DATA_INSPECTOR = "data-inspector"
   const val PERFORMANCE_PROFILE = "performance-profile"
+  const val GOAL = "goal"
+  const val WORKOUT_PREVIEW = "workout-preview"
+  const val WORKOUT_DETAIL = "planned-workout"
   const val RUN_ID = "runId"
+  const val WORKOUT_ID = "workoutId"
 }
 
 private data class BottomDestination(val route: String, val label: String, val symbol: String)
@@ -98,11 +105,29 @@ fun MainNavigation() {
       composable(Routes.SETTINGS) {
         SettingsScreen(
           onOpenPerformanceProfile = { navController.navigate(Routes.PERFORMANCE_PROFILE) },
+          onOpenTrainingGoal = { navController.navigate(Routes.GOAL) },
           onOpenSimulator = { navController.navigate(Routes.SIMULATOR) },
+          onOpenWorkoutPreview = { navController.navigate(Routes.WORKOUT_PREVIEW) },
         )
       }
       composable(Routes.PERFORMANCE_PROFILE) { PerformanceProfileScreen(onBack = navController::navigateUp) }
+      composable(Routes.GOAL) { GoalScreen(onBack = navController::navigateUp) }
       composable(Routes.SIMULATOR) { SimulationScreen(onBack = navController::navigateUp) }
+      composable(Routes.WORKOUT_PREVIEW) {
+        WorkoutPreviewScreen(
+          onBack = navController::navigateUp,
+          onOpenWorkout = { workoutId -> navController.navigate(workoutDetailRoute(workoutId)) },
+        )
+      }
+      composable(
+        route = "${Routes.WORKOUT_DETAIL}?${Routes.WORKOUT_ID}={${Routes.WORKOUT_ID}}",
+        arguments = listOf(navArgument(Routes.WORKOUT_ID) { type = NavType.StringType }),
+      ) { entry ->
+        WorkoutDetailScreen(
+          workoutId = entry.arguments?.getString(Routes.WORKOUT_ID).orEmpty(),
+          onBack = navController::navigateUp,
+        )
+      }
       composable(
         route = "${Routes.RUN_DETAIL}?${Routes.RUN_ID}={${Routes.RUN_ID}}",
         arguments = listOf(navArgument(Routes.RUN_ID) { type = NavType.StringType }),
@@ -142,3 +167,5 @@ private fun runDetailRoute(runId: String) = "${Routes.RUN_DETAIL}?${Routes.RUN_I
 private fun coachDetailRoute(runId: String) = "${Routes.COACH_DETAIL}?${Routes.RUN_ID}=${Uri.encode(runId)}"
 
 private fun dataInspectorRoute(runId: String) = "${Routes.DATA_INSPECTOR}?${Routes.RUN_ID}=${Uri.encode(runId)}"
+
+private fun workoutDetailRoute(workoutId: String) = "${Routes.WORKOUT_DETAIL}?${Routes.WORKOUT_ID}=${Uri.encode(workoutId)}"

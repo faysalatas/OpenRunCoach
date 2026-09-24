@@ -1,5 +1,7 @@
 package com.example.openruncoach.domain.samsunghealth
 
+import com.example.openruncoach.domain.metrics.TimedMetricSample
+import com.example.openruncoach.domain.metrics.movingCadenceAverage
 import java.time.Duration
 import java.time.Instant
 import kotlin.math.abs
@@ -43,7 +45,12 @@ data class SamsungCandidateMetrics(
   val maxCadence: Double? = null,
   val exerciseLogExists: Boolean = false,
   val totalLogSamples: Int = 0,
+  val heartRateSampleCount: Int = 0,
+  val speedSampleCount: Int = 0,
   val cadenceSampleCount: Int = 0,
+  val powerSampleCount: Int = 0,
+  val powerAvailable: Boolean = false,
+  val elevationAvailable: Boolean = false,
 )
 
 data class SamsungExerciseCandidate(
@@ -70,9 +77,18 @@ data class SamsungWorkoutMatchTolerance(
   val distanceFraction: Double = 0.05,
 )
 
+data class SamsungEnrichmentThresholds(
+  val exact: SamsungWorkoutMatchTolerance = SamsungWorkoutMatchTolerance(),
+  val overlapStartSeconds: Double = 5.0,
+  val minimumCanonicalCoverage: Double = 0.95,
+  val minimumExerciseLogSamples: Int = 60,
+)
+
 enum class SamsungWorkoutMatchStatus { MATCHED, NOT_FOUND, AMBIGUOUS }
 
 enum class SamsungMatchConfidence { HIGH, MEDIUM, LOW, AMBIGUOUS }
+
+enum class SamsungPhysicalWorkoutRelationship { EXACT_SESSION, OVERLAPPING_SESSION, NO_MATCH, AMBIGUOUS }
 
 enum class SamsungMatchReasonKind { POSITIVE, NEGATIVE, NEUTRAL }
 
@@ -103,23 +119,148 @@ data class SamsungWorkoutMatchResult(
   val manualSelection: Boolean = false,
 )
 
+data class SamsungEnrichmentCandidateScore(
+  val candidate: SamsungExerciseCandidate,
+  val relationship: SamsungPhysicalWorkoutRelationship,
+  val canonicalCoverage: Double,
+  val overlapDurationSeconds: Double,
+  val physicalConfidence: SamsungMatchConfidence,
+  val richnessScore: Int,
+  val reasons: List<SamsungMatchReason>,
+)
+
+data class SamsungEnrichmentMatchResult(
+  val status: SamsungWorkoutMatchStatus,
+  val selected: SamsungExerciseCandidate? = null,
+  val plausibleCandidates: List<SamsungExerciseCandidate> = emptyList(),
+  val confidence: SamsungMatchConfidence = SamsungMatchConfidence.AMBIGUOUS,
+  val candidateScores: List<SamsungEnrichmentCandidateScore> = emptyList(),
+  val reasons: List<SamsungMatchReason> = emptyList(),
+  val manualSelection: Boolean = false,
+  val relationship: SamsungPhysicalWorkoutRelationship = SamsungPhysicalWorkoutRelationship.NO_MATCH,
+  val canonicalCoverage: Double? = null,
+  val overlapDurationSeconds: Double? = null,
+)
+
+/** Matches the provider copy of the canonical Health Connect session. */
+fun matchSamsungIdentity(
+  target: SamsungWorkoutTarget,
+  candidates: List<SamsungExerciseCandidate>,
+  tolerance: SamsungWorkoutMatchTolerance = SamsungWorkoutMatchTolerance(),
+): SamsungWorkoutMatchResult {
+  val source = target.canonicalSourceAppId?.takeIf(String::isNotBlank)
+  val providerCandidates = if (source == null) candidates else {
+    candidates.filter { it.source.applicationId == source }
+  }
+  return matchSamsungWorkout(target, providerCandidates, tolerance)
+}
+
+/** Selects a trusted, sensor-rich representation of the same physical workout. */
+fun matchSamsungEnrichment(
+  target: SamsungWorkoutTarget,
+  candidates: List<SamsungExerciseCandidate>,
+  thresholds: SamsungEnrichmentThresholds = SamsungEnrichmentThresholds(),
+  identityCandidateId: String? = null,
+  manualSelectionCandidateId: String? = null,
+): SamsungEnrichmentMatchResult {
+  val scores = candidates.mapNotNull { candidate ->
+    val assessment = assessEnrichmentRelationship(target, candidate, thresholds)
+    if (assessment.relationship == SamsungPhysicalWorkoutRelationship.NO_MATCH) return@mapNotNull null
+    val reasons = physicalMatchReasons(target, candidate, assessment) + enrichmentReasons(candidate, identityCandidateId)
+    SamsungEnrichmentCandidateScore(
+      candidate = candidate,
+      relationship = assessment.relationship,
+      canonicalCoverage = assessment.canonicalCoverage,
+      overlapDurationSeconds = assessment.overlapDurationSeconds,
+      physicalConfidence = assessment.confidence,
+      richnessScore = enrichmentRichnessScore(candidate),
+      reasons = reasons,
+    )
+  }.sortedWith(
+    compareByDescending<SamsungEnrichmentCandidateScore> { it.richnessScore }
+      .thenByDescending { it.physicalConfidence.rank }
+      .thenBy { abs(Duration.between(target.startTime, it.candidate.startTime).toMillis()) }
+      .thenBy { it.candidate.id }
+  )
+  val plausible = scores.map(SamsungEnrichmentCandidateScore::candidate)
+  val trusted = scores.filter {
+    it.physicalConfidence == SamsungMatchConfidence.HIGH ||
+      it.physicalConfidence == SamsungMatchConfidence.MEDIUM
+  }
+  val useful = trusted.filter { score ->
+    if (score.relationship == SamsungPhysicalWorkoutRelationship.OVERLAPPING_SESSION) {
+      score.candidate.metrics.hasTimeSeriesEnrichment
+    } else score.candidate.metrics.hasSensorEnrichment
+  }
+  val manual = manualSelectionCandidateId?.let { id -> useful.firstOrNull { it.candidate.id == id } }
+  if (manual != null) {
+    val reason = positive("Manual diagnostic enrichment selection")
+    return SamsungEnrichmentMatchResult(
+      status = SamsungWorkoutMatchStatus.MATCHED,
+      selected = manual.candidate,
+      plausibleCandidates = plausible,
+      confidence = SamsungMatchConfidence.HIGH,
+      candidateScores = scores,
+      reasons = listOf(reason) + manual.reasons,
+      manualSelection = true,
+      relationship = manual.relationship,
+      canonicalCoverage = manual.canonicalCoverage,
+      overlapDurationSeconds = manual.overlapDurationSeconds,
+    )
+  }
+  if (useful.isEmpty()) {
+    return SamsungEnrichmentMatchResult(
+      status = SamsungWorkoutMatchStatus.NOT_FOUND,
+      plausibleCandidates = plausible,
+      confidence = if (plausible.isEmpty()) SamsungMatchConfidence.LOW else SamsungMatchConfidence.MEDIUM,
+      candidateScores = scores,
+      reasons = listOf(neutral("No additional Samsung Health sensor recording was found for this workout")),
+      relationship = SamsungPhysicalWorkoutRelationship.NO_MATCH,
+    )
+  }
+  val watchCandidates = useful.filter { it.candidate.source.deviceType == SamsungSourceDeviceType.WATCH }
+  if (watchCandidates.size > 1) {
+    return SamsungEnrichmentMatchResult(
+      status = SamsungWorkoutMatchStatus.AMBIGUOUS,
+      plausibleCandidates = plausible,
+      confidence = SamsungMatchConfidence.AMBIGUOUS,
+      candidateScores = scores,
+      reasons = listOf(neutral("Multiple trusted watch recordings could enrich this workout")),
+      relationship = SamsungPhysicalWorkoutRelationship.AMBIGUOUS,
+    )
+  }
+  val preferred = watchCandidates.singleOrNull() ?: useful.first()
+  val second = useful.firstOrNull { it.candidate.id != preferred.candidate.id }
+  if (second != null && watchCandidates.isEmpty() && preferred.richnessScore - second.richnessScore < 100) {
+    return SamsungEnrichmentMatchResult(
+      status = SamsungWorkoutMatchStatus.AMBIGUOUS,
+      plausibleCandidates = plausible,
+      confidence = SamsungMatchConfidence.AMBIGUOUS,
+      candidateScores = scores,
+      reasons = listOf(neutral("Sensor evidence is too similar for automatic enrichment selection")),
+      relationship = SamsungPhysicalWorkoutRelationship.AMBIGUOUS,
+    )
+  }
+  return SamsungEnrichmentMatchResult(
+    status = SamsungWorkoutMatchStatus.MATCHED,
+    selected = preferred.candidate,
+    plausibleCandidates = plausible,
+    confidence = preferred.physicalConfidence,
+    candidateScores = scores,
+    reasons = preferred.reasons,
+    relationship = preferred.relationship,
+    canonicalCoverage = preferred.canonicalCoverage,
+    overlapDurationSeconds = preferred.overlapDurationSeconds,
+  )
+}
+
 fun matchSamsungWorkout(
   target: SamsungWorkoutTarget,
   candidates: List<SamsungExerciseCandidate>,
   tolerance: SamsungWorkoutMatchTolerance = SamsungWorkoutMatchTolerance(),
   manualSelectionCandidateId: String? = null,
 ): SamsungWorkoutMatchResult {
-  val plausible = candidates.asSequence()
-    .filter { it.exerciseKind == SamsungExerciseKind.RUNNING || it.exerciseKind == SamsungExerciseKind.TRACK_RUNNING }
-    .filter { abs(Duration.between(target.startTime, it.startTime).seconds) <= tolerance.startSeconds }
-    .filter { abs(target.durationSeconds - it.durationSeconds) <= tolerance.durationSeconds }
-    .filter { candidate ->
-      val expected = target.distanceMeters
-      val actual = candidate.distanceMeters
-      expected == null || actual == null || expected <= 0.0 ||
-        abs(expected - actual) / expected <= tolerance.distanceFraction
-    }
-    .toList()
+  val plausible = plausiblePhysicalCandidates(target, candidates, tolerance)
 
   val scores = plausible.map { scoreCandidate(target, it, tolerance) }
     .sortedWith(
@@ -162,6 +303,164 @@ fun matchSamsungWorkout(
     else -> selectScoredMatch(scores)
   }
 }
+
+private fun plausiblePhysicalCandidates(
+  target: SamsungWorkoutTarget,
+  candidates: List<SamsungExerciseCandidate>,
+  tolerance: SamsungWorkoutMatchTolerance,
+): List<SamsungExerciseCandidate> = candidates.asSequence()
+  .filter { it.exerciseKind == SamsungExerciseKind.RUNNING || it.exerciseKind == SamsungExerciseKind.TRACK_RUNNING }
+  .filter { abs(Duration.between(target.startTime, it.startTime).seconds) <= tolerance.startSeconds }
+  .filter { abs(target.durationSeconds - it.durationSeconds) <= tolerance.durationSeconds }
+  .filter { it.startTime < target.endTime && it.endTime > target.startTime }
+  .filter { candidate ->
+    val expected = target.distanceMeters
+    val actual = candidate.distanceMeters
+    expected == null || actual == null || expected <= 0.0 ||
+      abs(expected - actual) / expected <= tolerance.distanceFraction
+  }
+  .toList()
+
+private data class EnrichmentRelationshipAssessment(
+  val relationship: SamsungPhysicalWorkoutRelationship,
+  val canonicalCoverage: Double,
+  val overlapDurationSeconds: Double,
+  val startDifferenceSeconds: Double,
+  val endDifferenceSeconds: Double,
+  val confidence: SamsungMatchConfidence,
+)
+
+private fun assessEnrichmentRelationship(
+  target: SamsungWorkoutTarget,
+  candidate: SamsungExerciseCandidate,
+  thresholds: SamsungEnrichmentThresholds,
+): EnrichmentRelationshipAssessment {
+  val noMatch = EnrichmentRelationshipAssessment(
+    SamsungPhysicalWorkoutRelationship.NO_MATCH, 0.0, 0.0, Double.POSITIVE_INFINITY,
+    Double.POSITIVE_INFINITY, SamsungMatchConfidence.LOW,
+  )
+  if (candidate.exerciseKind != SamsungExerciseKind.RUNNING &&
+    candidate.exerciseKind != SamsungExerciseKind.TRACK_RUNNING
+  ) return noMatch
+  val startDifference = abs(Duration.between(target.startTime, candidate.startTime).toMillis()) / 1_000.0
+  val endDifference = abs(Duration.between(target.endTime, candidate.endTime).toMillis()) / 1_000.0
+  val overlapStart = maxOf(target.startTime, candidate.startTime)
+  val overlapEnd = minOf(target.endTime, candidate.endTime)
+  val overlapMillis = Duration.between(overlapStart, overlapEnd).toMillis().coerceAtLeast(0)
+  val canonicalMillis = Duration.between(target.startTime, target.endTime).toMillis().coerceAtLeast(1)
+  val coverage = (overlapMillis.toDouble() / canonicalMillis).coerceIn(0.0, 1.0)
+  val distanceDifference = distanceDifferenceFraction(target.distanceMeters, candidate.distanceMeters)
+  val exact = startDifference <= thresholds.exact.startSeconds &&
+    endDifference <= thresholds.exact.durationSeconds &&
+    (distanceDifference == Double.MAX_VALUE || distanceDifference <= thresholds.exact.distanceFraction)
+  if (exact) {
+    val confidence = if (
+      startDifference <= 30.0 && endDifference <= 30.0 &&
+      (distanceDifference == Double.MAX_VALUE || distanceDifference <= 0.02)
+    ) SamsungMatchConfidence.HIGH else SamsungMatchConfidence.MEDIUM
+    return EnrichmentRelationshipAssessment(
+      SamsungPhysicalWorkoutRelationship.EXACT_SESSION,
+      coverage,
+      overlapMillis / 1_000.0,
+      startDifference,
+      endDifference,
+      confidence,
+    )
+  }
+  val overlapping = startDifference <= thresholds.overlapStartSeconds &&
+    coverage >= thresholds.minimumCanonicalCoverage &&
+    candidate.source.deviceType == SamsungSourceDeviceType.WATCH &&
+    candidate.metrics.exerciseLogExists &&
+    candidate.metrics.totalLogSamples >= thresholds.minimumExerciseLogSamples &&
+    endDifference > thresholds.exact.durationSeconds
+  if (!overlapping) return noMatch.copy(
+    canonicalCoverage = coverage,
+    overlapDurationSeconds = overlapMillis / 1_000.0,
+    startDifferenceSeconds = startDifference,
+    endDifferenceSeconds = endDifference,
+  )
+  return EnrichmentRelationshipAssessment(
+    SamsungPhysicalWorkoutRelationship.OVERLAPPING_SESSION,
+    coverage,
+    overlapMillis / 1_000.0,
+    startDifference,
+    endDifference,
+    SamsungMatchConfidence.HIGH,
+  )
+}
+
+private fun physicalMatchReasons(
+  target: SamsungWorkoutTarget,
+  candidate: SamsungExerciseCandidate,
+  assessment: EnrichmentRelationshipAssessment,
+): List<SamsungMatchReason> {
+  val reasons = mutableListOf(positive("Running activity"))
+  reasons += positive(
+    if (assessment.startDifferenceSeconds < 1.0) "Start time differs by <1 sec"
+    else "Start time differs by ${"%.1f".format(java.util.Locale.ROOT, assessment.startDifferenceSeconds)} sec"
+  )
+  reasons += if (assessment.relationship == SamsungPhysicalWorkoutRelationship.OVERLAPPING_SESSION) {
+    positive("Canonical activity is ${"%.1f".format(java.util.Locale.ROOT, assessment.canonicalCoverage * 100)}% covered by Samsung session")
+  } else {
+    positive("Session boundaries and distance are sufficiently close")
+  }
+  val distanceDifference = distanceDifference(target.distanceMeters, candidate.distanceMeters)
+  if (distanceDifference != null) reasons += neutral(
+    "Samsung total distance differs by ${"%.1f".format(java.util.Locale.ROOT, distanceDifference)} m"
+  ) else reasons += neutral("Distance comparison unavailable")
+  val targetApp = target.canonicalSourceAppId
+  val candidateApp = candidate.source.applicationId
+  if (!targetApp.isNullOrBlank() && !candidateApp.isNullOrBlank() && targetApp != candidateApp) {
+    reasons += neutral("Different source application is allowed for enrichment: $candidateApp")
+  }
+  return reasons
+}
+
+private fun enrichmentReasons(
+  candidate: SamsungExerciseCandidate,
+  identityCandidateId: String?,
+): List<SamsungMatchReason> = buildList {
+  val metrics = candidate.metrics
+  if (candidate.id == identityCandidateId) add(neutral("This is also the exact provider copy"))
+  if (candidate.source.deviceType == SamsungSourceDeviceType.WATCH) add(positive("Watch recording source"))
+  if (metrics.exerciseLogExists) add(positive("ExerciseLog available (${metrics.totalLogSamples} samples)"))
+  if (metrics.heartRateSampleCount > 0) add(positive("${metrics.heartRateSampleCount} heart-rate samples"))
+  if (metrics.speedSampleCount > 0) add(positive("${metrics.speedSampleCount} speed samples"))
+  if (metrics.cadenceSampleCount > 0) add(positive("${metrics.cadenceSampleCount} cadence samples"))
+  if (metrics.powerSampleCount > 0) add(positive("${metrics.powerSampleCount} power samples"))
+  else if (metrics.powerAvailable) add(positive("Power summary available"))
+  if (metrics.vo2Max != null) add(positive("VO₂max available"))
+  if (metrics.elevationAvailable) add(positive("Elevation available"))
+}
+
+private fun enrichmentRichnessScore(candidate: SamsungExerciseCandidate): Int {
+  val metrics = candidate.metrics
+  return (if (candidate.source.deviceType == SamsungSourceDeviceType.WATCH) 500 else 0) +
+    (if (metrics.exerciseLogExists) 120 else 0) +
+    (if (metrics.heartRateSampleCount > 0 || metrics.averageHeartRate != null) 80 else 0) +
+    (if (metrics.speedSampleCount > 0 || metrics.averageSpeedMetersPerSecond != null) 70 else 0) +
+    (if (metrics.cadenceSampleCount > 0 || metrics.meanCadence != null) 80 else 0) +
+    (if (metrics.powerSampleCount > 0 || metrics.powerAvailable) 40 else 0) +
+    (if (metrics.vo2Max != null) 60 else 0) +
+    (if (metrics.elevationAvailable) 60 else 0)
+}
+
+private val SamsungCandidateMetrics.hasSensorEnrichment: Boolean
+  get() = averageHeartRate != null || maxHeartRate != null || averageSpeedMetersPerSecond != null ||
+    vo2Max != null || meanCadence != null || maxCadence != null || heartRateSampleCount > 0 ||
+    speedSampleCount > 0 || cadenceSampleCount > 0 || powerSampleCount > 0 || powerAvailable ||
+    elevationAvailable
+
+private val SamsungCandidateMetrics.hasTimeSeriesEnrichment: Boolean
+  get() = heartRateSampleCount > 0 || speedSampleCount > 0 || cadenceSampleCount > 0 || powerSampleCount > 0
+
+private val SamsungMatchConfidence.rank: Int
+  get() = when (this) {
+    SamsungMatchConfidence.HIGH -> 3
+    SamsungMatchConfidence.MEDIUM -> 2
+    SamsungMatchConfidence.LOW -> 1
+    SamsungMatchConfidence.AMBIGUOUS -> 0
+  }
 
 private fun selectScoredMatch(scores: List<SamsungCandidateScore>): SamsungWorkoutMatchResult {
   val first = scores[0]
@@ -263,7 +562,7 @@ private fun scoreCandidate(
   compareMetric("Average HR", target.averageHeartRate, candidate.metrics.averageHeartRate, 15.0, "bpm")
   compareMetric("Max HR", target.maxHeartRate, candidate.metrics.maxHeartRate, 15.0, "bpm")
   compareMetric("Average speed", target.averageSpeedMetersPerSecond, candidate.metrics.averageSpeedMetersPerSecond, 0.75, "m/s")
-  compareMetric("VO₂ max", target.vo2Max, candidate.metrics.vo2Max, 5.0, "ml/kg/min")
+  compareMetric("VO₂max", target.vo2Max, candidate.metrics.vo2Max, 5.0, "ml/kg/min")
 
   return SamsungCandidateScore(
     candidate = candidate,
@@ -315,6 +614,41 @@ data class ExerciseLogMetricSummary(
   val lastTimestamp: Instant,
   val averageSampleIntervalSeconds: Double?,
 )
+
+data class SamsungClippedSensorData(
+  val windowStart: Instant,
+  val windowEnd: Instant,
+  val heartRate: ExerciseLogMetricSummary?,
+  val speed: ExerciseLogMetricSummary?,
+  val cadence: ExerciseLogMetricSummary?,
+  val movingAverageCadence: Double?,
+  val power: ExerciseLogMetricSummary?,
+  val samples: List<SamsungExerciseLogSample>,
+)
+
+fun clipSamsungSensorData(
+  log: List<SamsungExerciseLogSample>,
+  windowStart: Instant,
+  windowEnd: Instant,
+): SamsungClippedSensorData {
+  val samples = log.filter { !it.timestamp.isBefore(windowStart) && !it.timestamp.isAfter(windowEnd) }
+  val cadence = samples.mapNotNull { sample ->
+    sample.cadence?.let { TimedMetricSample(sample.timestamp, it) }
+  }
+  val speed = samples.mapNotNull { sample ->
+    sample.speedMetersPerSecond?.let { TimedMetricSample(sample.timestamp, it) }
+  }
+  return SamsungClippedSensorData(
+    windowStart = windowStart,
+    windowEnd = windowEnd,
+    heartRate = summarizeExerciseLogMetric(samples, SamsungExerciseLogSample::heartRate),
+    speed = summarizeExerciseLogMetric(samples, SamsungExerciseLogSample::speedMetersPerSecond),
+    cadence = summarizeExerciseLogMetric(samples, SamsungExerciseLogSample::cadence),
+    movingAverageCadence = movingCadenceAverage(cadence, speed),
+    power = summarizeExerciseLogMetric(samples, SamsungExerciseLogSample::powerWatts),
+    samples = samples,
+  )
+}
 
 fun summarizeExerciseLogMetric(
   log: List<SamsungExerciseLogSample>?,
@@ -484,4 +818,22 @@ data class SamsungHealthInspection(
   val session: SamsungExerciseSessionInspection?,
   val providerMetrics: List<ProviderMetricPresence>,
   val sharedDifferences: List<SharedMetricDifference>,
+  val identityMatch: SamsungWorkoutMatchResult = match,
+  val identitySession: SamsungExerciseSessionInspection? = session,
+  val enrichmentMatch: SamsungEnrichmentMatchResult = SamsungEnrichmentMatchResult(
+    status = match.status,
+    selected = match.selected,
+    plausibleCandidates = match.plausibleCandidates,
+    confidence = match.confidence,
+    reasons = match.reasons,
+    manualSelection = match.manualSelection,
+    relationship = when (match.status) {
+      SamsungWorkoutMatchStatus.MATCHED -> SamsungPhysicalWorkoutRelationship.EXACT_SESSION
+      SamsungWorkoutMatchStatus.AMBIGUOUS -> SamsungPhysicalWorkoutRelationship.AMBIGUOUS
+      SamsungWorkoutMatchStatus.NOT_FOUND -> SamsungPhysicalWorkoutRelationship.NO_MATCH
+    },
+  ),
+  val enrichmentSession: SamsungExerciseSessionInspection? = session,
+  val plausibleSessions: List<SamsungExerciseSessionInspection> = listOfNotNull(session),
+  val clippedEnrichment: SamsungClippedSensorData? = null,
 )

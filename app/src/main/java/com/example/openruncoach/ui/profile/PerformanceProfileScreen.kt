@@ -106,8 +106,8 @@ private fun ProfileContent(profile: AthletePerformanceProfile, showExplanations:
   }
 
   ProfileCard("Fitness") {
-    ProfileValue("VO₂ max", profile.vo2MaxLatest?.let(::formatNumber) ?: "Not available")
-    ProfileValue("VO₂ max trend", profile.vo2MaxTrend.displayName())
+    ProfileValue("VO₂max", profile.vo2MaxLatest?.let(::formatNumber) ?: "Not available")
+    ProfileValue("VO₂max trend", profile.vo2MaxTrend.displayName())
     ProfileValue("Easy pace trend", profile.recentPaceTrend.displayName())
     ProfileValue("Recent average HR", profile.recentAverageHeartRate?.let { "${formatNumber(it)} bpm" } ?: "Not available")
   }

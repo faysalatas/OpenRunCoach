@@ -3,7 +3,6 @@ package com.example.openruncoach.data
 import androidx.room.withTransaction
 import com.example.openruncoach.data.local.CoachingWorkflowDao
 import com.example.openruncoach.data.local.OpenRunCoachDatabase
-import com.example.openruncoach.data.local.PlannedWorkoutEntity
 import com.example.openruncoach.data.local.PreRunCheckInEntity
 import com.example.openruncoach.data.local.WorkoutAdjustmentEntity
 import com.example.openruncoach.domain.PainLevel
@@ -24,6 +23,7 @@ import com.example.openruncoach.domain.workout.WorkoutLifecycle
 import com.example.openruncoach.domain.workout.WorkoutLifecycleEvent
 import com.example.openruncoach.domain.workout.WorkoutLifecycleService
 import com.example.openruncoach.domain.workout.WorkoutLifecycleState
+import com.example.openruncoach.domain.workout.simpleDurationWorkout
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
@@ -60,20 +60,20 @@ class CoachingWorkflowRepository(
 
   val currentLifecycle: Flow<PersistedWorkoutLifecycle?> = dao.observeLatestPlannedWorkout().flatMapLatest { entity ->
     if (entity == null) flowOf(null)
-    else combine(dao.observeCheckIn(entity.id), dao.observeAdjustment(entity.id)) { checkIn, adjustment ->
-      val baseline = entity.toDomain()
+    else combine(dao.observeCheckIn(entity.workout.id), dao.observeAdjustment(entity.workout.id)) { checkIn, adjustment ->
+      val baseline = StructuredWorkoutPersistenceMapper.toDomain(entity)
       PersistedWorkoutLifecycle(
         baseline,
         checkIn?.toDomain(),
         adjustment?.toDomain(baseline),
-        WorkoutLifecycleState.valueOf(entity.lifecycleState),
+        WorkoutLifecycleState.valueOf(entity.workout.lifecycleState),
       )
     }
   }
 
   suspend fun ensureInitialWorkout() {
     if (dao.workoutCount() > 0) return
-    val workout = PlannedWorkout(
+    val workout = simpleDurationWorkout(
       id = idFactory(),
       date = LocalDate.now(clock),
       type = WorkoutType.EASY_RUN,
@@ -82,7 +82,7 @@ class CoachingWorkflowRepository(
       targetRpeMax = 4,
       createdAt = clock.instant(),
     )
-    dao.upsertPlannedWorkout(workout.toEntity())
+    dao.replaceWorkout(StructuredWorkoutPersistenceMapper.toRecord(workout, WorkoutLifecycleState.PLANNED.name))
     val lifecycle = lifecycleService.transition(
       WorkoutLifecycle(workout),
       WorkoutLifecycleEvent.RequireCheckIn,
@@ -128,22 +128,6 @@ class CoachingWorkflowRepository(
 }
 
 private const val LIST_SEPARATOR = "\u001F"
-
-private fun PlannedWorkout.toEntity() = PlannedWorkoutEntity(
-  id,
-  date.toEpochDay(),
-  type.name,
-  durationMinutes,
-  targetRpeMin,
-  targetRpeMax,
-  createdAt.toEpochMilli(),
-  WorkoutLifecycleState.PLANNED.name,
-)
-
-private fun PlannedWorkoutEntity.toDomain() = PlannedWorkout(
-  id, LocalDate.ofEpochDay(dateEpochDay), WorkoutType.valueOf(type), durationMinutes,
-  targetRpeMin, targetRpeMax, Instant.ofEpochMilli(createdAtEpochMillis),
-)
 
 private fun PreRunCheckIn.toEntity(plannedWorkoutId: String, createdAt: Instant) = PreRunCheckInEntity(
   plannedWorkoutId,

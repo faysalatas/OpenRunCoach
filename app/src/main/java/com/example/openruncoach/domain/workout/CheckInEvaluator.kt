@@ -174,13 +174,4 @@ private fun describeAdjustments(baseline: PlannedWorkout, adjusted: AdjustedWork
   if (isEmpty()) add("Baseline workout kept unchanged")
 }
 
-fun WorkoutType.displayName(): String = when (this) {
-  WorkoutType.EASY_RUN -> "Easy Run"
-  WorkoutType.TEMPO_RUN -> "Tempo Run"
-  WorkoutType.INTERVALS -> "Intervals"
-  WorkoutType.LONG_RUN -> "Long Run"
-  WorkoutType.RECOVERY_RUN -> "Recovery Run"
-  WorkoutType.REST -> "Rest"
-}
-
 private fun IllnessLevel.displayName() = name.lowercase().replaceFirstChar { it.titlecase() }

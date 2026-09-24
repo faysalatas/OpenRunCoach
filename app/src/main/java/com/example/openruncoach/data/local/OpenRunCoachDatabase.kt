@@ -21,8 +21,14 @@ import androidx.sqlite.execSQL
     AthleteProfileWeeklyVolumeEntity::class,
     AthleteProfileBenchmarkEntity::class,
     AthleteProfileExplanationEntity::class,
+    TrainingGoalEntity::class,
+    TrainingGoalAssessmentReasonEntity::class,
+    WorkoutBlockEntity::class,
+    WorkoutSegmentEntity::class,
+    WorkoutIntensityTargetEntity::class,
+    WorkoutCueEntity::class,
   ],
-  version = 8,
+  version = 11,
   exportSchema = true,
 )
 abstract class OpenRunCoachDatabase : RoomDatabase() {
@@ -31,6 +37,7 @@ abstract class OpenRunCoachDatabase : RoomDatabase() {
   abstract fun coachingWorkflowDao(): CoachingWorkflowDao
   abstract fun runMetricsDao(): RunMetricsDao
   abstract fun athletePerformanceProfileDao(): AthletePerformanceProfileDao
+  abstract fun trainingGoalDao(): TrainingGoalDao
 
   companion object {
     @Volatile private var instance: OpenRunCoachDatabase? = null
@@ -118,6 +125,74 @@ abstract class OpenRunCoachDatabase : RoomDatabase() {
       }
     }
 
+    val MIGRATION_8_9 = object : Migration(8, 9) {
+      override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL(
+          """CREATE TABLE IF NOT EXISTS `training_goals` (`id` TEXT NOT NULL, `distance` TEXT NOT NULL, `customDistanceMeters` REAL, `goalType` TEXT NOT NULL, `targetTimeSeconds` INTEGER, `targetDateEpochDay` INTEGER, `createdAtEpochMillis` INTEGER NOT NULL, `status` TEXT NOT NULL, `confidenceAtCreation` TEXT NOT NULL, `startingBestDurationSeconds` INTEGER, `startingBestRunId` TEXT, `startingBestObservedAtEpochMillis` INTEGER, `startingRecentDurationSeconds` INTEGER, `startingRecentRunId` TEXT, `startingRecentObservedAtEpochMillis` INTEGER, `startingAverageWeeklyDistanceMeters` REAL NOT NULL, `startingAverageWeeklyDurationSeconds` INTEGER NOT NULL, `startingLongestRunDistanceMeters` REAL, `startingLongestRunDurationSeconds` INTEGER, `startingAverageRunsPerWeek` REAL NOT NULL, `startingTypicalEasyPaceSecondsPerKm` REAL, `startingTypicalEasyHeartRate` REAL, `startingProfileConfidence` TEXT NOT NULL, `snapshotCapturedAtEpochMillis` INTEGER NOT NULL, `assessmentLevel` TEXT NOT NULL, PRIMARY KEY(`id`))"""
+        )
+        connection.execSQL(
+          """CREATE TABLE IF NOT EXISTS `training_goal_assessment_reasons` (`goalId` TEXT NOT NULL, `position` INTEGER NOT NULL, `text` TEXT NOT NULL, PRIMARY KEY(`goalId`, `position`), FOREIGN KEY(`goalId`) REFERENCES `training_goals`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)"""
+        )
+        connection.execSQL("CREATE INDEX IF NOT EXISTS `index_training_goal_assessment_reasons_goalId` ON `training_goal_assessment_reasons` (`goalId`)")
+      }
+    }
+
+    val MIGRATION_9_10 = object : Migration(9, 10) {
+      override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL("ALTER TABLE `planned_workouts` ADD COLUMN `name` TEXT NOT NULL DEFAULT ''")
+        connection.execSQL("ALTER TABLE `planned_workouts` ADD COLUMN `purpose` TEXT NOT NULL DEFAULT 'AEROBIC_BASE'")
+        connection.execSQL("ALTER TABLE `planned_workouts` ADD COLUMN `explanation` TEXT NOT NULL DEFAULT ''")
+        connection.execSQL("ALTER TABLE `planned_workouts` ADD COLUMN `goalId` TEXT")
+        connection.execSQL("ALTER TABLE `planned_workouts` ADD COLUMN `origin` TEXT NOT NULL DEFAULT 'MANUAL'")
+        connection.execSQL("ALTER TABLE `planned_workouts` ADD COLUMN `isPreview` INTEGER NOT NULL DEFAULT 0")
+        connection.execSQL("ALTER TABLE `planned_workouts` ADD COLUMN `canChangeType` INTEGER NOT NULL DEFAULT 1")
+        connection.execSQL("ALTER TABLE `planned_workouts` ADD COLUMN `canChangeTotalDuration` INTEGER NOT NULL DEFAULT 1")
+        connection.execSQL("ALTER TABLE `planned_workouts` ADD COLUMN `canChangeSegmentCompletion` INTEGER NOT NULL DEFAULT 1")
+        connection.execSQL("ALTER TABLE `planned_workouts` ADD COLUMN `canChangeRepetitions` INTEGER NOT NULL DEFAULT 1")
+        connection.execSQL("ALTER TABLE `planned_workouts` ADD COLUMN `canChangeIntensity` INTEGER NOT NULL DEFAULT 1")
+        connection.execSQL("ALTER TABLE `planned_workouts` ADD COLUMN `canChangeRecovery` INTEGER NOT NULL DEFAULT 1")
+        connection.execSQL(
+          """UPDATE `planned_workouts` SET `name` = CASE `type` WHEN 'EASY_RUN' THEN 'Easy Run' WHEN 'RECOVERY_RUN' THEN 'Recovery Run' WHEN 'LONG_RUN' THEN 'Long Run' WHEN 'TEMPO_RUN' THEN 'Tempo Run' WHEN 'INTERVALS' THEN 'Intervals' WHEN 'REST' THEN 'Rest' ELSE `type` END"""
+        )
+        connection.execSQL(
+          """UPDATE `planned_workouts` SET `purpose` = CASE `type` WHEN 'RECOVERY_RUN' THEN 'RECOVERY' WHEN 'REST' THEN 'RECOVERY' WHEN 'LONG_RUN' THEN 'ENDURANCE' WHEN 'TEMPO_RUN' THEN 'LACTATE_THRESHOLD' WHEN 'INTERVALS' THEN 'VO2MAX' ELSE 'AEROBIC_BASE' END"""
+        )
+        connection.execSQL("UPDATE `planned_workouts` SET `explanation` = 'Migrated from the previous planned workout format.'")
+        connection.execSQL(
+          """CREATE TABLE IF NOT EXISTS `workout_blocks` (`id` TEXT NOT NULL, `workoutId` TEXT NOT NULL, `blockOrder` INTEGER NOT NULL, `blockType` TEXT NOT NULL, `repetitions` INTEGER NOT NULL, `label` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`workoutId`) REFERENCES `planned_workouts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)"""
+        )
+        connection.execSQL("CREATE INDEX IF NOT EXISTS `index_workout_blocks_workoutId` ON `workout_blocks` (`workoutId`)")
+        connection.execSQL(
+          """CREATE TABLE IF NOT EXISTS `workout_segments` (`id` TEXT NOT NULL, `blockId` TEXT NOT NULL, `segmentOrder` INTEGER NOT NULL, `category` TEXT NOT NULL, `name` TEXT NOT NULL, `completionType` TEXT NOT NULL, `durationSeconds` INTEGER, `distanceMeters` REAL, `completionRepetitions` INTEGER, `notes` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`blockId`) REFERENCES `workout_blocks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)"""
+        )
+        connection.execSQL("CREATE INDEX IF NOT EXISTS `index_workout_segments_blockId` ON `workout_segments` (`blockId`)")
+        connection.execSQL(
+          """CREATE TABLE IF NOT EXISTS `workout_intensity_targets` (`segmentId` TEXT NOT NULL, `position` INTEGER NOT NULL, `targetType` TEXT NOT NULL, `minimumValue` REAL, `maximumValue` REAL, `heartRateZone` TEXT, `confidence` TEXT NOT NULL, PRIMARY KEY(`segmentId`, `position`), FOREIGN KEY(`segmentId`) REFERENCES `workout_segments`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)"""
+        )
+        connection.execSQL("CREATE INDEX IF NOT EXISTS `index_workout_intensity_targets_segmentId` ON `workout_intensity_targets` (`segmentId`)")
+        connection.execSQL(
+          """CREATE TABLE IF NOT EXISTS `workout_cues` (`workoutId` TEXT NOT NULL, `position` INTEGER NOT NULL, `text` TEXT NOT NULL, PRIMARY KEY(`workoutId`, `position`), FOREIGN KEY(`workoutId`) REFERENCES `planned_workouts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)"""
+        )
+        connection.execSQL("CREATE INDEX IF NOT EXISTS `index_workout_cues_workoutId` ON `workout_cues` (`workoutId`)")
+        connection.execSQL(
+          """INSERT INTO `workout_blocks` (`id`, `workoutId`, `blockOrder`, `blockType`, `repetitions`, `label`) SELECT `id` || ':block:0', `id`, 0, 'SINGLE', 1, NULL FROM `planned_workouts` WHERE `type` != 'REST'"""
+        )
+        connection.execSQL(
+          """INSERT INTO `workout_segments` (`id`, `blockId`, `segmentOrder`, `category`, `name`, `completionType`, `durationSeconds`, `distanceMeters`, `completionRepetitions`, `notes`) SELECT `id` || ':segment:0', `id` || ':block:0', 0, CASE WHEN `type` = 'RECOVERY_RUN' THEN 'RECOVERY' ELSE 'EASY' END, `name`, 'DURATION', `durationMinutes` * 60, NULL, NULL, NULL FROM `planned_workouts` WHERE `type` != 'REST'"""
+        )
+        connection.execSQL(
+          """INSERT INTO `workout_intensity_targets` (`segmentId`, `position`, `targetType`, `minimumValue`, `maximumValue`, `heartRateZone`, `confidence`) SELECT `id` || ':segment:0', 0, CASE WHEN `targetRpeMin` > 0 THEN 'RPE' ELSE 'NONE' END, CASE WHEN `targetRpeMin` > 0 THEN `targetRpeMin` ELSE NULL END, CASE WHEN `targetRpeMin` > 0 THEN `targetRpeMax` ELSE NULL END, NULL, 'HIGH' FROM `planned_workouts` WHERE `type` != 'REST'"""
+        )
+      }
+    }
+
+    val MIGRATION_10_11 = object : Migration(10, 11) {
+      override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL("ALTER TABLE `run_metric_values` ADD COLUMN `sourceAppName` TEXT")
+        connection.execSQL("ALTER TABLE `run_metric_values` ADD COLUMN `sourceDeviceName` TEXT")
+      }
+    }
+
     fun getInstance(context: Context): OpenRunCoachDatabase =
       instance ?: synchronized(this) {
         instance
@@ -133,6 +208,9 @@ abstract class OpenRunCoachDatabase : RoomDatabase() {
               MIGRATION_5_6,
               MIGRATION_6_7,
               MIGRATION_7_8,
+              MIGRATION_8_9,
+              MIGRATION_9_10,
+              MIGRATION_10_11,
             ).build().also { instance = it }
       }
   }

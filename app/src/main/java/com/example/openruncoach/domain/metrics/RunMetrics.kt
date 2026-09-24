@@ -16,6 +16,8 @@ data class MetricValue<T>(
   val secondaryValue: T? = null,
   val secondarySource: MetricSource? = null,
   val verificationReason: String? = null,
+  val sourceAppName: String? = null,
+  val sourceDeviceName: String? = null,
 )
 
 data class TimedMetricSample<T>(
@@ -46,6 +48,8 @@ data class RunMetrics(
   val averageCadence: MetricValue<Double>? = null,
   val movingAverageCadence: MetricValue<Double>? = null,
   val maxCadence: MetricValue<Double>? = null,
+  val averagePowerWatts: MetricValue<Double>? = null,
+  val maxPowerWatts: MetricValue<Double>? = null,
   val elevationGainMeters: MetricValue<Double>? = null,
   val elevationLossMeters: MetricValue<Double>? = null,
   val minAltitudeMeters: MetricValue<Double>? = null,
@@ -74,6 +78,8 @@ enum class RunMetricKey {
   AVERAGE_CADENCE,
   MOVING_AVERAGE_CADENCE,
   MAX_CADENCE,
+  AVERAGE_POWER,
+  MAX_POWER,
   ELEVATION_GAIN,
   ELEVATION_LOSS,
   MIN_ALTITUDE,
@@ -96,6 +102,8 @@ fun RunMetrics.metricValues(): Map<RunMetricKey, MetricValue<out Number>> = buil
   averageCadence?.let { put(RunMetricKey.AVERAGE_CADENCE, it) }
   movingAverageCadence?.let { put(RunMetricKey.MOVING_AVERAGE_CADENCE, it) }
   maxCadence?.let { put(RunMetricKey.MAX_CADENCE, it) }
+  averagePowerWatts?.let { put(RunMetricKey.AVERAGE_POWER, it) }
+  maxPowerWatts?.let { put(RunMetricKey.MAX_POWER, it) }
   elevationGainMeters?.let { put(RunMetricKey.ELEVATION_GAIN, it) }
   elevationLossMeters?.let { put(RunMetricKey.ELEVATION_LOSS, it) }
   minAltitudeMeters?.let { put(RunMetricKey.MIN_ALTITUDE, it) }
@@ -104,4 +112,3 @@ fun RunMetrics.metricValues(): Map<RunMetricKey, MetricValue<out Number>> = buil
   declineDistanceMeters?.let { put(RunMetricKey.DECLINE_DISTANCE, it) }
   caloriesKilocalories?.let { put(RunMetricKey.CALORIES, it) }
 }
-

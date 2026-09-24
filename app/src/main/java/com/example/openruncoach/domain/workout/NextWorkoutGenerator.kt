@@ -51,7 +51,7 @@ class NextWorkoutGenerator(
       )
       else -> Triple(WorkoutType.RECOVERY_RUN, MIN_NEXT_RUN_MINUTES, 2..3)
     }
-    return PlannedWorkout(
+    return simpleDurationWorkout(
       id = idGenerator.nextId(),
       date = actualRun.endTime.atZone(clock.zone).toLocalDate().plusDays(2),
       type = type,
