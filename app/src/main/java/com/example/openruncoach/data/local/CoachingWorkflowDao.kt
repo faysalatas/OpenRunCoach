@@ -51,6 +51,13 @@ interface CoachingWorkflowDao {
   @Query("SELECT COUNT(*) FROM planned_workouts WHERE isPreview = 0")
   suspend fun workoutCount(): Int
 
+  @Query(
+    """SELECT COUNT(*) FROM planned_workouts
+      WHERE isPreview = 0 AND type = 'ASSESSMENT' AND goalId = :goalId
+      AND lifecycleState IN ('COMPLETED', 'CHECKOUT_REQUIRED', 'ANALYZED', 'NEXT_WORKOUT_CREATED')"""
+  )
+  suspend fun completedAssessmentCount(goalId: String): Int
+
   @Query("SELECT lifecycleState FROM planned_workouts WHERE id = :plannedWorkoutId LIMIT 1")
   suspend fun getLifecycleState(plannedWorkoutId: String): String?
 

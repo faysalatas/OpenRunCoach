@@ -21,7 +21,6 @@ import com.example.openruncoach.domain.goal.targetPaceSecondsPerKm
 import com.example.openruncoach.domain.goal.validateGoalDraft
 import com.example.openruncoach.domain.profile.AthletePerformanceProfile
 import java.time.Clock
-import java.time.LocalDate
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
@@ -35,7 +34,6 @@ data class GoalDraftState(
   val customDistanceKm: String = "",
   val goalType: GoalType? = null,
   val targetTime: String = "",
-  val targetDate: LocalDate? = null,
 )
 
 data class GoalUiState(
@@ -56,7 +54,6 @@ data class GoalPresentation(
   val benchmarkDurationSeconds: Long?,
   val comparison: PerformanceComparison?,
   val assessment: GoalAssessment,
-  val targetDate: LocalDate?,
   val improvementSinceGoalStartSeconds: Long? = null,
 )
 
@@ -109,12 +106,11 @@ class GoalViewModel(
   }
 
   fun setTargetTime(value: String) = _uiState.update { it.copy(draft = it.draft.copy(targetTime = value), errorMessage = null) }
-  fun setTargetDate(value: LocalDate?) = _uiState.update { it.copy(draft = it.draft.copy(targetDate = value), errorMessage = null) }
   fun continueFromContext() = _uiState.update { it.copy(step = GoalCreationStep.DETAILS, errorMessage = null) }
 
   fun review() {
     val draft = buildDraft() ?: return
-    val validation = validateGoalDraft(draft, LocalDate.now(clock))
+    val validation = validateGoalDraft(draft)
     if (!validation.isValid) _uiState.update { it.copy(errorMessage = validation.errors.joinToString(" ")) }
     else _uiState.update { it.copy(step = GoalCreationStep.REVIEW, errorMessage = null) }
   }
@@ -157,7 +153,7 @@ class GoalViewModel(
 
   fun presentationForGoal(goal: TrainingGoal): GoalPresentation {
     val result = presentation(
-      TrainingGoalDraft(goal.distance, goal.customDistanceMeters, goal.goalType, goal.targetTimeSeconds, goal.targetDate),
+      TrainingGoalDraft(goal.distance, goal.customDistanceMeters, goal.goalType, goal.targetTimeSeconds),
       _uiState.value.profile,
     )
     val starting = goal.startingPerformanceSnapshot.bestBenchmark?.durationSeconds
@@ -173,7 +169,7 @@ class GoalViewModel(
     val benchmark = capabilityEvaluator.evaluate(profile).byDistance[draft.distance]?.benchmark?.personalBest
     val pace = draft.targetTimeSeconds?.let { targetPaceSecondsPerKm(it, distanceMeters) }
     val comparison = if (benchmark != null && draft.targetTimeSeconds != null) comparePerformance(benchmark.durationSeconds, draft.targetTimeSeconds) else null
-    return GoalPresentation(distanceMeters, pace, benchmark?.durationSeconds, comparison, assessmentEvaluator.evaluate(draft, profile), draft.targetDate)
+    return GoalPresentation(distanceMeters, pace, benchmark?.durationSeconds, comparison, assessmentEvaluator.evaluate(draft, profile))
   }
 
   private fun buildDraft(): TrainingGoalDraft? {
@@ -182,7 +178,7 @@ class GoalViewModel(
     val type = input.goalType ?: return null.also { _uiState.update { it.copy(errorMessage = "Choose a goal type.") } }
     val custom = if (distance == GoalDistance.CUSTOM) input.customDistanceKm.toDoubleOrNull()?.times(1_000.0) else null
     val target = if (type == GoalType.TARGET_TIME) parseGoalDuration(input.targetTime) else null
-    return TrainingGoalDraft(distance, custom, type, target, input.targetDate)
+    return TrainingGoalDraft(distance, custom, type, target)
   }
 
   private fun changeGoalStatus(action: suspend (String) -> Unit) {

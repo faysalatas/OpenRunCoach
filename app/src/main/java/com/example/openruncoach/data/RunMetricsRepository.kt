@@ -25,6 +25,11 @@ class RunMetricsRepository(private val dao: RunMetricsDao) {
 
   suspend fun getRunMetrics(runId: String): RunMetrics? = dao.getRunMetrics(runId)?.toDomain()
 
+  suspend fun getAllRunMetrics(): List<RunMetrics> = dao.getAllRunMetrics().mapNotNull(RunMetricsWithValues::toDomain)
+
+  suspend fun getCanonicalRunMetrics(): List<RunMetrics> =
+    dao.getCanonicalRunMetrics().mapNotNull(RunMetricsWithValues::toDomain)
+
   suspend fun save(metrics: RunMetrics) {
     dao.replace(
       RunMetricsEntity(

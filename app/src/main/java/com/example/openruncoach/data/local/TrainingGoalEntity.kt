@@ -11,7 +11,6 @@ data class TrainingGoalEntity(
   val customDistanceMeters: Double?,
   val goalType: String,
   val targetTimeSeconds: Long?,
-  val targetDateEpochDay: Long?,
   val createdAtEpochMillis: Long,
   val status: String,
   val confidenceAtCreation: String,

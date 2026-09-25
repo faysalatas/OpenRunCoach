@@ -2,7 +2,6 @@ package com.example.openruncoach.domain.goal
 
 import com.example.openruncoach.domain.profile.ProfileConfidence
 import java.time.Instant
-import java.time.LocalDate
 
 enum class GoalDistance(val meters: Double?, val displayName: String) {
   FIVE_K(5_000.0, "5K"),
@@ -53,7 +52,6 @@ data class TrainingGoal(
   val customDistanceMeters: Double?,
   val goalType: GoalType,
   val targetTimeSeconds: Long?,
-  val targetDate: LocalDate?,
   val createdAt: Instant,
   val status: GoalStatus,
   val startingPerformanceSnapshot: StartingPerformanceSnapshot,
@@ -68,12 +66,11 @@ data class TrainingGoalDraft(
   val customDistanceMeters: Double? = null,
   val goalType: GoalType,
   val targetTimeSeconds: Long? = null,
-  val targetDate: LocalDate? = null,
 )
 
 data class GoalValidationResult(val isValid: Boolean, val errors: List<String>)
 
-fun validateGoalDraft(draft: TrainingGoalDraft, today: LocalDate): GoalValidationResult {
+fun validateGoalDraft(draft: TrainingGoalDraft): GoalValidationResult {
   val errors = buildList {
     if (draft.distance == GoalDistance.CUSTOM) {
       val meters = draft.customDistanceMeters
@@ -89,7 +86,6 @@ fun validateGoalDraft(draft: TrainingGoalDraft, today: LocalDate): GoalValidatio
     if (draft.goalType != GoalType.TARGET_TIME && draft.targetTimeSeconds != null) {
       add("Target time is only valid for a target-time goal.")
     }
-    if (draft.targetDate?.isBefore(today) == true) add("Target date cannot be in the past.")
   }
   return GoalValidationResult(errors.isEmpty(), errors)
 }

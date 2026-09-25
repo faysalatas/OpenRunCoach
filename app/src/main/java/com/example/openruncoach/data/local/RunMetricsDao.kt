@@ -30,6 +30,15 @@ interface RunMetricsDao {
   @Query("SELECT * FROM run_metrics ORDER BY startTimeEpochMillis ASC")
   suspend fun getAllRunMetrics(): List<RunMetricsWithValues>
 
+  @Transaction
+  @Query(
+    """SELECT run_metrics.* FROM run_metrics
+      INNER JOIN runs ON runs.healthConnectRecordId = run_metrics.runId
+      WHERE runs.isCanonical = 1
+      ORDER BY run_metrics.startTimeEpochMillis ASC"""
+  )
+  suspend fun getCanonicalRunMetrics(): List<RunMetricsWithValues>
+
   @Upsert
   suspend fun upsertSnapshot(snapshot: RunMetricsEntity)
 

@@ -28,8 +28,13 @@ import androidx.sqlite.execSQL
     WorkoutSegmentEntity::class,
     WorkoutIntensityTargetEntity::class,
     WorkoutCueEntity::class,
+    TrainingPlanEntity::class,
+    TrainingWeekEntity::class,
+    TrainingWeekReasonEntity::class,
+    TrainingBlockEntity::class,
+    TrainingPlanWorkoutEntity::class,
   ],
-  version = 12,
+  version = 15,
   exportSchema = true,
 )
 abstract class OpenRunCoachDatabase : RoomDatabase() {
@@ -39,6 +44,7 @@ abstract class OpenRunCoachDatabase : RoomDatabase() {
   abstract fun runMetricsDao(): RunMetricsDao
   abstract fun athletePerformanceProfileDao(): AthletePerformanceProfileDao
   abstract fun trainingGoalDao(): TrainingGoalDao
+  abstract fun trainingPlanDao(): TrainingPlanDao
 
   companion object {
     @Volatile private var instance: OpenRunCoachDatabase? = null
@@ -204,6 +210,143 @@ abstract class OpenRunCoachDatabase : RoomDatabase() {
       }
     }
 
+    val MIGRATION_12_13 = object : Migration(12, 13) {
+      override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL(
+          """CREATE TABLE IF NOT EXISTS `training_plans` (`id` TEXT NOT NULL, `goalId` TEXT NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL, `startDateEpochDay` INTEGER NOT NULL, `endDateEpochDay` INTEGER, `generationVersion` INTEGER NOT NULL, `explanation` TEXT NOT NULL, `confidence` TEXT NOT NULL, `status` TEXT NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`goalId`) REFERENCES `training_goals`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)"""
+        )
+        connection.execSQL("CREATE INDEX IF NOT EXISTS `index_training_plans_goalId` ON `training_plans` (`goalId`)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS `index_training_plans_status` ON `training_plans` (`status`)")
+        connection.execSQL(
+          """CREATE TABLE IF NOT EXISTS `training_weeks` (`planId` TEXT NOT NULL, `weekIndex` INTEGER NOT NULL, `startDateEpochDay` INTEGER NOT NULL, `targetDistanceMeters` REAL, `targetDurationSeconds` INTEGER, `loadClassification` TEXT NOT NULL, `explanation` TEXT NOT NULL, PRIMARY KEY(`planId`, `weekIndex`), FOREIGN KEY(`planId`) REFERENCES `training_plans`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)"""
+        )
+        connection.execSQL("CREATE INDEX IF NOT EXISTS `index_training_weeks_planId` ON `training_weeks` (`planId`)")
+        connection.execSQL(
+          """CREATE TABLE IF NOT EXISTS `training_week_reasons` (`planId` TEXT NOT NULL, `weekIndex` INTEGER NOT NULL, `position` INTEGER NOT NULL, `text` TEXT NOT NULL, PRIMARY KEY(`planId`, `weekIndex`, `position`), FOREIGN KEY(`planId`, `weekIndex`) REFERENCES `training_weeks`(`planId`, `weekIndex`) ON UPDATE NO ACTION ON DELETE CASCADE)"""
+        )
+        connection.execSQL("CREATE INDEX IF NOT EXISTS `index_training_week_reasons_planId_weekIndex` ON `training_week_reasons` (`planId`, `weekIndex`)")
+        connection.execSQL(
+          """CREATE TABLE IF NOT EXISTS `training_blocks` (`planId` TEXT NOT NULL, `blockIndex` INTEGER NOT NULL, `type` TEXT NOT NULL, `startWeek` INTEGER NOT NULL, `endWeek` INTEGER NOT NULL, `purpose` TEXT NOT NULL, `progressionIntent` TEXT NOT NULL, PRIMARY KEY(`planId`, `blockIndex`), FOREIGN KEY(`planId`) REFERENCES `training_plans`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)"""
+        )
+        connection.execSQL("CREATE INDEX IF NOT EXISTS `index_training_blocks_planId` ON `training_blocks` (`planId`)")
+        connection.execSQL(
+          """CREATE TABLE IF NOT EXISTS `training_plan_workouts` (`planId` TEXT NOT NULL, `weekIndex` INTEGER NOT NULL, `workoutOrder` INTEGER NOT NULL, `workoutId` TEXT NOT NULL, `slot` TEXT NOT NULL, `generationReason` TEXT NOT NULL, PRIMARY KEY(`planId`, `weekIndex`, `workoutOrder`), FOREIGN KEY(`planId`, `weekIndex`) REFERENCES `training_weeks`(`planId`, `weekIndex`) ON UPDATE NO ACTION ON DELETE CASCADE, FOREIGN KEY(`workoutId`) REFERENCES `planned_workouts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)"""
+        )
+        connection.execSQL("CREATE INDEX IF NOT EXISTS `index_training_plan_workouts_planId_weekIndex` ON `training_plan_workouts` (`planId`, `weekIndex`)")
+        connection.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_training_plan_workouts_workoutId` ON `training_plan_workouts` (`workoutId`)")
+      }
+    }
+
+    val MIGRATION_13_14 = object : Migration(13, 14) {
+      override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL(
+          """CREATE TABLE IF NOT EXISTS `goal_completion_milestones` (`goalId` TEXT NOT NULL, `readiness` TEXT NOT NULL, `scheduledDateEpochDay` INTEGER, `promptDismissed` INTEGER NOT NULL DEFAULT 0, `updatedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`goalId`), FOREIGN KEY(`goalId`) REFERENCES `training_goals`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)"""
+        )
+        connection.execSQL("CREATE INDEX IF NOT EXISTS `index_goal_completion_milestones_goalId` ON `goal_completion_milestones` (`goalId`)")
+        connection.execSQL(
+          """UPDATE `training_plans` SET `status` = 'SUPERSEDED' WHERE `id` IN (
+            SELECT DISTINCT `training_plan_workouts`.`planId` FROM `training_plan_workouts`
+            INNER JOIN `planned_workouts` ON `planned_workouts`.`id` = `training_plan_workouts`.`workoutId`
+            WHERE `planned_workouts`.`purpose` = 'GOAL_COMPLETION'
+          )"""
+        )
+      }
+    }
+
+    val MIGRATION_14_15 = object : Migration(14, 15) {
+      override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL("CREATE TEMP TABLE `migration15_goal_reasons` AS SELECT * FROM `training_goal_assessment_reasons`")
+        connection.execSQL("CREATE TEMP TABLE `migration15_weeks` AS SELECT * FROM `training_weeks`")
+        connection.execSQL("CREATE TEMP TABLE `migration15_week_reasons` AS SELECT * FROM `training_week_reasons`")
+        connection.execSQL("CREATE TEMP TABLE `migration15_blocks` AS SELECT * FROM `training_blocks`")
+        connection.execSQL("CREATE TEMP TABLE `migration15_plan_workouts` AS SELECT * FROM `training_plan_workouts`")
+        connection.execSQL(
+          """CREATE TEMP TABLE `migration15_plans` AS
+            SELECT p.*,
+              CASE WHEN p.status = 'ACTIVE' AND g.goalType = 'COMPLETE_DISTANCE'
+                THEN COALESCE(m.scheduledDateEpochDay, g.targetDateEpochDay) ELSE NULL END AS migratedCompletionDate,
+              CASE WHEN p.status = 'ACTIVE' AND g.goalType = 'COMPLETE_DISTANCE' THEN (
+                SELECT pw.id FROM training_plan_workouts tpw
+                INNER JOIN planned_workouts pw ON pw.id = tpw.workoutId
+                WHERE tpw.planId = p.id AND pw.purpose = 'GOAL_COMPLETION' LIMIT 1
+              ) ELSE NULL END AS migratedCompletionRunId,
+              CASE WHEN p.status = 'ACTIVE' AND g.goalType = 'COMPLETE_DISTANCE'
+                AND COALESCE(m.scheduledDateEpochDay, g.targetDateEpochDay) IS NOT NULL
+                THEN 'GOAL_COMPLETION_SCHEDULED'
+                WHEN p.status = 'ACTIVE' AND g.goalType = 'COMPLETE_DISTANCE'
+                THEN COALESCE(m.readiness, 'GOAL_COMPLETION_NOT_READY')
+                ELSE 'GOAL_COMPLETION_NOT_READY' END AS migratedReadiness,
+              CASE WHEN p.status = 'ACTIVE' AND g.goalType = 'COMPLETE_DISTANCE'
+                THEN COALESCE(m.promptDismissed, 0) ELSE 0 END AS migratedPromptDismissed,
+              COALESCE(m.updatedAtEpochMillis, p.createdAtEpochMillis) AS migratedUpdatedAt
+            FROM training_plans p
+            INNER JOIN training_goals g ON g.id = p.goalId
+            LEFT JOIN goal_completion_milestones m ON m.goalId = p.goalId"""
+        )
+        connection.execSQL(
+          """CREATE TABLE `_new_training_goals` (`id` TEXT NOT NULL, `distance` TEXT NOT NULL, `customDistanceMeters` REAL, `goalType` TEXT NOT NULL, `targetTimeSeconds` INTEGER, `createdAtEpochMillis` INTEGER NOT NULL, `status` TEXT NOT NULL, `confidenceAtCreation` TEXT NOT NULL, `startingBestDurationSeconds` INTEGER, `startingBestRunId` TEXT, `startingBestObservedAtEpochMillis` INTEGER, `startingRecentDurationSeconds` INTEGER, `startingRecentRunId` TEXT, `startingRecentObservedAtEpochMillis` INTEGER, `startingAverageWeeklyDistanceMeters` REAL NOT NULL, `startingAverageWeeklyDurationSeconds` INTEGER NOT NULL, `startingLongestRunDistanceMeters` REAL, `startingLongestRunDurationSeconds` INTEGER, `startingAverageRunsPerWeek` REAL NOT NULL, `startingTypicalEasyPaceSecondsPerKm` REAL, `startingTypicalEasyHeartRate` REAL, `startingProfileConfidence` TEXT NOT NULL, `snapshotCapturedAtEpochMillis` INTEGER NOT NULL, `assessmentLevel` TEXT NOT NULL, PRIMARY KEY(`id`))"""
+        )
+        connection.execSQL(
+          """INSERT INTO `_new_training_goals` SELECT `id`, `distance`, `customDistanceMeters`, `goalType`,
+            `targetTimeSeconds`, `createdAtEpochMillis`, `status`, `confidenceAtCreation`,
+            `startingBestDurationSeconds`, `startingBestRunId`, `startingBestObservedAtEpochMillis`,
+            `startingRecentDurationSeconds`, `startingRecentRunId`, `startingRecentObservedAtEpochMillis`,
+            `startingAverageWeeklyDistanceMeters`, `startingAverageWeeklyDurationSeconds`,
+            `startingLongestRunDistanceMeters`, `startingLongestRunDurationSeconds`, `startingAverageRunsPerWeek`,
+            `startingTypicalEasyPaceSecondsPerKm`, `startingTypicalEasyHeartRate`, `startingProfileConfidence`,
+            `snapshotCapturedAtEpochMillis`, `assessmentLevel` FROM `training_goals`"""
+        )
+        // Do not rely on dropping training_goals to cascade. Room migrations can run with foreign-key
+        // enforcement disabled, in which case these rows survive and collide with their snapshots.
+        connection.execSQL("DELETE FROM `training_plan_workouts`")
+        connection.execSQL("DELETE FROM `training_week_reasons`")
+        connection.execSQL("DELETE FROM `training_blocks`")
+        connection.execSQL("DELETE FROM `training_weeks`")
+        connection.execSQL("DELETE FROM `training_plans`")
+        connection.execSQL("DELETE FROM `training_goal_assessment_reasons`")
+        connection.execSQL("DROP TABLE `goal_completion_milestones`")
+        connection.execSQL("DROP TABLE `training_goals`")
+        connection.execSQL("ALTER TABLE `_new_training_goals` RENAME TO `training_goals`")
+        connection.execSQL("ALTER TABLE `training_plans` ADD COLUMN `plannedCompletionDateEpochDay` INTEGER")
+        connection.execSQL("ALTER TABLE `training_plans` ADD COLUMN `plannedCompletionRunId` TEXT")
+        connection.execSQL("ALTER TABLE `training_plans` ADD COLUMN `completionReadiness` TEXT NOT NULL DEFAULT 'GOAL_COMPLETION_NOT_READY'")
+        connection.execSQL("ALTER TABLE `training_plans` ADD COLUMN `completionPromptDismissed` INTEGER NOT NULL DEFAULT 0")
+        connection.execSQL("ALTER TABLE `training_plans` ADD COLUMN `completionUpdatedAtEpochMillis` INTEGER NOT NULL DEFAULT 0")
+        connection.execSQL(
+          """CREATE TEMP TABLE `migration15_distinct_goal_reasons` AS
+            SELECT `goalId`, `text`, MIN(`position`) AS `legacyPosition`
+            FROM `migration15_goal_reasons`
+            GROUP BY `goalId`, `text`"""
+        )
+        connection.execSQL(
+          """INSERT INTO `training_goal_assessment_reasons` (`goalId`, `position`, `text`)
+            SELECT reason.`goalId`,
+              (SELECT COUNT(*) FROM `migration15_distinct_goal_reasons` earlier
+                WHERE earlier.`goalId` = reason.`goalId`
+                  AND (earlier.`legacyPosition` < reason.`legacyPosition`
+                    OR (earlier.`legacyPosition` = reason.`legacyPosition`
+                      AND earlier.`text` < reason.`text`))),
+              reason.`text`
+            FROM `migration15_distinct_goal_reasons` reason
+            ORDER BY reason.`goalId`, reason.`legacyPosition`, reason.`text`"""
+        )
+        connection.execSQL(
+          """INSERT INTO `training_plans` (`id`, `goalId`, `createdAtEpochMillis`, `startDateEpochDay`,
+            `endDateEpochDay`, `generationVersion`, `explanation`, `confidence`, `status`,
+            `plannedCompletionDateEpochDay`, `plannedCompletionRunId`, `completionReadiness`,
+            `completionPromptDismissed`, `completionUpdatedAtEpochMillis`)
+            SELECT `id`, `goalId`, `createdAtEpochMillis`, `startDateEpochDay`, `endDateEpochDay`,
+            `generationVersion`, `explanation`, `confidence`, `status`, `migratedCompletionDate`,
+            `migratedCompletionRunId`, `migratedReadiness`, `migratedPromptDismissed`, `migratedUpdatedAt`
+            FROM `migration15_plans`"""
+        )
+        connection.execSQL("INSERT INTO `training_weeks` SELECT * FROM `migration15_weeks`")
+        connection.execSQL("INSERT INTO `training_week_reasons` SELECT * FROM `migration15_week_reasons`")
+        connection.execSQL("INSERT INTO `training_blocks` SELECT * FROM `migration15_blocks`")
+        connection.execSQL("INSERT INTO `training_plan_workouts` SELECT * FROM `migration15_plan_workouts`")
+      }
+    }
+
     fun getInstance(context: Context): OpenRunCoachDatabase =
       instance ?: synchronized(this) {
         instance
@@ -223,6 +366,9 @@ abstract class OpenRunCoachDatabase : RoomDatabase() {
               MIGRATION_9_10,
               MIGRATION_10_11,
               MIGRATION_11_12,
+              MIGRATION_12_13,
+              MIGRATION_13_14,
+              MIGRATION_14_15,
             ).build().also { instance = it }
       }
   }

@@ -4,10 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.openruncoach.data.RunFeedbackRepository
 import com.example.openruncoach.data.RunRepository
+import com.example.openruncoach.data.TrainingPlanRepository
 import com.example.openruncoach.domain.RunFeedback
 import com.example.openruncoach.domain.RunSummary
 import com.example.openruncoach.domain.coaching.CoachingDecision
 import com.example.openruncoach.domain.coaching.CoachingEngine
+import com.example.openruncoach.domain.plan.TrainingPlan
+import com.example.openruncoach.domain.workout.WorkoutEstimateCalculator
 import com.example.openruncoach.ui.common.WeekSelectorUiModel
 import com.example.openruncoach.ui.common.buildWeekSelectorUiModel
 import java.time.LocalDate
@@ -29,7 +32,16 @@ data class HomeUiState(
   val selectedRun: RunSummary? = null,
   val sourceCount: Int = 0,
   val coachingDecision: CoachingDecision? = null,
+  val planSummary: HomePlanSummary? = null,
   val errorMessage: String? = null,
+)
+
+data class HomePlanSummary(
+  val weekNumber: Int,
+  val workoutCount: Int,
+  val nextWorkoutName: String?,
+  val nextWorkoutDurationSeconds: Long?,
+  val nextWorkoutDistanceMeters: Double?,
 )
 
 private data class HomeRunState(
@@ -37,12 +49,14 @@ private data class HomeRunState(
   val allRuns: List<RunSummary>,
   val selectedDate: LocalDate,
   val selectedRun: RunSummary?,
+  val plan: TrainingPlan?,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class HomeViewModel(
   runRepository: RunRepository,
   feedbackRepository: RunFeedbackRepository,
+  trainingPlanRepository: TrainingPlanRepository,
   private val coachingEngine: CoachingEngine = CoachingEngine(),
   private val zoneId: ZoneId = ZoneId.systemDefault(),
 ) : ViewModel() {
@@ -52,12 +66,14 @@ class HomeViewModel(
     runRepository.canonicalRuns,
     runRepository.allRuns,
     selectedDate,
-  ) { canonicalRuns, allRuns, date ->
+    trainingPlanRepository.observeActivePlan(),
+  ) { canonicalRuns, allRuns, date, plan ->
     HomeRunState(
       canonicalRuns = canonicalRuns,
       allRuns = allRuns,
       selectedDate = date,
       selectedRun = canonicalRuns.firstOrNull { it.startTime.atZone(zoneId).toLocalDate() == date },
+      plan = plan,
     )
   }.flatMapLatest { runState ->
     val run = runState.selectedRun
@@ -87,6 +103,25 @@ class HomeViewModel(
       selectedRun = run,
       sourceCount = sourceCount,
       coachingDecision = if (run != null && feedback != null) coachingEngine.analyze(run, canonicalRuns, feedback) else null,
+      planSummary = plan.toHomeSummary(LocalDate.now(zoneId)),
     )
   }
+}
+
+private fun TrainingPlan?.toHomeSummary(today: LocalDate): HomePlanSummary? {
+  this ?: return null
+  val week = weeks.firstOrNull { !today.isBefore(it.startDate) && !today.isAfter(it.startDate.plusDays(6)) }
+    ?: weeks.firstOrNull { it.startDate.isAfter(today) }
+    ?: weeks.lastOrNull()
+    ?: return null
+  val next = week.workouts.map { it.workout }.filter { !it.date.isBefore(today) }.minByOrNull { it.date }
+    ?: week.workouts.firstOrNull()?.workout
+  val estimate = next?.let(WorkoutEstimateCalculator::calculate)
+  return HomePlanSummary(
+    weekNumber = week.weekIndex + 1,
+    workoutCount = week.workouts.size,
+    nextWorkoutName = next?.name,
+    nextWorkoutDurationSeconds = estimate?.estimatedTotalDurationSeconds,
+    nextWorkoutDistanceMeters = estimate?.estimatedTotalDistanceMeters,
+  )
 }

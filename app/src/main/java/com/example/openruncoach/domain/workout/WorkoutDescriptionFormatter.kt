@@ -39,7 +39,7 @@ object WorkoutDescriptionFormatter {
   fun intensity(target: IntensityTarget): String = when (target) {
     NoIntensityTarget -> "No explicit intensity"
     is RpeTarget -> "RPE ${target.minimum}–${target.maximum}"
-    is PaceTarget -> "${formatPace(target.minimumSecondsPerKm)}–${formatPace(target.maximumSecondsPerKm)} min/km"
+    is PaceTarget -> paceRange(target)
     is HeartRateTarget -> "${target.minimumBpm}–${target.maximumBpm} bpm"
     is HeartRateZoneTarget -> target.zone.name.replace('_', ' ').lowercase().replaceFirstChar(Char::titlecase) +
       if (target.confidence == GuidanceConfidence.UNCALIBRATED) " (uncalibrated)" else ""
@@ -47,9 +47,24 @@ object WorkoutDescriptionFormatter {
 
   fun purpose(purpose: WorkoutPurpose): String = purpose.name.lowercase().replace('_', ' ').replaceFirstChar(Char::titlecase)
 
+  fun paceRange(target: PaceTarget): String =
+    "${formatPace(target.minimumSecondsPerKm)}–${formatPace(target.maximumSecondsPerKm)} min/km"
+
+  fun durationRange(minimumSeconds: Long, maximumSeconds: Long): String =
+    if (minimumSeconds == maximumSeconds) formatClockDuration(minimumSeconds)
+    else "${formatClockDuration(minimumSeconds)}–${formatClockDuration(maximumSeconds)}"
+
   private fun formatPace(seconds: Double): String {
     val rounded = seconds.roundToLong()
     return "${rounded / 60}:${(rounded % 60).toString().padStart(2, '0')}"
+  }
+
+  private fun formatClockDuration(seconds: Long): String {
+    val hours = seconds / 3_600
+    val minutes = (seconds % 3_600) / 60
+    val remainder = seconds % 60
+    return if (hours > 0) "%d:%02d:%02d".format(Locale.US, hours, minutes, remainder)
+    else "%d:%02d".format(Locale.US, minutes, remainder)
   }
 
   private fun formatNumber(value: Double): String = if (value % 1.0 == 0.0) value.toInt().toString() else "%.2f".format(Locale.US, value)

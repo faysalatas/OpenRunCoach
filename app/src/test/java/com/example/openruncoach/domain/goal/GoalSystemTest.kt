@@ -6,7 +6,6 @@ import com.example.openruncoach.domain.profile.AthletePerformanceProfileCalculat
 import com.example.openruncoach.domain.profile.ProfileConfidence
 import java.time.Clock
 import java.time.Instant
-import java.time.LocalDate
 import java.time.ZoneOffset
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -47,6 +46,15 @@ class GoalSystemTest {
     val capability = evaluator.evaluate(profile(run("five", 5_000.0, 1_800))).byDistance.getValue(GoalDistance.FIVE_K)
     assertTrue(capability.hasVerifiedBenchmark)
     assertEquals(1_800L, capability.benchmark?.personalBest?.durationSeconds)
+  }
+
+  @Test fun alreadyDemonstratedDistanceOffersMoreRelevantGoalTypesWithoutChangingChoice() {
+    val capability = evaluator.evaluate(profile(run("five", 5_000.0, 1_800))).byDistance.getValue(GoalDistance.FIVE_K)
+    val complete = capability.options.single { it.goalType == GoalType.COMPLETE_DISTANCE }
+    assertTrue(capability.hasCompletedDistance)
+    assertTrue(complete.explanation.contains("already demonstrated"))
+    assertTrue(complete.explanation.contains("Improve Performance"))
+    assertTrue(complete.explanation.contains("Target Time"))
   }
 
   @Test fun fourPointEightKmDoesNotCountAsFiveKBenchmark() {
@@ -92,30 +100,15 @@ class GoalSystemTest {
     assertEquals(10_000.0, goal.distanceMeters, 0.01)
   }
 
-  @Test fun targetDateIsOptional() {
+  @Test fun goalCanBeCreatedWithoutAnyCalendarDate() {
     val goal = factory.create(TrainingGoalDraft(GoalDistance.FIVE_K, goalType = GoalType.COMPLETE_DISTANCE), null)
-    assertNull(goal.targetDate)
-  }
-
-  @Test fun futureTargetDateIsStored() {
-    val date = LocalDate.parse("2026-11-15")
-    val goal = factory.create(TrainingGoalDraft(GoalDistance.FIVE_K, goalType = GoalType.COMPLETE_DISTANCE, targetDate = date), null)
-    assertEquals(date, goal.targetDate)
-  }
-
-  @Test fun pastTargetDateIsInvalid() {
-    val result = validateGoalDraft(
-      TrainingGoalDraft(GoalDistance.FIVE_K, goalType = GoalType.COMPLETE_DISTANCE, targetDate = LocalDate.parse("2026-09-23")),
-      LocalDate.parse("2026-09-24"),
-    )
-    assertFalse(result.isValid)
-    assertTrue(result.errors.any { it.contains("past") })
+    assertEquals(GoalStatus.ACTIVE, goal.status)
   }
 
   @Test fun customDistanceIsValidatedAndStored() {
     val goal = factory.create(TrainingGoalDraft(GoalDistance.CUSTOM, 15_000.0, GoalType.COMPLETE_DISTANCE), null)
     assertEquals(15_000.0, goal.distanceMeters, 0.01)
-    assertFalse(validateGoalDraft(TrainingGoalDraft(GoalDistance.CUSTOM, 50.0, GoalType.COMPLETE_DISTANCE), LocalDate.now(clock)).isValid)
+    assertFalse(validateGoalDraft(TrainingGoalDraft(GoalDistance.CUSTOM, 50.0, GoalType.COMPLETE_DISTANCE)).isValid)
   }
 
   @Test fun oneActiveGoalRuleArchivesExistingActiveGoal() {

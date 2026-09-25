@@ -96,12 +96,18 @@ fun MainNavigation() {
         HomeScreen(
           onRunClick = { runId -> navController.navigate(runDetailRoute(runId)) },
           onViewAnalysis = { runId -> navController.navigate(coachDetailRoute(runId)) },
+          onViewPlan = { navController.navigate(Routes.PLAN) },
         )
       }
       composable(Routes.HISTORY) {
         HistoryScreen(onRunClick = { runId -> navController.navigate(runDetailRoute(runId)) })
       }
-      composable(Routes.PLAN) { PlanScreen() }
+      composable(Routes.PLAN) {
+        PlanScreen(
+          onOpenGoal = { navController.navigate(Routes.GOAL) },
+          onOpenWorkout = { workoutId -> navController.navigate(workoutDetailRoute(workoutId)) },
+        )
+      }
       composable(Routes.SETTINGS) {
         SettingsScreen(
           onOpenPerformanceProfile = { navController.navigate(Routes.PERFORMANCE_PROFILE) },
@@ -111,7 +117,12 @@ fun MainNavigation() {
         )
       }
       composable(Routes.PERFORMANCE_PROFILE) { PerformanceProfileScreen(onBack = navController::navigateUp) }
-      composable(Routes.GOAL) { GoalScreen(onBack = navController::navigateUp) }
+      composable(Routes.GOAL) {
+        GoalScreen(
+          onBack = navController::navigateUp,
+          onOpenTrainingPlan = { navController.navigate(Routes.PLAN) },
+        )
+      }
       composable(Routes.SIMULATOR) { SimulationScreen(onBack = navController::navigateUp) }
       composable(Routes.WORKOUT_PREVIEW) {
         WorkoutPreviewScreen(

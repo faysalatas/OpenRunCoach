@@ -16,7 +16,6 @@ import com.example.openruncoach.domain.goal.TrainingGoalDraft
 import com.example.openruncoach.domain.goal.TrainingGoalFactory
 import com.example.openruncoach.domain.profile.ProfileConfidence
 import java.time.Instant
-import java.time.LocalDate
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -44,7 +43,7 @@ class TrainingGoalRepository(
 
 private fun TrainingGoal.toRecord() = TrainingGoalRecord(
   goal = TrainingGoalEntity(
-    id, distance.name, customDistanceMeters, goalType.name, targetTimeSeconds, targetDate?.toEpochDay(),
+    id, distance.name, customDistanceMeters, goalType.name, targetTimeSeconds,
     createdAt.toEpochMilli(), status.name, confidenceAtCreation.name,
     startingPerformanceSnapshot.bestBenchmark?.durationSeconds,
     startingPerformanceSnapshot.bestBenchmark?.runId,
@@ -77,7 +76,6 @@ private fun TrainingGoalRecord.toDomain(): TrainingGoal {
     customDistanceMeters = goal.customDistanceMeters,
     goalType = GoalType.valueOf(goal.goalType),
     targetTimeSeconds = goal.targetTimeSeconds,
-    targetDate = goal.targetDateEpochDay?.let(LocalDate::ofEpochDay),
     createdAt = Instant.ofEpochMilli(goal.createdAtEpochMillis),
     status = GoalStatus.valueOf(goal.status),
     startingPerformanceSnapshot = StartingPerformanceSnapshot(

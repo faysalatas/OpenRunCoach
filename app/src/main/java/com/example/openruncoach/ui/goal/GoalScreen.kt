@@ -1,6 +1,5 @@
 package com.example.openruncoach.ui.goal
 
-import android.app.DatePickerDialog
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -40,16 +39,13 @@ import com.example.openruncoach.ui.common.formatDistance
 import com.example.openruncoach.ui.common.formatDuration
 import com.example.openruncoach.ui.common.formatPace
 import com.example.openruncoach.ui.common.formatHistoryDate
-import com.example.openruncoach.ui.common.formatUserDate
 import com.example.openruncoach.ui.components.ItemSpacing
 import com.example.openruncoach.ui.components.ScreenPadding
 import com.example.openruncoach.ui.components.SectionSpacing
-import java.time.LocalDate
-import java.time.ZoneId
 import java.util.Locale
 
 @Composable
-fun GoalScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
+fun GoalScreen(onBack: () -> Unit, onOpenTrainingPlan: () -> Unit, modifier: Modifier = Modifier) {
   val context = LocalContext.current
   val viewModel: GoalViewModel = viewModel {
     val database = OpenRunCoachDatabase.getInstance(context)
@@ -68,7 +64,7 @@ fun GoalScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
       state.isLoading -> Text("Loading your goal…")
       state.step != GoalCreationStep.OVERVIEW -> GoalCreationFlow(state, viewModel)
       state.activeGoal == null -> NoActiveGoal(viewModel::beginCreation)
-      else -> ActiveGoal(state.activeGoal!!, state, viewModel)
+      else -> ActiveGoal(state.activeGoal!!, state, viewModel, onOpenTrainingPlan)
     }
     state.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
   }
@@ -83,7 +79,12 @@ private fun NoActiveGoal(onChoose: () -> Unit) {
 }
 
 @Composable
-private fun ActiveGoal(goal: TrainingGoal, state: GoalUiState, viewModel: GoalViewModel) {
+private fun ActiveGoal(
+  goal: TrainingGoal,
+  state: GoalUiState,
+  viewModel: GoalViewModel,
+  onOpenTrainingPlan: () -> Unit,
+) {
   val presentation = viewModel.presentationForGoal(goal)
   GoalCard("Current Goal") {
     Text(goal.distanceLabel(), style = MaterialTheme.typography.headlineSmall)
@@ -92,6 +93,7 @@ private fun ActiveGoal(goal: TrainingGoal, state: GoalUiState, viewModel: GoalVi
     presentation.targetPaceSecondsPerKm?.let { GoalValue("Target pace", formatPace(it)) }
     GoalValue("Starting benchmark", goal.startingPerformanceSnapshot.bestBenchmark?.durationSeconds?.let(::formatDuration) ?: "Not available")
     TextButton(onClick = viewModel::toggleDetails) { Text(if (state.showDetails) "Hide Goal Details" else "Goal Details") }
+    Button(onClick = onOpenTrainingPlan) { Text("View or Generate Training Plan") }
   }
 
   if (state.showDetails) {
@@ -100,7 +102,6 @@ private fun ActiveGoal(goal: TrainingGoal, state: GoalUiState, viewModel: GoalVi
       GoalValue("Goal type", goal.goalType.label())
       GoalValue("Target time", goal.targetTimeSeconds?.let(::formatDuration) ?: "No target time")
       GoalValue("Target pace", presentation.targetPaceSecondsPerKm?.let(::formatPace) ?: "Not applicable")
-      GoalValue("Target date", goal.targetDate?.let(::formatUserDate) ?: "No date")
       GoalValue("Created", formatHistoryDate(goal.createdAt))
     }
     GoalCard("Starting Performance") {
@@ -186,8 +187,6 @@ private fun GoalCreationFlow(state: GoalUiState, viewModel: GoalViewModel) {
           singleLine = true,
         )
       }
-      TargetDateInput(state.draft.targetDate, viewModel::setTargetDate)
-      Text("The date is stored for context. OpenRunCoach does not generate training phases yet.", style = MaterialTheme.typography.bodySmall)
       Button(onClick = viewModel::review) { Text("Review Goal") }
     }
     GoalCreationStep.REVIEW -> {
@@ -203,7 +202,6 @@ private fun GoalCreationFlow(state: GoalUiState, viewModel: GoalViewModel) {
           GoalValue("Difference", formatSignedDuration(it.differenceSeconds))
           GoalValue("Required improvement", "%.1f%%".format(Locale.getDefault(), it.improvementFraction * 100.0))
         }
-        GoalValue("Target date", presentation?.targetDate?.let(::formatUserDate) ?: "No date")
       }
       presentation?.assessment?.let { assessment -> AssessmentCard(assessment) }
       if (state.activeGoal != null) Text("Starting this goal will archive the current active goal.", style = MaterialTheme.typography.bodySmall)
@@ -227,6 +225,10 @@ private fun CurrentContext(distance: GoalDistance?, capability: DistanceGoalCapa
       GoalValue("Longest recent run", formatDistance(capability?.longestRecentRunDistanceMeters))
       GoalValue("4-week average", "${formatDistance(state.profile?.averageWeeklyDistanceLast4WeeksMeters)}/week")
       GoalValue("Runs per week", state.profile?.averageRunsPerWeek?.let { "%.1f".format(Locale.getDefault(), it) } ?: "Not available")
+    }
+    if (capability?.hasCompletedDistance == true) {
+      Text("You have already demonstrated ${distance?.displayName.orEmpty()}.", style = MaterialTheme.typography.titleMedium)
+      Text("Improve Performance or Target Time may be more relevant alternatives. Complete Distance remains available if you prefer it.")
     }
     Text("Only verified distance benchmarks are shown. Shorter runs are not presented as results for this distance.", style = MaterialTheme.typography.bodySmall)
   }
@@ -263,29 +265,6 @@ private fun SelectableCard(title: String, description: String, support: String?,
         Text(description)
         support?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
       }
-    }
-  }
-}
-
-@Composable
-private fun TargetDateInput(date: LocalDate?, onDateSelected: (LocalDate?) -> Unit) {
-  val context = LocalContext.current
-  val initialDate = date ?: LocalDate.now()
-  Column(verticalArrangement = Arrangement.spacedBy(ItemSpacing)) {
-    GoalValue("Target date", date?.let(::formatUserDate) ?: "No date")
-    Row(horizontalArrangement = Arrangement.spacedBy(ItemSpacing)) {
-      OutlinedButton(onClick = {
-        DatePickerDialog(
-          context,
-          { _, year, month, day -> onDateSelected(LocalDate.of(year, month + 1, day)) },
-          initialDate.year,
-          initialDate.monthValue - 1,
-          initialDate.dayOfMonth,
-        ).apply {
-          datePicker.minDate = LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        }.show()
-      }) { Text(if (date == null) "Choose Date" else "Change Date") }
-      if (date != null) TextButton(onClick = { onDateSelected(null) }) { Text("No Date") }
     }
   }
 }

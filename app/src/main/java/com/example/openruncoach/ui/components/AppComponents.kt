@@ -124,11 +124,26 @@ fun CoachSummaryCard(
 }
 
 @Composable
-fun NextWorkoutCard(modifier: Modifier = Modifier) {
+fun NextWorkoutCard(
+  weekNumber: Int,
+  workoutCount: Int,
+  nextWorkoutName: String?,
+  nextWorkoutDurationSeconds: Long?,
+  nextWorkoutDistanceMeters: Double?,
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
   Card(modifier.fillMaxWidth()) {
     Column(Modifier.padding(ScreenPadding), verticalArrangement = Arrangement.spacedBy(ItemSpacing)) {
-      Text("Next Workout", style = MaterialTheme.typography.titleLarge)
-      Text("Your next workout will appear here once training planning is enabled.")
+      Text("This Week", style = MaterialTheme.typography.titleLarge)
+      Text("Week $weekNumber · $workoutCount runs planned")
+      nextWorkoutName?.let { Text("Next: $it", style = MaterialTheme.typography.titleMedium) }
+      val estimate = listOfNotNull(
+        nextWorkoutDurationSeconds?.let(::formatDuration),
+        nextWorkoutDistanceMeters?.let(::formatDistance),
+      ).joinToString(" · ")
+      if (estimate.isNotBlank()) Text(estimate)
+      TextButton(onClick = onClick) { Text("View Plan") }
     }
   }
 }

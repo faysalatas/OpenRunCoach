@@ -26,6 +26,11 @@ OpenRunCoach is a native Android adaptive running coach.
 - Workout logic must remain provider-independent.
 - Workout prescriptions must support structured blocks and segments; do not reduce every workout to one total duration.
 - New workout types must use the shared structured workout model.
+- Base training plans must be deterministic and explainable.
+- Low profile confidence must produce conservative prescriptions.
+- A training goal's distance does not make every workout that distance.
+- Hard workouts require explicit eligibility based on available training evidence.
+- Generated plan workouts must use the shared structured workout model.
 
 ## Health data
 

@@ -48,7 +48,7 @@ class GoalCapabilityEvaluator {
           GoalTypeCapability(
             GoalType.COMPLETE_DISTANCE,
             supportedByCurrentData = profile != null,
-            explanation = if (hasCompleted) "You have recorded this distance and can still choose to complete it more comfortably."
+            explanation = if (hasCompleted) "You have already demonstrated ${distance.displayName}. Improve Performance or Target Time may be more relevant, but Complete Distance remains available."
             else "Build toward completing this distance; a previous result is not required.",
           ),
           GoalTypeCapability(

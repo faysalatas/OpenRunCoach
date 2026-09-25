@@ -42,10 +42,11 @@ The long-term goal is a transparent, explainable running coach inspired by feedb
 - Automatic canonical-run metric refresh and best-effort Samsung enrichment in Run Detail and after sync
 - Persisted provider-independent heart-rate, speed, cadence, and power samples
 - Compact Run Detail charts for pace, heart rate, and cadence
-- Persistent athlete goals with profile-based context, target times, optional dates, and explainable assessments
+- Persistent long-lived athlete goals with profile-based context, target times, and explainable assessments
 - Provider-independent structured workouts with ordered segments, repeat blocks, intensity guidance, estimates, purposes, and cues
+- Persistent deterministic training plans with weekly navigation, explainable blocks, recovery weeks, and goal-aware workout selection
 
-Automatic matching between a planned workout and an imported Health Connect run is not implemented yet. Because of that, the production workflow does not automatically create the next real workout after an import; the domain simulator exercises that complete loop today.
+OpenRunCoach can generate a base plan explicitly from an active goal and the current Performance Profile. Automatic matching between a planned workout and an imported Health Connect run is not implemented yet. Because of that, the production workflow does not automatically adapt that plan after an import; the domain simulator exercises the completed-workout coaching loop today.
 
 ## Core product idea
 
@@ -99,7 +100,7 @@ The Goal screen, available from Settings, provides a five-step flow in which the
 - Improve performance
 - Reach a target time
 
-Target-time goals accept a finish duration and show the derived pace per kilometre. When a verified benchmark exists, the review shows the required time and percentage change. An optional future target date can be stored without requiring a race event.
+Target-time goals accept a finish duration and show the derived pace per kilometre. When a verified benchmark exists, the review shows the required time and percentage change. A `TrainingGoal` describes what the athlete wants to achieve and has no calendar date. It remains active until qualifying performance completes it or the athlete pauses or archives it.
 
 Creating a goal captures a compact starting-performance snapshot: the best and most recent qualifying benchmark, weekly volume, longest recent run, average runs per week, typical easy pace and heart rate, and profile confidence. This snapshot remains fixed while Goal Details shows the latest profile separately. Starting a replacement goal archives the previous active goal; goal history remains in Room.
 
@@ -139,6 +140,36 @@ Examples in the developer Workout Model Preview include:
 - open/manual technique drills
 
 The normalized Room representation stores workouts, blocks, segments, intensity targets, and cues separately. Existing simple planned workouts are migrated into one equivalent duration segment while preserving their workout ID and lifecycle state. The model can be copied with changed types, segment targets, recovery, or repetition counts when structured check-in adjustment is implemented later.
+
+## Training plans
+
+The Plan screen generates a persistent `TrainingPlan` from the active `TrainingGoal` and current `AthletePerformanceProfile`. A plan contains ordered `TrainingWeek` records and explicit `TrainingBlock` ranges. Blocks currently use Foundation, Base, Build, Specific, and Recovery; Peak and Taper remain available for later rules. Generated entries reference the existing structured workout model and enter its lifecycle in the `PLANNED` state.
+
+`TrainingPlanGenerator` is pure Kotlin, deterministic for the same goal, profile, clock, configuration, and persisted milestone constraint, and independent of Android, Room, Compose, and health providers. An unscheduled plan creates a rolling four-week forecast. A user-selected Completion Run date belongs to the `TrainingPlan` and sets its forecast horizon. Generation version metadata is stored with every plan. Explicit regeneration supersedes the previous active plan while preserving it in Room.
+
+The starting frequency follows observed running frequency and is limited to two through four runs per week. Weekly distance and duration begin from the greater of the last-seven-day total and four-week weekly average, then use confidence-based bounded progression. Every fourth week is a recovery week with reduced volume, long-run load, and quality load. Long runs progress from recent capability with a fixed distance cap per increase; they do not jump directly to the race distance.
+
+`TrainingDataSufficiencyEvaluator` decides whether the profile supports a normal plan, a conservative partial-data plan, or an Assessment Phase. It reports separate support for easy, long-run, and quality pace guidance plus goal-distance benchmark availability, with explicit reasons. When evidence is too weak even for a broad pace range, the generator creates one comfortable structured Assessment Run with RPE guidance and no invented pace. Completed assessment attempts are tracked per goal. Once basic distance, duration, pace, and feedback are usable, the app can proceed conservatively without requiring heart-rate or cadence data.
+
+Low and very-low-confidence profiles with usable evidence stay in a conservative aerobic mode using easy, recovery, run/walk, and long runs with RPE guidance. Threshold and tempo work require recent run count, active weeks, adequate completion, low pain frequency, and sufficient profile confidence. Intervals require stronger consistency and high confidence. Most sessions remain easy, quality sessions are separated from the long run, and complete-distance goals emphasize endurance. Performance and target-time goals may receive controlled quality work when eligible; target pace is context and is not applied to every workout.
+
+Normal Easy Runs, Recovery Runs, Long Runs, and goal-distance sessions prefer an explicit distance plus an explainable pace range. RPE remains a secondary effort guardrail, and expected duration is derived from the prescribed distance and the fast and slow ends of the pace range. When no credible pace evidence exists, the workout keeps its distance and RPE without inventing precise pace guidance. Time remains appropriate for run/walk periods, strides, drills, and selected recovery structures.
+
+`PacePrescriptionEngine` derives provider-independent pace guidance from the observed easy-running baseline first, then cautiously falls back to verified benchmarks, recent aggregate performance, or the easy baseline captured with the goal. Low-confidence evidence produces a wider range and an explanation. Long-run guidance stays equal to or slower than normal easy pace. Target pace is reserved for an appropriate final race-specific session; Easy Runs and controlled full-distance runs remain slower.
+
+Goal distance has different meaning by goal type. For `COMPLETE_DISTANCE`, every earlier workout's total prescribed running distance stays below the selected target. Walking and rest segments remain separate. Performance evidence, rather than calendar position, moves the plan milestone from `GOAL_COMPLETION_NOT_READY` to `GOAL_COMPLETION_READY`. Readiness does not assign a date. The Plan screen offers deterministic dates with recovery spacing, another-date selection, and “Not yet.” The chosen date, readiness state, and generated attempt workout ID are stored on the active plan rather than the goal.
+
+Once the athlete chooses a date, the milestone becomes `GOAL_COMPLETION_SCHEDULED` and that date is a strong planner constraint. The generator places exactly one attempt on that date, replaces that week's normal Long Run, removes nearby demanding work, and adds rest after the attempt when it falls inside the displayed week. A Complete Distance attempt uses the exact target distance at sustainable RPE 4–5. Rescheduling replaces the active plan milestone and recalculates provisional workouts. The milestone write and active-plan replacement run in one Room transaction so a failed replan cannot leave a partially updated schedule. The date feasibility display is `FEASIBLE`, `AGGRESSIVE`, or `INSUFFICIENT_DATA`; uncertainty does not block the athlete's selection.
+
+The completion date is a forecast milestone, not a deadline for the goal. Passing it without demonstrated success leaves the goal active and allows another attempt while useful training continues. A qualifying result before the planned date completes the goal immediately, and no repeat attempt is required. The coach may explain that more preparation is useful, but it never silently moves a user-selected date.
+
+Database version 15 removes the former goal date column and moves scheduling state onto `training_plans`. During migration, an existing active Complete Distance plan receives the old persisted Completion Run date, or the legacy goal date when no explicit milestone date exists. Legacy dates on other goal types are not treated as Completion Run intent because that meaning is ambiguous; the goal itself is preserved without a date. The migration retains goals, distinct assessment reasons in deterministic per-goal order, plans, weeks, blocks, and workout references without destructive fallback.
+
+`GoalCompletionEvaluator` uses the canonical completed run, unified `RunMetrics`, lifecycle state, and feedback to explain whether the full target was demonstrated; a 4.8 km run does not complete a 5K goal. If history already demonstrates the distance, the UI says so and suggests Improve Performance or Target Time without changing the user's selection.
+
+For `IMPROVE_PERFORMANCE` and `TARGET_TIME`, race distance is not a training-distance cap. Longer aerobic runs may exceed the race distance, and supported athletes can receive sustainable goal-distance practice before a final target-time attempt. Weekly displayed distance is the sum of explicit prescribed segment distances, while displayed weekly duration is derived when every segment has enough duration or pace information.
+
+Every week stores its focus, load classification, targets, and generation reasons. Each generated workout keeps its purpose, cues, structured segments, and a reason for inclusion. The Home screen shows only a compact current-week summary and link to the full plan.
 
 ## Pre-run check-in
 
@@ -378,11 +409,14 @@ The current developer screen is a timeline runner; shared production screens and
 - [x] Athlete Performance Profile
 - [x] Goal System
 - [x] Structured Workout Model
-- [ ] Training Block / Plan Generation
-- [ ] Pre-run Check-in / Workout Adjustment
+- [x] Training Block / Weekly Plan Generation
+- [x] Training Data Assessment and goal-specific distance semantics
+- [ ] Pre-run Check-in / Adaptive Workout Adjustment
 - [x] Basic pre-run check-in and duration adjustment
 - [ ] Planned versus actual workout matching
 - [ ] Post-run checkout lifecycle integration
+- [ ] Post-run Adaptive Plan Progression
+- [ ] Threshold / Zone Estimation
 - [ ] Technique, cadence, and running economy analysis
 - [ ] Full simulation mode using production screens and isolated storage
 - [ ] Advanced training metrics

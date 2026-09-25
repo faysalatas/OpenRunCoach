@@ -29,7 +29,7 @@ android {
     buildFeatures {
       compose = true
       aidl = false
-      buildConfig = false
+      buildConfig = true
       shaders = false
     }
 
@@ -38,6 +38,8 @@ android {
         excludes += "/META-INF/{AL2.0,LGPL2.1}"
       }
     }
+
+    sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
 }
 
 kotlin {
@@ -46,8 +48,11 @@ kotlin {
 
 dependencies {
   val composeBom = platform(libs.androidx.compose.bom)
+  val serializationBom = platform("org.jetbrains.kotlinx:kotlinx-serialization-bom:1.8.1")
   implementation(composeBom)
+  implementation(serializationBom)
   androidTestImplementation(composeBom)
+  androidTestImplementation(serializationBom)
 
   // Core Android dependencies
   implementation(libs.androidx.core.ktx)
@@ -84,6 +89,7 @@ dependencies {
   androidTestImplementation(libs.androidx.test.ext.junit)
   androidTestImplementation(libs.androidx.test.runner)
   androidTestImplementation(libs.androidx.test.espresso.core)
+  androidTestImplementation(libs.androidx.room.testing)
 
   // Navigation
   implementation(libs.androidx.navigation.compose)

@@ -18,6 +18,7 @@ import com.example.openruncoach.data.HealthConnectRepository
 import com.example.openruncoach.data.RunFeedbackRepository
 import com.example.openruncoach.data.RunRepository
 import com.example.openruncoach.data.RunSettingsRepository
+import com.example.openruncoach.data.TrainingPlanRepository
 import com.example.openruncoach.data.local.OpenRunCoachDatabase
 import com.example.openruncoach.ui.components.CoachSummaryCard
 import com.example.openruncoach.ui.components.EmptyState
@@ -31,6 +32,7 @@ import com.example.openruncoach.ui.components.WeekDaySelector
 fun HomeScreen(
   onRunClick: (String) -> Unit,
   onViewAnalysis: (String) -> Unit,
+  onViewPlan: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
   val context = LocalContext.current
@@ -40,6 +42,7 @@ fun HomeScreen(
     HomeViewModel(
       RunRepository(database.runDao(), HealthConnectRepository(context), settingsRepository),
       RunFeedbackRepository(database),
+      TrainingPlanRepository(database),
     )
   }
   val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -64,6 +67,15 @@ fun HomeScreen(
         }
       }
     }
-    NextWorkoutCard()
+    state.planSummary?.let { summary ->
+      NextWorkoutCard(
+        weekNumber = summary.weekNumber,
+        workoutCount = summary.workoutCount,
+        nextWorkoutName = summary.nextWorkoutName,
+        nextWorkoutDurationSeconds = summary.nextWorkoutDurationSeconds,
+        nextWorkoutDistanceMeters = summary.nextWorkoutDistanceMeters,
+        onClick = onViewPlan,
+      )
+    }
   }
 }

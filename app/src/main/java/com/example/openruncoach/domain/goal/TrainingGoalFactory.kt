@@ -3,7 +3,6 @@ package com.example.openruncoach.domain.goal
 import com.example.openruncoach.domain.profile.AthletePerformanceProfile
 import com.example.openruncoach.domain.profile.ProfileConfidence
 import java.time.Clock
-import java.time.LocalDate
 import java.util.UUID
 
 class TrainingGoalFactory(
@@ -12,7 +11,7 @@ class TrainingGoalFactory(
   private val assessmentEvaluator: GoalAssessmentEvaluator = GoalAssessmentEvaluator(),
 ) {
   fun create(draft: TrainingGoalDraft, profile: AthletePerformanceProfile?): TrainingGoal {
-    val validation = validateGoalDraft(draft, LocalDate.now(clock))
+    val validation = validateGoalDraft(draft)
     require(validation.isValid) { validation.errors.joinToString(" ") }
     val now = clock.instant()
     val benchmark = profile?.goalBenchmark(draft.distance)
@@ -35,7 +34,6 @@ class TrainingGoalFactory(
       customDistanceMeters = draft.customDistanceMeters,
       goalType = draft.goalType,
       targetTimeSeconds = draft.targetTimeSeconds,
-      targetDate = draft.targetDate,
       createdAt = now,
       status = GoalStatus.ACTIVE,
       startingPerformanceSnapshot = snapshot,

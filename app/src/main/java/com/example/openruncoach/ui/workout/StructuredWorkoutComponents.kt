@@ -13,7 +13,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import com.example.openruncoach.domain.workout.NoIntensityTarget
+import com.example.openruncoach.domain.workout.PaceTarget
 import com.example.openruncoach.domain.workout.RepeatBlock
+import com.example.openruncoach.domain.workout.RpeTarget
 import com.example.openruncoach.domain.workout.StructuredWorkout
 import com.example.openruncoach.domain.workout.WorkoutBlock
 import com.example.openruncoach.domain.workout.WorkoutDescriptionFormatter
@@ -52,17 +54,30 @@ fun StructuredWorkoutDetail(
 @Composable
 private fun EstimateCard(workout: StructuredWorkout) {
   val estimate = WorkoutEstimateCalculator.calculate(workout)
+  val segments = workout.blocks.flatMap(WorkoutBlock::segments)
+  val simpleSegment = segments.singleOrNull()
+  val simpleTargets = simpleSegment?.let { listOf(it.primaryIntensity) + it.secondaryIntensities }.orEmpty()
+  val pace = simpleTargets.filterIsInstance<PaceTarget>().firstOrNull()
+  val rpe = simpleTargets.filterIsInstance<RpeTarget>().firstOrNull()
   Card(Modifier.fillMaxWidth()) {
     Column(Modifier.padding(ScreenPadding), verticalArrangement = Arrangement.spacedBy(ItemSpacing)) {
-      Text("Estimated Totals", style = MaterialTheme.typography.titleMedium)
-      val duration = estimate.estimatedTotalDurationSeconds?.let(::formatDuration)
+      Text("Prescription", style = MaterialTheme.typography.titleMedium)
+      val duration = if (estimate.estimatedMinimumDurationSeconds != null && estimate.estimatedMaximumDurationSeconds != null) {
+        WorkoutDescriptionFormatter.durationRange(
+          estimate.estimatedMinimumDurationSeconds,
+          estimate.estimatedMaximumDurationSeconds,
+        )
+      } else estimate.estimatedTotalDurationSeconds?.let(::formatDuration)
         ?: estimate.knownDurationSeconds.takeIf { it > 0 }?.let { "At least ${formatDuration(it)} known" }
         ?: "Unknown"
       val distance = estimate.estimatedTotalDistanceMeters?.let(::formatDistance)
         ?: estimate.knownDistanceMeters.takeIf { it > 0 }?.let { "At least ${formatDistance(it)} known" }
         ?: "Unknown"
-      DetailValue("Duration", duration)
       DetailValue("Distance", distance)
+      DetailValue("Target pace", pace?.let(WorkoutDescriptionFormatter::paceRange) ?: if (simpleSegment == null) "See segments" else "Not enough data yet")
+      DetailValue("Expected duration", duration)
+      DetailValue("Effort", rpe?.let { "RPE ${it.minimum}–${it.maximum}" } ?: if (simpleSegment == null) "See segments" else "No explicit RPE")
+      pace?.let { DetailValue("Pace confidence", it.confidence.name.lowercase().replaceFirstChar(Char::titlecase)) }
       if (estimate.repeatBlockCount > 0) {
         DetailValue("Repeat blocks", estimate.repeatBlockCount.toString())
         DetailValue("Total repeated rounds", estimate.totalRepeatedIterations.toString())

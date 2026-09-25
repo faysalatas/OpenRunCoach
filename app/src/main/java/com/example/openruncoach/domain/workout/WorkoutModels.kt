@@ -4,9 +4,21 @@ import com.example.openruncoach.domain.PainLevel
 import java.time.Instant
 import java.time.LocalDate
 
-enum class WorkoutType { EASY_RUN, RECOVERY_RUN, LONG_RUN, RUN_WALK, TEMPO_RUN, THRESHOLD, INTERVALS, STRIDES, TECHNIQUE, RACE_SPECIFIC, REST }
+enum class WorkoutType { EASY_RUN, RECOVERY_RUN, LONG_RUN, RUN_WALK, TEMPO_RUN, THRESHOLD, INTERVALS, STRIDES, TECHNIQUE, RACE_SPECIFIC, ASSESSMENT, REST }
 
-enum class WorkoutPurpose { RECOVERY, AEROBIC_BASE, ENDURANCE, LACTATE_THRESHOLD, SPEED, VO2MAX, RUNNING_ECONOMY, TECHNIQUE, RACE_SPECIFIC }
+enum class WorkoutPurpose {
+  RECOVERY,
+  AEROBIC_BASE,
+  ENDURANCE,
+  LACTATE_THRESHOLD,
+  SPEED,
+  VO2MAX,
+  RUNNING_ECONOMY,
+  TECHNIQUE,
+  RACE_SPECIFIC,
+  GOAL_COMPLETION,
+  ASSESSMENT,
+}
 
 enum class WorkoutOrigin { MANUAL, GENERATED, ADJUSTED, SIMULATION }
 
@@ -256,6 +268,7 @@ fun WorkoutType.displayName(): String = when (this) {
   WorkoutType.STRIDES -> "Strides"
   WorkoutType.TECHNIQUE -> "Technique"
   WorkoutType.RACE_SPECIFIC -> "Race Specific"
+  WorkoutType.ASSESSMENT -> "Assessment Run"
   WorkoutType.REST -> "Rest"
 }
 
@@ -268,6 +281,7 @@ fun WorkoutType.defaultPurpose(): WorkoutPurpose = when (this) {
   WorkoutType.STRIDES -> WorkoutPurpose.RUNNING_ECONOMY
   WorkoutType.TECHNIQUE -> WorkoutPurpose.TECHNIQUE
   WorkoutType.RACE_SPECIFIC -> WorkoutPurpose.RACE_SPECIFIC
+  WorkoutType.ASSESSMENT -> WorkoutPurpose.ASSESSMENT
 }
 
 fun WorkoutType.defaultExplanation(): String = when (defaultPurpose()) {
@@ -280,4 +294,6 @@ fun WorkoutType.defaultExplanation(): String = when (defaultPurpose()) {
   WorkoutPurpose.RUNNING_ECONOMY -> "Practice fast, relaxed running with full control."
   WorkoutPurpose.TECHNIQUE -> "Practice movement skills without prescribing a universal cadence."
   WorkoutPurpose.RACE_SPECIFIC -> "Prepare for the demands of the selected event."
+  WorkoutPurpose.GOAL_COMPLETION -> "Complete the selected goal distance at a controlled sustainable effort."
+  WorkoutPurpose.ASSESSMENT -> "Establish a usable running baseline at a comfortable, non-maximal effort."
 }
