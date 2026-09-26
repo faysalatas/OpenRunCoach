@@ -30,6 +30,8 @@ class TrainingGoalRepository(
 
   fun observeGoal(goalId: String): Flow<TrainingGoal?> = dao.observeGoal(goalId).map { it?.toDomain() }
 
+  suspend fun getActiveGoal(): TrainingGoal? = dao.getActiveGoal()?.toDomain()
+
   suspend fun createGoal(draft: TrainingGoalDraft): TrainingGoal {
     val goal = factory.create(draft, profileRepository.getProfile())
     dao.activate(goal.toRecord())
@@ -67,7 +69,7 @@ private fun TrainingGoal.toRecord() = TrainingGoalRecord(
   },
 )
 
-private fun TrainingGoalRecord.toDomain(): TrainingGoal {
+internal fun TrainingGoalRecord.toDomain(): TrainingGoal {
   fun benchmark(duration: Long?, runId: String?, observedAt: Long?) =
     if (duration != null && runId != null && observedAt != null) GoalBenchmarkSnapshot(duration, runId, Instant.ofEpochMilli(observedAt)) else null
   return TrainingGoal(

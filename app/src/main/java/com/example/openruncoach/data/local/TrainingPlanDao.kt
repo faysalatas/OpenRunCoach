@@ -61,6 +61,9 @@ interface TrainingPlanDao {
   @Query("UPDATE training_plans SET status = 'SUPERSEDED' WHERE status = 'ACTIVE'")
   suspend fun supersedeActivePlans()
 
+  @Query("UPDATE training_plans SET status = :status WHERE id = :planId")
+  suspend fun updateStatus(planId: String, status: String)
+
   @Query(
     """UPDATE training_plans SET
       plannedCompletionDateEpochDay = :dateEpochDay,

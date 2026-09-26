@@ -10,6 +10,8 @@ import com.example.openruncoach.domain.metrics.MetricConfidence
 import com.example.openruncoach.domain.metrics.MetricSource
 import com.example.openruncoach.domain.metrics.MetricValue
 import com.example.openruncoach.domain.metrics.RunMetrics
+import com.example.openruncoach.domain.metrics.RunTimeSeries
+import com.example.openruncoach.domain.metrics.TimedMetricSample
 import com.example.openruncoach.domain.profile.ProfileConfidence
 import com.example.openruncoach.domain.workout.WorkoutLifecycleState
 import java.time.Instant
@@ -34,6 +36,38 @@ class GoalCompletionEvaluatorTest {
     assertTrue(result.completed)
     assertEquals(GoalCompletionStatus.GOAL_DISTANCE_DEMONSTRATED, result.status)
     assertTrue(result.reasons.any { it == "Goal distance demonstrated." })
+  }
+
+  @Test fun fiveKWithSustainedWalkingDoesNotCompleteContinuousDistanceGoal() {
+    val walkingSamples = listOf(0L, 10L, 20L, 30L, 40L).map { seconds ->
+      TimedMetricSample(now.plusSeconds(seconds), 1.0)
+    }
+    val result = evaluator.evaluate(
+      goal(),
+      run(5_050.0),
+      metrics(5_050.0).copy(series = RunTimeSeries(speed = walkingSamples)),
+      WorkoutLifecycleState.COMPLETED,
+      feedback(),
+    )
+    assertFalse(result.completed)
+    assertEquals(GoalCompletionStatus.CONTINUITY_NOT_DEMONSTRATED, result.status)
+    assertTrue(result.reasons.any { it.contains("walking or stopped") })
+  }
+
+  @Test fun qualifyingRunCompletesGoalRegardlessOfWorkoutName() {
+    val result = evaluator.evaluate(goal(), run(5_010.0), metrics(5_010.0), WorkoutLifecycleState.COMPLETED, feedback())
+    assertTrue(result.completed)
+    assertEquals(GoalCompletionStatus.GOAL_DISTANCE_DEMONSTRATED, result.status)
+  }
+
+  @Test fun targetDistanceWithoutContinuitySamplesDoesNotInventContinuousCompletion() {
+    val result = evaluator.evaluate(
+      goal(), run(5_010.0), metrics(5_010.0).copy(series = RunTimeSeries()),
+      WorkoutLifecycleState.COMPLETED, feedback(),
+    )
+    assertFalse(result.completed)
+    assertEquals(GoalCompletionStatus.CONTINUITY_NOT_DEMONSTRATED, result.status)
+    assertTrue(result.reasons.any { it.contains("could not be verified") })
   }
 
   @Test fun partialFeedbackDoesNotCompleteGoalEvenAtDistance() {
@@ -73,6 +107,9 @@ class GoalCompletionEvaluatorTest {
     durationSeconds = MetricValue(2_100L, MetricSource.HEALTH_CONNECT, MetricConfidence.HIGH),
     distanceMeters = MetricValue(distance, MetricSource.HEALTH_CONNECT, MetricConfidence.HIGH),
     averagePaceSecondsPerKm = MetricValue(2_100_000.0 / distance, MetricSource.DERIVED, MetricConfidence.HIGH),
+    series = RunTimeSeries(speed = (0L..2_100L step 10).map { seconds ->
+      TimedMetricSample(now.plusSeconds(seconds), 2.4)
+    }),
     generatedAt = now,
   )
 

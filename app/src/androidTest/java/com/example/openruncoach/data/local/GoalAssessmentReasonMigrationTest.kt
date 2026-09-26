@@ -142,7 +142,7 @@ class GoalAssessmentReasonMigrationTest {
         assertTrue(cursor.moveToFirst())
         assertEquals(21_000, cursor.getLong(0))
         assertEquals("workout-a", cursor.getString(1))
-        assertEquals("GOAL_COMPLETION_SCHEDULED", cursor.getString(2))
+        assertEquals("GOAL_COMPLETION_READY", cursor.getString(2))
         assertEquals(1, cursor.getInt(3))
         assertEquals(300, cursor.getLong(4))
       }

@@ -74,6 +74,18 @@ data class FeedbackAggregates(
   val averageReadiness: Double?,
 )
 
+data class RecentContinuitySummary(
+  val continuousRuns: Int = 0,
+  val interruptedRuns: Int = 0,
+  val unknownRuns: Int = 0,
+  val longestContinuousDistanceMeters: Double? = null,
+) {
+  init {
+    require(continuousRuns >= 0 && interruptedRuns >= 0 && unknownRuns >= 0)
+    require(longestContinuousDistanceMeters == null || longestContinuousDistanceMeters >= 0.0)
+  }
+}
+
 data class AthletePerformanceProfile(
   val totalCanonicalRuns: Int,
   val runsLast7Days: Int,
@@ -107,4 +119,5 @@ data class AthletePerformanceProfile(
   val profileConfidence: ProfileConfidence,
   val confidenceReasons: List<String>,
   val dataQualityNotes: List<String>,
+  val recentContinuity: RecentContinuitySummary = RecentContinuitySummary(),
 )

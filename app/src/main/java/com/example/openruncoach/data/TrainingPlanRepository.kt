@@ -279,7 +279,7 @@ internal object TrainingPlanPersistenceMapper {
       status = TrainingPlanStatus.valueOf(snapshot.plan.status),
       completionMilestone = GoalCompletionMilestone(
         goalId = snapshot.plan.goalId,
-        readiness = GoalCompletionReadiness.valueOf(snapshot.plan.completionReadiness),
+        readiness = snapshot.plan.completionReadiness.toGoalCompletionReadiness(),
         scheduledDate = snapshot.plan.plannedCompletionDateEpochDay?.let(LocalDate::ofEpochDay),
         promptDismissed = snapshot.plan.completionPromptDismissed,
         reasons = listOf("Saved Completion Run scheduling state."),

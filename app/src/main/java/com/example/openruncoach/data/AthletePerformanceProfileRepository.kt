@@ -19,6 +19,7 @@ import com.example.openruncoach.domain.profile.PaceTrend
 import com.example.openruncoach.domain.profile.PerformanceBenchmark
 import com.example.openruncoach.domain.profile.ProfileBaseline
 import com.example.openruncoach.domain.profile.ProfileConfidence
+import com.example.openruncoach.domain.profile.RecentContinuitySummary
 import com.example.openruncoach.domain.profile.StandardRunningDistance
 import com.example.openruncoach.domain.profile.TrainingConsistency
 import com.example.openruncoach.domain.profile.ValueTrend
@@ -53,7 +54,7 @@ class AthletePerformanceProfileRepository(
   }
 }
 
-private enum class ExplanationCategory { CONSISTENCY, CONFIDENCE, DATA_QUALITY, EASY_PACE, EASY_HEART_RATE, EASY_CADENCE }
+private enum class ExplanationCategory { CONSISTENCY, CONFIDENCE, CONTINUITY, DATA_QUALITY, EASY_PACE, EASY_HEART_RATE, EASY_CADENCE }
 private enum class BenchmarkResultType { PERSONAL_BEST, MOST_RECENT }
 
 private fun AthletePerformanceProfile.toSnapshot(): AthletePerformanceProfileSnapshot {
@@ -127,6 +128,7 @@ private fun AthletePerformanceProfile.toSnapshot(): AthletePerformanceProfileSna
   val explanations = buildList {
     addExplanations(ExplanationCategory.CONSISTENCY, consistencyReasons)
     addExplanations(ExplanationCategory.CONFIDENCE, confidenceReasons)
+    addExplanations(ExplanationCategory.CONTINUITY, recentContinuity.toPersistenceValues())
     addExplanations(ExplanationCategory.DATA_QUALITY, dataQualityNotes)
     addExplanations(ExplanationCategory.EASY_PACE, typicalEasyPace?.reasons.orEmpty())
     addExplanations(ExplanationCategory.EASY_HEART_RATE, typicalEasyHeartRate?.reasons.orEmpty())
@@ -240,6 +242,24 @@ private fun AthletePerformanceProfileSnapshot.toDomain(): AthletePerformanceProf
     profileConfidence = ProfileConfidence.valueOf(profile.profileConfidence),
     confidenceReasons = reasons(ExplanationCategory.CONFIDENCE),
     dataQualityNotes = reasons(ExplanationCategory.DATA_QUALITY),
+    recentContinuity = reasons(ExplanationCategory.CONTINUITY).toContinuitySummary(),
+  )
+}
+
+private fun RecentContinuitySummary.toPersistenceValues() = listOf(
+  "continuousRuns=$continuousRuns",
+  "interruptedRuns=$interruptedRuns",
+  "unknownRuns=$unknownRuns",
+  "longestContinuousDistanceMeters=${longestContinuousDistanceMeters ?: "unknown"}",
+)
+
+private fun List<String>.toContinuitySummary(): RecentContinuitySummary {
+  fun value(name: String) = firstOrNull { it.startsWith("$name=") }?.substringAfter('=')
+  return RecentContinuitySummary(
+    continuousRuns = value("continuousRuns")?.toIntOrNull() ?: 0,
+    interruptedRuns = value("interruptedRuns")?.toIntOrNull() ?: 0,
+    unknownRuns = value("unknownRuns")?.toIntOrNull() ?: 0,
+    longestContinuousDistanceMeters = value("longestContinuousDistanceMeters")?.toDoubleOrNull(),
   )
 }
 

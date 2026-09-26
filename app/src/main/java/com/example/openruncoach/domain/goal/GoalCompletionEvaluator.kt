@@ -4,6 +4,8 @@ import com.example.openruncoach.domain.CompletionStatus
 import com.example.openruncoach.domain.RunFeedback
 import com.example.openruncoach.domain.RunSummary
 import com.example.openruncoach.domain.metrics.RunMetrics
+import com.example.openruncoach.domain.metrics.RunContinuityEvaluator
+import com.example.openruncoach.domain.metrics.RunContinuityEvidence
 import com.example.openruncoach.domain.workout.WorkoutLifecycleState
 
 enum class GoalCompletionStatus {
@@ -12,6 +14,7 @@ enum class GoalCompletionStatus {
   WORKOUT_NOT_COMPLETED,
   DISTANCE_NOT_AVAILABLE,
   TARGET_NOT_REACHED,
+  CONTINUITY_NOT_DEMONSTRATED,
   GOAL_DISTANCE_DEMONSTRATED,
 }
 
@@ -53,6 +56,21 @@ class GoalCompletionEvaluator {
         observed,
         "Observed distance was ${formatKm(observed)}, below the ${formatKm(target)} target.",
       )
+    }
+    when (RunContinuityEvaluator().evaluate(metrics)) {
+      RunContinuityEvidence.INTERRUPTED -> return result(
+        GoalCompletionStatus.CONTINUITY_NOT_DEMONSTRATED,
+        target,
+        observed,
+        "The distance included a sustained walking or stopped interval, so continuous completion was not demonstrated.",
+      )
+      RunContinuityEvidence.UNKNOWN -> return result(
+        GoalCompletionStatus.CONTINUITY_NOT_DEMONSTRATED,
+        target,
+        observed,
+        "Continuous completion could not be verified because no usable speed or cadence samples were available.",
+      )
+      RunContinuityEvidence.CONTINUOUS -> Unit
     }
     return GoalCompletionResult(
       GoalCompletionStatus.GOAL_DISTANCE_DEMONSTRATED,

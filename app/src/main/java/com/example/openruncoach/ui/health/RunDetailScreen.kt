@@ -32,6 +32,8 @@ import com.example.openruncoach.data.RunRepository
 import com.example.openruncoach.data.RunMetricsRepository
 import com.example.openruncoach.data.RunMetricsAutoRefreshCoordinator
 import com.example.openruncoach.data.RunSettingsRepository
+import com.example.openruncoach.data.GoalCompletionRepository
+import com.example.openruncoach.data.TrainingGoalRepository
 import com.example.openruncoach.data.local.OpenRunCoachDatabase
 import com.example.openruncoach.domain.CardioEffort
 import com.example.openruncoach.domain.CompletionStatus
@@ -76,6 +78,8 @@ fun RunDetailScreen(
       RunFeedbackRepository(database, athleteProfileRepository = profileRepository),
       RunMetricsRepository(database.runMetricsDao()),
       metricsRefresher,
+      TrainingGoalRepository(database, profileRepository),
+      GoalCompletionRepository(database),
     )
   }
   val state by viewModel.uiState.collectAsStateWithLifecycle()

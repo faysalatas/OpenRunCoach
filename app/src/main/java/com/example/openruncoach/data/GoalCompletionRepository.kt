@@ -4,12 +4,19 @@ import androidx.room.withTransaction
 import com.example.openruncoach.data.local.OpenRunCoachDatabase
 import com.example.openruncoach.data.local.TrainingPlanEntity
 import com.example.openruncoach.domain.goal.GoalCompletionMilestone
+import com.example.openruncoach.domain.goal.GoalCompletionEvaluator
+import com.example.openruncoach.domain.goal.GoalCompletionResult
 import com.example.openruncoach.domain.goal.GoalCompletionMilestoneService
 import com.example.openruncoach.domain.goal.GoalCompletionReadiness
 import com.example.openruncoach.domain.goal.GoalCompletionReadinessEvaluator
 import com.example.openruncoach.domain.goal.GoalStatus
 import com.example.openruncoach.domain.goal.TrainingGoal
 import com.example.openruncoach.domain.profile.AthletePerformanceProfile
+import com.example.openruncoach.domain.RunFeedback
+import com.example.openruncoach.domain.RunSummary
+import com.example.openruncoach.domain.metrics.RunMetrics
+import com.example.openruncoach.domain.plan.TrainingPlanStatus
+import com.example.openruncoach.domain.workout.WorkoutLifecycleState
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
@@ -21,6 +28,7 @@ class GoalCompletionRepository(
   private val clock: Clock = Clock.systemDefaultZone(),
   private val evaluator: GoalCompletionReadinessEvaluator = GoalCompletionReadinessEvaluator(),
   private val service: GoalCompletionMilestoneService = GoalCompletionMilestoneService(clock),
+  private val completionEvaluator: GoalCompletionEvaluator = GoalCompletionEvaluator(),
 ) {
   private val dao = database.trainingPlanDao()
   private val goalDao = database.trainingGoalDao()
@@ -71,15 +79,33 @@ class GoalCompletionRepository(
     return GoalCompletionWriteResult(postponed, persist(activePlan, postponed))
   }
 
-  suspend fun markCompleted(goalId: String): GoalCompletionMilestone = database.withTransaction {
-    val activePlan = requireNotNull(dao.getActivePlanForGoal(goalId)) {
-      "No active training plan exists for completion."
+  suspend fun evaluateObservedRun(
+    goal: TrainingGoal,
+    canonicalRun: RunSummary,
+    metrics: RunMetrics?,
+    feedback: RunFeedback?,
+  ): GoalCompletionResult {
+    val result = completionEvaluator.evaluate(
+      goal = goal,
+      canonicalRun = canonicalRun,
+      metrics = metrics,
+      workoutState = WorkoutLifecycleState.COMPLETED,
+      feedback = feedback,
+    )
+    if (result.completed) markCompleted(goal.id)
+    return result
+  }
+
+  suspend fun markCompleted(goalId: String): GoalCompletionMilestone? = database.withTransaction {
+    val activePlan = dao.getActivePlanForGoal(goalId)
+    val cancelled = activePlan?.let { plan ->
+      service.cancelForCompletedGoal(plan.toCompletionMilestone()).also {
+        persist(plan, it)
+        dao.updateStatus(plan.id, TrainingPlanStatus.COMPLETED.name)
+      }
     }
-    val current = activePlan.toCompletionMilestone()
-    service.complete(current).also {
-      persist(activePlan, it)
-      goalDao.updateStatus(goalId, GoalStatus.COMPLETED.name)
-    }
+    goalDao.updateStatus(goalId, GoalStatus.COMPLETED.name)
+    cancelled
   }
 
   private suspend fun persist(plan: TrainingPlanEntity, milestone: GoalCompletionMilestone): Int {
@@ -109,7 +135,7 @@ internal data class GoalCompletionWriteResult(
 
 internal fun TrainingPlanEntity.toCompletionMilestone() = GoalCompletionMilestone(
   goalId = goalId,
-  readiness = GoalCompletionReadiness.valueOf(completionReadiness),
+  readiness = completionReadiness.toGoalCompletionReadiness(),
   scheduledDate = plannedCompletionDateEpochDay?.let(LocalDate::ofEpochDay),
   promptDismissed = completionPromptDismissed,
   reasons = listOf("Saved Completion Run scheduling state."),
@@ -117,3 +143,8 @@ internal fun TrainingPlanEntity.toCompletionMilestone() = GoalCompletionMileston
   planId = id,
   workoutId = plannedCompletionRunId,
 )
+
+internal fun String.toGoalCompletionReadiness(): GoalCompletionReadiness = when (this) {
+  GoalCompletionReadiness.GOAL_COMPLETION_READY.name -> GoalCompletionReadiness.GOAL_COMPLETION_READY
+  else -> GoalCompletionReadiness.GOAL_COMPLETION_NOT_READY
+}

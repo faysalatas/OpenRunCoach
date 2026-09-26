@@ -61,7 +61,7 @@ class PlanViewModel(
         .collect { (goal, storedPlan, profile) ->
           val milestone = if (goal != null && profile != null) completionRepository.refreshReadiness(goal, profile) else null
           val plan = storedPlan?.takeIf { it.goalId == goal?.id }?.takeUnless { candidate ->
-            milestone?.readiness != GoalCompletionReadiness.GOAL_COMPLETION_SCHEDULED &&
+            milestone?.scheduledDate == null &&
               candidate.weeks.flatMap { it.workouts }.any { it.workout.purpose == com.example.openruncoach.domain.workout.WorkoutPurpose.GOAL_COMPLETION }
           }
           _uiState.update { state ->
@@ -79,7 +79,7 @@ class PlanViewModel(
               selectedWeekIndex = currentWeek,
               isLoading = false,
               completionMilestone = milestone,
-              completionDateSuggestions = suggestions(plan),
+              completionDateSuggestions = suggestions(plan, goal, profile),
               completionDateAssessment = dateAssessment(goal, profile, milestone),
               showCompletionScheduler = state.showCompletionScheduler || prompt,
             )
@@ -107,7 +107,7 @@ class PlanViewModel(
             selectedWeekIndex = 0,
             isGenerating = false,
             completionMilestone = milestone,
-            completionDateSuggestions = suggestions(plan),
+            completionDateSuggestions = suggestions(plan, goal, profile),
             completionDateAssessment = dateAssessment(goal, profile, milestone),
           )
         }
@@ -157,7 +157,7 @@ class PlanViewModel(
           it.copy(
             plan = plan,
             completionMilestone = milestone,
-            completionDateSuggestions = suggestions(plan),
+            completionDateSuggestions = suggestions(plan, goal, profile),
             completionDateAssessment = dateAssessment(goal, profile, milestone),
             showCompletionScheduler = false,
             selectedWeekIndex = milestone.scheduledDate?.let { date ->
@@ -179,9 +179,15 @@ class PlanViewModel(
     }
   }
 
-  private fun suggestions(plan: TrainingPlan?): List<CompletionDateSuggestion> = dateSuggester.suggest(
+  private fun suggestions(
+    plan: TrainingPlan?,
+    goal: TrainingGoal?,
+    profile: AthletePerformanceProfile?,
+  ): List<CompletionDateSuggestion> = dateSuggester.suggest(
     today = LocalDate.now(clock),
     plannedWorkouts = plan?.weeks.orEmpty().flatMap { it.workouts }.map { it.workout },
+    goal = goal,
+    profile = profile,
   )
 
   private fun dateAssessment(

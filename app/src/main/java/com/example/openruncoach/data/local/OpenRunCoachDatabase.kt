@@ -271,10 +271,10 @@ abstract class OpenRunCoachDatabase : RoomDatabase() {
                 WHERE tpw.planId = p.id AND pw.purpose = 'GOAL_COMPLETION' LIMIT 1
               ) ELSE NULL END AS migratedCompletionRunId,
               CASE WHEN p.status = 'ACTIVE' AND g.goalType = 'COMPLETE_DISTANCE'
-                AND COALESCE(m.scheduledDateEpochDay, g.targetDateEpochDay) IS NOT NULL
-                THEN 'GOAL_COMPLETION_SCHEDULED'
+                AND m.readiness = 'GOAL_COMPLETION_READY'
+                THEN 'GOAL_COMPLETION_READY'
                 WHEN p.status = 'ACTIVE' AND g.goalType = 'COMPLETE_DISTANCE'
-                THEN COALESCE(m.readiness, 'GOAL_COMPLETION_NOT_READY')
+                THEN 'GOAL_COMPLETION_NOT_READY'
                 ELSE 'GOAL_COMPLETION_NOT_READY' END AS migratedReadiness,
               CASE WHEN p.status = 'ACTIVE' AND g.goalType = 'COMPLETE_DISTANCE'
                 THEN COALESCE(m.promptDismissed, 0) ELSE 0 END AS migratedPromptDismissed,

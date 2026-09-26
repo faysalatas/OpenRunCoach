@@ -31,7 +31,7 @@ class TrainingPlanPersistenceMapperTest {
   @Test fun planRoundTripPreservesWeekAndWorkoutOrdering() {
     val completionDate = LocalDate.parse("2026-10-18")
     val milestone = GoalCompletionMilestone(
-      "goal", GoalCompletionReadiness.GOAL_COMPLETION_SCHEDULED, completionDate, false,
+      "goal", GoalCompletionReadiness.GOAL_COMPLETION_NOT_READY, completionDate, false,
       listOf("User selected the date."), now,
     )
     val plan = TrainingPlanGenerator(Clock.fixed(now, ZoneOffset.UTC), ZoneOffset.UTC)

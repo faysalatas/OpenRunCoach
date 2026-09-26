@@ -73,7 +73,7 @@ class GoalDateOwnershipMigrationTest {
         cursor.moveToFirst()
         assertEquals("goal", cursor.getString(0))
         assertEquals(oldDate, cursor.getLong(1))
-        assertEquals("GOAL_COMPLETION_SCHEDULED", cursor.getString(2))
+        assertEquals("GOAL_COMPLETION_READY", cursor.getString(2))
       }
       close()
     }

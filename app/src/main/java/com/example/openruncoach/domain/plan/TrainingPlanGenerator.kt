@@ -115,7 +115,6 @@ class TrainingPlanGenerator(
       return assessmentPlan(planId, goal, profile, sufficiency, startDate, createdAt, completionMilestone)
     }
     val scheduledCompletionDate = completionMilestone
-      ?.takeIf { it.readiness == GoalCompletionReadiness.GOAL_COMPLETION_SCHEDULED }
       ?.scheduledDate
       ?.takeUnless { it.isBefore(startDate) }
     val scheduledCompletionWeek = scheduledCompletionDate?.let {
@@ -734,12 +733,12 @@ class TrainingPlanGenerator(
     profile: AthletePerformanceProfile,
     distanceMeters: Double?,
   ): String = when (goalSession) {
-    GoalSessionKind.COMPLETION -> "Added as a continuous ${goal.distance.displayName} completion run because recent endurance supports the full distance at controlled effort."
+    GoalSessionKind.COMPLETION -> "Added as the selected continuous ${goal.distance.displayName} Completion Run milestone; readiness remains based on current performance evidence."
     GoalSessionKind.CONTROLLED -> "Added to practise the full ${goal.distance.displayName} continuously at a sustainable pace; it is not a race or maximal benchmark."
     GoalSessionKind.GOAL_ATTEMPT -> "Added once near the end of the specific phase to practise the selected ${goal.distance.displayName} target pace."
     null -> when (type) {
       WorkoutType.LONG_RUN -> if (goal.goalType == GoalType.COMPLETE_DISTANCE) {
-        "Added to progress endurance toward ${goal.distance.displayName} while remaining below the target until the dedicated completion run."
+        "Added to progress prescribed endurance toward ${goal.distance.displayName}; any qualifying observed continuous run can complete the goal before the planned milestone."
       } else {
         "Added to build endurance gradually from ${profile.longestRunLast28Days?.distanceMeters?.let { "%.1f km".format(java.util.Locale.ROOT, it / 1_000) } ?: "your current training history"}; performance-goal long runs may exceed race distance and this run is ${distanceMeters?.let { "%.1f km".format(java.util.Locale.ROOT, it / 1_000) } ?: "time based"}."
       }
@@ -797,7 +796,7 @@ class TrainingPlanGenerator(
     longRun?.let {
       add(
         if (goal.goalType == GoalType.COMPLETE_DISTANCE) {
-          "Long run is ${"%.1f km".format(java.util.Locale.ROOT, it / 1_000)} and remains below the goal until the completion run."
+          "Long run is ${"%.1f km".format(java.util.Locale.ROOT, it / 1_000)}; the planner keeps this prescription below the goal while actual qualifying performance remains authoritative."
         } else {
           "Long run is ${"%.1f km".format(java.util.Locale.ROOT, it / 1_000)}; aerobic distance may exceed race distance for this goal type."
         }
@@ -830,13 +829,12 @@ class TrainingPlanGenerator(
     append("It uses ${profile.profileConfidence.name.lowercase().replace('_', ' ')} profile confidence, bounded progression, and a ${config.recoveryWeekFrequency - 1}:1 build-to-recovery pattern. ")
     append(if (eligibility.thresholdEligible) "Controlled quality work is eligible." else "The initial emphasis remains aerobic while quality eligibility develops.")
     if (goal.goalType == GoalType.COMPLETE_DISTANCE) {
-      append(" Normal workouts remain below the selected distance until the controlled Goal Completion Run.")
+      append(" The plan builds toward the selected Completion Run milestone. Upcoming workouts remain adaptive and may change based on your training response.")
       append(
-        when (completionMilestone?.readiness) {
-          GoalCompletionReadiness.GOAL_COMPLETION_SCHEDULED -> " The athlete-selected Completion Run date is a scheduling constraint, and nearby provisional workouts are reduced or replaced."
-          GoalCompletionReadiness.GOAL_COMPLETION_READY -> " The athlete is ready to choose a Completion Run date; no date is assigned automatically."
-          GoalCompletionReadiness.GOAL_COMPLETION_NOT_READY, null -> " Consolidation training continues until performance evidence supports scheduling the attempt."
-          GoalCompletionReadiness.GOAL_COMPLETED -> " The goal distance has been completed."
+        when {
+          completionMilestone?.scheduledDate != null -> " The selected date is a scheduling constraint, not a requirement for goal achievement; any earlier qualifying continuous run completes the goal."
+          completionMilestone?.readiness == GoalCompletionReadiness.GOAL_COMPLETION_READY -> " Current evidence supports an attempt, but no date is assigned automatically."
+          else -> " Readiness remains separate from planning and will change only when performance evidence supports it."
         }
       )
       if (profile.longestRunLast28Days?.distanceMeters?.let { it >= goal.distanceMeters } == true) {

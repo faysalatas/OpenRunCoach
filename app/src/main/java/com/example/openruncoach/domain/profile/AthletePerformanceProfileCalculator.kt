@@ -8,6 +8,8 @@ import com.example.openruncoach.domain.RunSummary
 import com.example.openruncoach.domain.metrics.MetricConfidence
 import com.example.openruncoach.domain.metrics.MetricVerification
 import com.example.openruncoach.domain.metrics.RunMetrics
+import com.example.openruncoach.domain.metrics.RunContinuityEvaluator
+import com.example.openruncoach.domain.metrics.RunContinuityEvidence
 import com.example.openruncoach.domain.metrics.metricValues
 import java.time.Clock
 import java.time.DayOfWeek
@@ -107,6 +109,25 @@ class AthletePerformanceProfileCalculator(
       profileConfidence = confidence.first,
       confidenceReasons = confidence.second,
       dataQualityNotes = dataQualityNotes(recent28, metricsByRun, feedbackByRun),
+      recentContinuity = continuitySummary(recent28, metricsByRun),
+    )
+  }
+
+  private fun continuitySummary(
+    runs: List<RunSummary>,
+    metrics: Map<String, RunMetrics>,
+  ): RecentContinuitySummary {
+    val evaluator = RunContinuityEvaluator()
+    val evidence = runs.map { run -> run to evaluator.evaluate(metrics[run.healthConnectRecordId]) }
+    val longestContinuous = evidence.asSequence()
+      .filter { it.second == RunContinuityEvidence.CONTINUOUS }
+      .mapNotNull { (run, _) -> runValue(run, metrics[run.healthConnectRecordId]).distanceMeters }
+      .maxOrNull()
+    return RecentContinuitySummary(
+      continuousRuns = evidence.count { it.second == RunContinuityEvidence.CONTINUOUS },
+      interruptedRuns = evidence.count { it.second == RunContinuityEvidence.INTERRUPTED },
+      unknownRuns = evidence.count { it.second == RunContinuityEvidence.UNKNOWN },
+      longestContinuousDistanceMeters = longestContinuous,
     )
   }
 

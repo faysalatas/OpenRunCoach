@@ -207,7 +207,19 @@ class TrainingPlanGeneratorTest {
       completionMilestone = readyMilestone(),
     )
     assertTrue(plan.weeks.flatMap { it.workouts }.none { it.workout.purpose == WorkoutPurpose.GOAL_COMPLETION })
-    assertTrue(plan.explanation.contains("ready to choose"))
+    assertTrue(plan.explanation.contains("Current evidence supports an attempt"))
+  }
+
+  @Test fun lowConfidenceAthleteCanCreatePlanWithoutBeingMarkedReady() {
+    val plan = generator.generate(
+      goal(GoalDistance.FIVE_K),
+      profile(longest = 4_760.0, averageRuns = 1.5, confidence = ProfileConfidence.LOW),
+      completionMilestone = scheduledMilestone(),
+    )
+    assertEquals(GoalCompletionReadiness.GOAL_COMPLETION_NOT_READY, plan.completionMilestone?.readiness)
+    assertTrue(plan.explanation.contains("builds toward the selected Completion Run milestone"))
+    assertTrue(plan.explanation.contains("earlier qualifying continuous run completes the goal"))
+    assertFalse(plan.explanation.contains("until the controlled Goal Completion Run"))
   }
 
   @Test fun postponedCompletionKeepsAdaptiveTrainingWithoutAFakeDate() {
@@ -525,7 +537,7 @@ class TrainingPlanGeneratorTest {
 
   private fun scheduledMilestone(date: LocalDate = LocalDate.parse("2026-10-17")) = GoalCompletionMilestone(
     "goal",
-    GoalCompletionReadiness.GOAL_COMPLETION_SCHEDULED,
+    GoalCompletionReadiness.GOAL_COMPLETION_NOT_READY,
     date,
     false,
     listOf("User selected the date."),

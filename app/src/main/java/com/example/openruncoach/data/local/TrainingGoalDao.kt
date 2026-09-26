@@ -25,6 +25,10 @@ interface TrainingGoalDao {
   fun observeGoal(goalId: String): Flow<TrainingGoalRecord?>
 
   @Transaction
+  @Query("SELECT * FROM training_goals WHERE status = 'ACTIVE' ORDER BY createdAtEpochMillis DESC LIMIT 1")
+  suspend fun getActiveGoal(): TrainingGoalRecord?
+
+  @Transaction
   @Query("SELECT * FROM training_goals ORDER BY createdAtEpochMillis DESC")
   suspend fun getAllGoals(): List<TrainingGoalRecord>
 

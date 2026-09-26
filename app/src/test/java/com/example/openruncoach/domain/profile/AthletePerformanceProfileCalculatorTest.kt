@@ -10,6 +10,8 @@ import com.example.openruncoach.domain.metrics.MetricConfidence
 import com.example.openruncoach.domain.metrics.MetricSource
 import com.example.openruncoach.domain.metrics.MetricValue
 import com.example.openruncoach.domain.metrics.RunMetrics
+import com.example.openruncoach.domain.metrics.RunTimeSeries
+import com.example.openruncoach.domain.metrics.TimedMetricSample
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -257,6 +259,22 @@ class AthletePerformanceProfileCalculatorTest {
   }
 
   @Test
+  fun recentContinuitySummarizesWalkingAndContinuousEvidence() {
+    val continuous = run("continuous", 2, distance = 4_760.0)
+    val walking = run("walking", 1, distance = 5_000.0)
+    val profile = calculate(
+      listOf(continuous, walking),
+      listOf(
+        metrics(continuous, speed = List(211) { 2.4 }),
+        metrics(walking, speed = listOf(1.0, 1.0, 1.0, 1.0, 1.0)),
+      ),
+    )
+    assertEquals(1, profile.recentContinuity.continuousRuns)
+    assertEquals(1, profile.recentContinuity.interruptedRuns)
+    assertEquals(4_760.0, profile.recentContinuity.longestContinuousDistanceMeters!!, 0.01)
+  }
+
+  @Test
   fun easyPaceTrendUsesOnlyQualifiedEasyRuns() {
     val runs = listOf(run("a", 12), run("b", 9), run("c", 5), run("d", 1))
     val paces = listOf(450.0, 450.0, 400.0, 400.0)
@@ -297,6 +315,7 @@ class AthletePerformanceProfileCalculatorTest {
     heartRate: Double? = 145.0,
     cadence: Double? = 160.0,
     vo2: Double? = null,
+    speed: List<Double> = emptyList(),
   ) = RunMetrics(
     runId = run.healthConnectRecordId,
     startTime = run.startTime,
@@ -308,6 +327,9 @@ class AthletePerformanceProfileCalculatorTest {
     maxHeartRate = metric(165.0),
     vo2Max = vo2?.let(::metric),
     movingAverageCadence = cadence?.let(::metric),
+    series = RunTimeSeries(speed = speed.mapIndexed { index, value ->
+      TimedMetricSample(run.startTime.plusSeconds(index * 10L), value)
+    }),
     generatedAt = now,
   )
 

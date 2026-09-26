@@ -109,8 +109,8 @@ fun PlanScreen(
         GoalCard(state.activeGoal!!.distance.displayName, state.activeGoal!!.goalType)
         EmptyState(
           "Create Training Plan",
-          "Choose the Completion Run date above. OpenRunCoach will build the adaptive forecast around that milestone.",
-          "Choose Completion Run",
+          "Choose your planned ${state.activeGoal!!.distance.displayName} Completion Run. This will be the milestone for the current training plan, and OpenRunCoach will adapt training toward it.",
+          "Choose planned Completion Run",
           viewModel::showCompletionScheduler,
         )
       }
@@ -143,17 +143,18 @@ private fun GoalMilestoneCard(
 ) {
   val context = LocalContext.current
   PlanCard("Goal Milestone") {
-    when (milestone.readiness) {
-      GoalCompletionReadiness.GOAL_COMPLETION_READY -> {
-        Text("You're ready to attempt your continuous $distanceName.", style = MaterialTheme.typography.titleMedium)
-        Text(if (milestone.promptDismissed) "Completion Run ready to schedule when you choose." else "$distanceName Completion Run · Ready to schedule")
-        if (!showScheduler) Button(onClick = onShowScheduler, enabled = !busy) { Text("Choose Completion Run date") }
-      }
-      GoalCompletionReadiness.GOAL_COMPLETION_SCHEDULED -> {
-        Text("$distanceName Completion Run", style = MaterialTheme.typography.titleMedium)
-        Text(requireNotNull(milestone.scheduledDate).let(::formatCompletionDate), style = MaterialTheme.typography.titleLarge)
+    when {
+      milestone.scheduledDate != null -> {
+        Text("Planned $distanceName Completion Run", style = MaterialTheme.typography.titleMedium)
+        Text(formatCompletionDate(milestone.scheduledDate), style = MaterialTheme.typography.titleLarge)
+        if (milestone.readiness == GoalCompletionReadiness.GOAL_COMPLETION_READY) {
+          Text("You're ready to attempt your continuous $distanceName.")
+        } else {
+          Text("This is the milestone for the current training plan. Current performance evidence does not yet mark the attempt ready.")
+        }
+        Text("OpenRunCoach will adapt upcoming training toward this date; a qualifying observed run can complete the goal earlier.")
         dateAssessment?.let {
-          Text("Coach status: ${it.feasibility.name.lowercase().replace('_', ' ').replaceFirstChar(Char::titlecase)}")
+          Text("Date assessment: ${it.feasibility.name.lowercase().replace('_', ' ').replaceFirstChar(Char::titlecase)}")
           Text(it.explanation, style = MaterialTheme.typography.bodySmall)
         }
         milestone.reasons.lastOrNull { it.contains("postponement", ignoreCase = true) }?.let {
@@ -161,20 +162,20 @@ private fun GoalMilestoneCard(
         }
         if (!showScheduler) OutlinedButton(onClick = onShowScheduler, enabled = !busy) { Text("Reschedule") }
       }
-      GoalCompletionReadiness.GOAL_COMPLETED -> Text("Goal distance completed.", style = MaterialTheme.typography.titleMedium)
-      GoalCompletionReadiness.GOAL_COMPLETION_NOT_READY -> {
-        Text("Choose a Completion Run date", style = MaterialTheme.typography.titleMedium)
-        Text("Current data is limited, so the date may be ambitious. The plan can begin with an Assessment Run and adapt as evidence improves.")
+      milestone.readiness == GoalCompletionReadiness.GOAL_COMPLETION_READY -> {
+        Text("You're ready to attempt your continuous $distanceName.", style = MaterialTheme.typography.titleMedium)
+        Text(if (milestone.promptDismissed) "Completion Run ready to schedule when you choose." else "$distanceName Completion Run · Ready to schedule")
+        if (!showScheduler) Button(onClick = onShowScheduler, enabled = !busy) { Text("Choose Completion Run date") }
+      }
+      else -> {
+        Text("Choose your planned $distanceName Completion Run", style = MaterialTheme.typography.titleMedium)
+        Text("This sets a plan milestone; it does not mean you're currently ready. OpenRunCoach will adapt training as evidence improves.")
         if (!showScheduler) Button(onClick = onShowScheduler, enabled = !busy) { Text("Choose Completion Run date") }
       }
     }
-    if (showScheduler && milestone.readiness in setOf(
-        GoalCompletionReadiness.GOAL_COMPLETION_NOT_READY,
-        GoalCompletionReadiness.GOAL_COMPLETION_READY,
-        GoalCompletionReadiness.GOAL_COMPLETION_SCHEDULED,
-      )
-    ) {
-      Text("Choose your Completion Run", style = MaterialTheme.typography.titleMedium)
+    if (showScheduler) {
+      Text("Choose your planned $distanceName Completion Run", style = MaterialTheme.typography.titleMedium)
+      Text("This will be the milestone for the current training plan. Readiness is assessed separately from the chosen date.")
       suggestions.forEach { suggestion ->
         OutlinedButton(onClick = { onSelectDate(suggestion.date) }, enabled = !busy) {
           Column {
@@ -287,7 +288,7 @@ private fun WeekContent(week: TrainingWeek, block: TrainingBlock?, onOpenWorkout
           if (simpleRpe != null) Text("RPE ${simpleRpe.minimum}–${simpleRpe.maximum}")
           if (simpleSegment == null) MixedWorkoutSummary(workout.blocks)
           if (workout.purpose == WorkoutPurpose.GOAL_COMPLETION) {
-            Text("This is the workout your current plan is building toward.", style = MaterialTheme.typography.titleSmall)
+            Text("This is the planned milestone your current plan is building toward. A qualifying observed run can complete the goal earlier.", style = MaterialTheme.typography.titleSmall)
           }
           if (workout.purpose == WorkoutPurpose.ASSESSMENT) {
             Text("Use a comfortable self-selected effort. No precise pace is required.", style = MaterialTheme.typography.titleSmall)

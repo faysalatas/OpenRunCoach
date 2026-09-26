@@ -6,6 +6,8 @@ import com.example.openruncoach.data.RunFeedbackRepository
 import com.example.openruncoach.data.RunRepository
 import com.example.openruncoach.data.RunMetricsRepository
 import com.example.openruncoach.data.RunMetricsRefresher
+import com.example.openruncoach.data.GoalCompletionRepository
+import com.example.openruncoach.data.TrainingGoalRepository
 import com.example.openruncoach.domain.CardioEffort
 import com.example.openruncoach.domain.CompletionStatus
 import com.example.openruncoach.domain.MuscleFatigue
@@ -65,6 +67,8 @@ class RunDetailViewModel(
   private val feedbackRepository: RunFeedbackRepository,
   runMetricsRepository: RunMetricsRepository,
   private val runMetricsRefresher: RunMetricsRefresher,
+  private val goalRepository: TrainingGoalRepository? = null,
+  private val goalCompletionRepository: GoalCompletionRepository? = null,
   private val coachingEngine: CoachingEngine = CoachingEngine(),
 ) : ViewModel() {
   private val _uiState = MutableStateFlow(RunDetailUiState())
@@ -220,6 +224,10 @@ class RunDetailViewModel(
       _uiState.update { it.copy(isSaving = true, error = null, saved = false) }
       try {
         val saved = feedbackRepository.saveFeedback(draft)
+        val activeGoal = goalRepository?.getActiveGoal()
+        if (activeGoal != null && state.run.isCanonical) {
+          goalCompletionRepository?.evaluateObservedRun(activeGoal, state.run, state.metrics, saved)
+        }
         _uiState.update { it.copy(
           feedback = saved,
           form = saved.toForm(),
