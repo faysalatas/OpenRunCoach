@@ -55,3 +55,11 @@ OpenRunCoach is a native Android adaptive running coach.
 
 - Never commit secrets or API keys.
 - Keep changes focused.
+
+## UI / Design
+
+For all UI work, read `docs/UI_RULEBOOK.md`.
+
+Use `docs/ui/openruncoach-ui-target.png` as the approved visual reference for the OpenRunCoach design language.
+
+The rulebook is authoritative for colors, spacing, typography, component style, information hierarchy, and UI consistency.
