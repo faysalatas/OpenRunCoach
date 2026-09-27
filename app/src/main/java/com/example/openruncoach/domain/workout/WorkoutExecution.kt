@@ -169,7 +169,8 @@ class WorkoutAdherenceEvaluator(private val clock: Clock = Clock.systemUTC()) {
       feedback.rpe < minimum - WorkoutAdherencePolicy.RPE_ALLOWED_DEVIATION ||
         feedback.rpe > maximum + WorkoutAdherencePolicy.RPE_ALLOWED_DEVIATION
       )
-    val paceTarget = plannedWorkout.blocks
+    // Whole-run average pace is not valid evidence for an individual quality repetition.
+    val paceTarget = if (plannedWorkout.purpose.requiresQualityEvidence()) null else plannedWorkout.blocks
       .flatMap(WorkoutBlock::segments)
       .flatMap { listOf(it.primaryIntensity) + it.secondaryIntensities }
       .filterIsInstance<PaceTarget>()

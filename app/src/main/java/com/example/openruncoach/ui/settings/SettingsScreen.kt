@@ -19,19 +19,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import android.content.pm.ApplicationInfo
 import androidx.health.connect.client.PermissionController
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.openruncoach.data.HealthConnectRepository
-import com.example.openruncoach.data.AthletePerformanceProfileRepository
 import com.example.openruncoach.data.RunRepository
 import com.example.openruncoach.data.RunMetricsRepository
 import com.example.openruncoach.data.RunMetricsAutoRefreshCoordinator
 import com.example.openruncoach.data.RunSettingsRepository
-import com.example.openruncoach.data.local.OpenRunCoachDatabase
+import com.example.openruncoach.LocalOpenRunCoachEnvironment
 import com.example.openruncoach.ui.components.ItemSpacing
 import com.example.openruncoach.ui.components.ScreenPadding
 import com.example.openruncoach.ui.components.SectionSpacing
@@ -45,12 +43,15 @@ fun SettingsScreen(
   modifier: Modifier = Modifier,
 ) {
   val context = LocalContext.current
+  val environment = LocalOpenRunCoachEnvironment.current
   val viewModel: SettingsViewModel = viewModel {
     val healthConnectRepository = HealthConnectRepository(context)
     val settingsRepository = RunSettingsRepository(context)
-    val database = OpenRunCoachDatabase.getInstance(context)
-    val profileRepository = AthletePerformanceProfileRepository(database)
-    val metricsRefresher = RunMetricsAutoRefreshCoordinator.create(context, database)
+    val database = environment.database
+    val profileRepository = environment.profileRepository()
+    val metricsRefresher = if (environment.isSimulation) null else {
+      RunMetricsAutoRefreshCoordinator.create(context, database, profileRepository)
+    }
     SettingsViewModel(
       healthConnectRepository,
       RunRepository(
@@ -60,17 +61,19 @@ fun SettingsScreen(
         runMetricsRepository = RunMetricsRepository(database.runMetricsDao()),
         athleteProfileRepository = profileRepository,
         runMetricsRefresher = metricsRefresher,
+        clock = environment.clock,
       ),
       settingsRepository,
     )
   }
   val state by viewModel.uiState.collectAsStateWithLifecycle()
-  val isDebuggable = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
   val permissionLauncher = rememberLauncherForActivityResult(
     PermissionController.createRequestPermissionResultContract()
   ) { viewModel.refreshStatus() }
 
-  LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.refreshStatus() }
+  if (!environment.isSimulation) {
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.refreshStatus() }
+  }
 
   Column(
     modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(ScreenPadding),
@@ -85,7 +88,7 @@ fun SettingsScreen(
       Text("Choose a distance goal using your current performance context.")
       Button(onClick = onOpenTrainingGoal) { Text("Open Training Goal") }
     }
-    SettingsCard("Preferred workout source") {
+    if (!environment.isSimulation) SettingsCard("Preferred workout source") {
       Text("Automatic uses OpenRunCoach's canonical run selection rules.")
       Row(
         Modifier.horizontalScroll(rememberScrollState()),
@@ -106,7 +109,7 @@ fun SettingsScreen(
       }
       if (state.preferredSourceError) ErrorText("Could not update the preferred workout source.")
     }
-    SettingsCard("Health Connect") {
+    if (!environment.isSimulation) SettingsCard("Health Connect") {
       when {
         state.accessError -> ErrorText("Could not check Health Connect access.")
         state.isAvailable == null -> Text("Checking availability…")
@@ -132,13 +135,7 @@ fun SettingsScreen(
       Text("Version 1.0", style = MaterialTheme.typography.bodyMedium)
       Text("Health data stays on this device.", style = MaterialTheme.typography.bodyMedium)
     }
-    if (isDebuggable) {
-      SettingsCard("Developer / Diagnostics") {
-        Text("Run deterministic coaching scenarios without real user data.")
-        Button(onClick = onOpenSimulator) { Text("Coaching Simulator") }
-        Button(onClick = onOpenWorkoutPreview) { Text("Workout Model Preview") }
-      }
-    }
+    DeveloperToolsSettings(onOpenSimulator, onOpenWorkoutPreview)
   }
 }
 

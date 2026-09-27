@@ -2,13 +2,17 @@ package com.example.openruncoach
 
 import android.net.Uri
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.Surface
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -25,7 +29,7 @@ import com.example.openruncoach.ui.home.HomeScreen
 import com.example.openruncoach.ui.plan.PlanScreen
 import com.example.openruncoach.ui.profile.PerformanceProfileScreen
 import com.example.openruncoach.ui.settings.SettingsScreen
-import com.example.openruncoach.ui.simulation.SimulationScreen
+import com.example.openruncoach.ui.simulation.DeveloperSimulationDestination
 import com.example.openruncoach.ui.inspection.HealthDataInspectorScreen
 import com.example.openruncoach.ui.workout.WorkoutDetailScreen
 import com.example.openruncoach.ui.workout.WorkoutPreviewScreen
@@ -58,6 +62,7 @@ private val bottomDestinations = listOf(
 
 @Composable
 fun MainNavigation() {
+  val environment = LocalOpenRunCoachEnvironment.current
   val navController = rememberNavController()
   val backStackEntry by navController.currentBackStackEntryAsState()
   val currentDestination = backStackEntry?.destination
@@ -66,6 +71,20 @@ fun MainNavigation() {
   }
 
   Scaffold(
+    topBar = {
+      if (environment.isSimulation) {
+        Surface(
+          modifier = Modifier.fillMaxWidth(),
+          color = MaterialTheme.colorScheme.tertiaryContainer,
+        ) {
+          Text(
+            "SIMULATION MODE · isolated synthetic data",
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            color = MaterialTheme.colorScheme.onTertiaryContainer,
+          )
+        }
+      }
+    },
     bottomBar = {
       if (showBottomBar) {
         NavigationBar {
@@ -130,7 +149,7 @@ fun MainNavigation() {
           onOpenTrainingPlan = { navController.navigate(Routes.PLAN) },
         )
       }
-      composable(Routes.SIMULATOR) { SimulationScreen(onBack = navController::navigateUp) }
+      composable(Routes.SIMULATOR) { DeveloperSimulationDestination(onBack = navController::navigateUp) }
       composable(Routes.WORKOUT_PREVIEW) {
         WorkoutPreviewScreen(
           onBack = navController::navigateUp,

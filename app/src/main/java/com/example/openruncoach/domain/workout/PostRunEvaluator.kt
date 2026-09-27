@@ -12,8 +12,15 @@ class PostRunEvaluator(private val coachingEngine: CoachingEngine = CoachingEngi
     feedback: RunFeedback,
     recentCanonicalRunHistory: List<RunSummary>,
     executionResult: WorkoutExecutionResult? = null,
+    workoutResponse: WorkoutResponse? = null,
   ): CoachingDecision? {
-    val baseDecision = coachingEngine.analyze(actualRun, recentCanonicalRunHistory, feedback, executionResult) ?: return null
+    val baseDecision = coachingEngine.analyze(
+      actualRun,
+      recentCanonicalRunHistory,
+      feedback,
+      executionResult,
+      workoutResponse,
+    ) ?: return null
     if (executionResult != null) return baseDecision
     val prescribedSeconds = prescribedWorkout.durationMinutes * 60L
     val completionReason = when {

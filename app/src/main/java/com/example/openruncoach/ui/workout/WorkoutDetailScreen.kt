@@ -14,11 +14,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.openruncoach.data.StructuredWorkoutRepository
-import com.example.openruncoach.data.local.OpenRunCoachDatabase
+import com.example.openruncoach.LocalOpenRunCoachEnvironment
 import com.example.openruncoach.domain.PainLevel
 import com.example.openruncoach.domain.RunFeedback
 import com.example.openruncoach.domain.RunSummary
@@ -40,9 +39,9 @@ import com.example.openruncoach.ui.components.SectionSpacing
 
 @Composable
 fun WorkoutDetailScreen(workoutId: String, onBack: () -> Unit, modifier: Modifier = Modifier) {
-  val context = LocalContext.current
+  val environment = LocalOpenRunCoachEnvironment.current
   val viewModel: WorkoutDetailViewModel = viewModel(key = workoutId) {
-    WorkoutDetailViewModel(workoutId, StructuredWorkoutRepository(OpenRunCoachDatabase.getInstance(context)))
+    WorkoutDetailViewModel(workoutId, StructuredWorkoutRepository(environment.database))
   }
   val state by viewModel.uiState.collectAsStateWithLifecycle()
   Column(

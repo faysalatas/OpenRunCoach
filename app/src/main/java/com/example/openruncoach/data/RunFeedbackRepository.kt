@@ -19,6 +19,7 @@ class RunFeedbackRepository(
   private val database: OpenRunCoachDatabase,
   private val clock: Clock = Clock.systemUTC(),
   private val athleteProfileRepository: AthletePerformanceProfileRepository? = null,
+  private val idProvider: () -> String = { UUID.randomUUID().toString() },
 ) {
   private val dao = database.runFeedbackDao()
 
@@ -41,7 +42,7 @@ class RunFeedbackRepository(
       val now = clock.millis()
       val entity =
         RunFeedbackEntity(
-          id = existing?.id ?: UUID.randomUUID().toString(),
+          id = existing?.id ?: idProvider(),
           runId = draft.runId,
           rpe = draft.rpe,
           cardioEffort = draft.cardioEffort.name,

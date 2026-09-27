@@ -40,7 +40,7 @@ import com.example.openruncoach.data.samsunghealth.SamsungHealthExerciseInspecto
 import com.example.openruncoach.data.samsunghealth.SamsungHealthPermissionManager
 import com.example.openruncoach.data.samsunghealth.SamsungMatchSelectionRepository
 import com.example.openruncoach.data.samsunghealth.SamsungHealthRunMetricsEnricher
-import com.example.openruncoach.data.local.OpenRunCoachDatabase
+import com.example.openruncoach.LocalOpenRunCoachEnvironment
 import com.example.openruncoach.domain.RunSummary
 import com.example.openruncoach.domain.displaySourceName
 import com.example.openruncoach.domain.inspection.CountMetricSummary
@@ -87,9 +87,10 @@ import android.app.Activity
 @Composable
 fun HealthDataInspectorScreen(runId: String, onBack: () -> Unit, modifier: Modifier = Modifier) {
   val context = LocalContext.current
+  val environment = LocalOpenRunCoachEnvironment.current
   val activity = context as? Activity
   val viewModel: HealthDataInspectorViewModel = viewModel(key = "inspector-$runId") {
-    val database = OpenRunCoachDatabase.getInstance(context)
+    val database = environment.database
     val settings = RunSettingsRepository(context)
     val samsungDataSource = SamsungHealthDataSource(context)
     val samsungPermissionManager = SamsungHealthPermissionManager(samsungDataSource)

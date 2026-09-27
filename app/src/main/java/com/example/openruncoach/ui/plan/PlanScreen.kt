@@ -25,11 +25,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.openruncoach.data.AthletePerformanceProfileRepository
 import com.example.openruncoach.data.GoalCompletionRepository
 import com.example.openruncoach.data.TrainingGoalRepository
 import com.example.openruncoach.data.TrainingPlanRepository
-import com.example.openruncoach.data.local.OpenRunCoachDatabase
+import com.example.openruncoach.LocalOpenRunCoachEnvironment
+import com.example.openruncoach.data.WorkoutExecutionRepository
+import com.example.openruncoach.domain.goal.TrainingGoalFactory
+import com.example.openruncoach.domain.plan.TrainingPlanGenerator
 import com.example.openruncoach.domain.goal.GoalType
 import com.example.openruncoach.domain.goal.CompletionDateAssessment
 import com.example.openruncoach.domain.goal.GoalCompletionMilestone
@@ -66,15 +68,23 @@ fun PlanScreen(
   modifier: Modifier = Modifier,
 ) {
   val context = LocalContext.current
+  val environment = LocalOpenRunCoachEnvironment.current
   val viewModel: PlanViewModel = viewModel {
-    val database = OpenRunCoachDatabase.getInstance(context)
-    val profiles = AthletePerformanceProfileRepository(database)
-    val completion = GoalCompletionRepository(database)
+    val database = environment.database
+    val profiles = environment.profileRepository()
+    val completion = GoalCompletionRepository(database, environment.clock)
+    val executions = WorkoutExecutionRepository(database, environment.clock)
     PlanViewModel(
-      TrainingPlanRepository(database, completionRepository = completion),
-      TrainingGoalRepository(database, profiles),
+      TrainingPlanRepository(
+        database,
+        generator = TrainingPlanGenerator(environment.clock),
+        completionRepository = completion,
+        executionRepository = executions,
+      ),
+      TrainingGoalRepository(database, profiles, TrainingGoalFactory(environment.clock)),
       profiles,
       completion,
+      environment.clock,
     )
   }
   val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -96,6 +106,7 @@ fun PlanScreen(
           viewModel::scheduleCompletion,
           viewModel::postponeCompletion,
           state.isGenerating,
+          LocalDate.now(environment.clock),
         )
       }
     }
@@ -142,6 +153,7 @@ private fun GoalMilestoneCard(
   onSelectDate: (LocalDate) -> Unit,
   onPostpone: () -> Unit,
   busy: Boolean,
+  today: LocalDate,
 ) {
   val context = LocalContext.current
   PlanCard("Goal Milestone") {
@@ -191,7 +203,7 @@ private fun GoalMilestoneCard(
       }
       OutlinedButton(
         onClick = {
-          val initial = milestone.scheduledDate ?: suggestions.firstOrNull()?.date ?: LocalDate.now().plusDays(3)
+          val initial = milestone.scheduledDate ?: suggestions.firstOrNull()?.date ?: today.plusDays(3)
           DatePickerDialog(
             context,
             { _, year, month, day -> onSelectDate(LocalDate.of(year, month + 1, day)) },
@@ -199,7 +211,7 @@ private fun GoalMilestoneCard(
             initial.monthValue - 1,
             initial.dayOfMonth,
           ).apply {
-            datePicker.minDate = LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            datePicker.minDate = today.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
           }.show()
         },
         enabled = !busy,

@@ -37,7 +37,7 @@ The long-term goal is a transparent, explainable running coach inspired by feedb
 - Purpose-aware persisted workout execution results with visible Plan completion state
 - Rule-based readiness evaluation and safety overrides
 - Basic next-workout generation in the domain workflow
-- Deterministic developer coaching simulator with built-in scenarios
+- Debug-only isolated coaching simulation environment with deterministic presets
 - Health Connect Data Inspector for canonical runs, with per-metric permission and source diagnostics
 - Experimental Samsung Health Data SDK comparison for canonical runs, including ExerciseLog cadence diagnostics
 - Automatic canonical-run metric refresh and best-effort Samsung enrichment in Run Detail and after sync
@@ -47,7 +47,7 @@ The long-term goal is a transparent, explainable running coach inspired by feedb
 - Provider-independent structured workouts with ordered segments, repeat blocks, intensity guidance, estimates, purposes, and cues
 - Persistent deterministic training plans with weekly navigation, explainable blocks, recovery weeks, and goal-aware workout selection
 
-OpenRunCoach can generate a base plan explicitly from an active goal and the current Performance Profile. On post-run checkout, a run is associated automatically only when it is the sole canonical run for the date and exactly one uncompleted active-plan prescription is compatible with its observed distance or duration. Ambiguous dates, duplicate/non-canonical records, incompatible prescriptions, and runs predating the prescription remain unassociated. Existing unambiguous checkouts are reconciled into the same persisted execution association when a plan is loaded. A completed canonical run is also evaluated independently against an active Complete Distance goal, regardless of the planned workout's name. Broader production plan adaptation after imports is not yet implemented; the domain simulator exercises that completed-workout coaching loop today.
+OpenRunCoach can generate a base plan explicitly from an active goal and the current Performance Profile. On post-run checkout, a run is associated automatically only when it is the sole canonical run for the date and exactly one uncompleted active-plan prescription is compatible with its observed distance or duration. Ambiguous dates, duplicate/non-canonical records, incompatible prescriptions, and runs predating the prescription remain unassociated. Existing unambiguous checkouts are reconciled into the same persisted execution association when a plan is loaded. A completed canonical run is also evaluated independently against an active Complete Distance goal, regardless of the planned workout's name. Broader production plan adaptation after imports is not yet implemented; the debug simulation environment exercises that completed-workout pipeline with isolated deterministic inputs.
 
 ## Core product idea
 
@@ -173,6 +173,12 @@ For `IMPROVE_PERFORMANCE` and `TARGET_TIME`, race distance is not a training-dis
 Every week stores its focus, load classification, targets, and generation reasons. Each generated workout keeps its purpose, cues, structured segments, and a reason for inclusion. The Home screen shows only a compact current-week summary and link to the full plan.
 
 Normal training prescriptions allow purpose-aware real-world variation. Workout completion and prescription adherence are distinct: a slightly short easy or recovery run can be completed with a minor distance deviation, while an RPE or trusted pace outside the intended easy range remains a meaningful prescription deviation without erasing the completed training volume. Interval, stride, threshold, and drill adherence depends on the relevant quality work when that evidence exists. Actual distance and duration remain authoritative for volume and history; accepting a session never replaces actual metrics with prescribed values. Persisted execution results keep as-planned, minor-deviation, meaningful-prescription-deviation, partial, and aborted outcomes separate, and completed sessions are visibly marked Completed in the Plan after restart. Strict Goal achievement remains a separate evaluation against the observed distance and continuity criteria.
+
+`WorkoutExecutionResult` is the persisted association describing what actual canonical run was performed against which planned or adjusted prescription. `WorkoutResponse` is deterministic derived evidence describing one session: completion, purpose-aware adherence, actual volume, effort, continuity, pace response, pain, session cost, confidence, and concise reasons. Re-analysis uses stable run and workout identities and replaces no persisted truth, so reopening the app cannot accumulate duplicate response records.
+
+`AthletePerformanceProfile` owns descriptive historical evidence and aggregates such as recent actual volume, frequency, consistency, benchmarks, continuity, and supported pace/heart-rate baselines. `AthleteState` is a deterministic, rebuildable coaching interpretation composed from that profile, canonical history, and `WorkoutResponse`s. It keeps longer-term demonstrated and comfortable/tolerated capability separate from acute readiness and recovery signals. Missing evidence lowers confidence rather than becoming inability or a hard distance ceiling; a hard performance does not automatically establish comfortable training tolerance, and one bad workout can make current readiness conservative without erasing accumulated endurance evidence.
+
+`GoalStrategy` decides which goal-independent capabilities matter for the active Goal. A later Adaptation layer will decide what should change, and `NextWorkoutPlanner` will eventually turn that decision into a concrete structured workout. Neither full adaptation decisions nor next-workout generation are part of the current Athlete State foundation.
 
 ## Pre-run check-in
 
@@ -353,7 +359,7 @@ Domain
 ├── coaching rules
 ├── workout lifecycle and readiness evaluation
 ├── next-workout generation
-└── deterministic simulation
+└── provider-independent coaching rules shared by debug simulation
 
 Data
 ├── Health Connect
@@ -372,34 +378,22 @@ Architecture rules:
 - Room entities are mapped to domain models before reaching Compose.
 - Repositories own data access.
 - Business and transition logic stays outside composables.
-- Coaching and simulation logic remains Android-independent where possible.
+- Coaching logic remains independent of whether its persisted inputs came from a real provider or the debug simulator.
 
-## Simulation
+## Debug simulation environment
 
-The current developer simulator executes the complete domain timeline with built-in fixed scenarios:
+Debug builds provide Settings → Developer Tools → Simulation. Release builds contain neither scenario controls nor synthetic-run creation. Loading a preset clears and seeds only a dedicated simulation Room database, switches to a fixed injectable clock, and shows a persistent Simulation Mode banner. Exiting returns the app to the untouched production database.
 
-```text
-Baseline
-→ Check-in
-→ Adjustment
-→ Simulated actual run
-→ Post-run checkout
-→ Coach decision
-→ Next workout
-```
-
-It uses a fixed `Clock`, injected identifiers, fixed workout results, and no real user database. It is useful for repeatable coaching tests, regression testing, and edge cases without using an athlete as the test subject.
-
-The full simulation milestone will use the exact same screens, navigation, check-in flow, adjustment evaluator, checkout, coaching engine, and workout generator as the real workflow. Only its dependencies will differ:
+Presets create deterministic prescriptions, canonical-run inputs, optional metrics, movement samples, and checkout feedback. After that input boundary they use the normal persistence and product pipeline: workout association, `WorkoutExecutionResult`, `WorkoutResponse`, longitudinal `AthleteState`, coaching decisions, strict goal completion, and the shared product screens. The debug Simulation screen exposes the rebuilt Athlete State as readable capability, confidence, volume, continuity, session-cost, and readiness evidence rather than a synthetic fitness score. Scenarios I–M cover a hard first 5K, established endurance followed by a hard 5K, one bad run after good history, repeated positive Easy training, and little evidence. Scenario H persists the authoritative planned execution before a later unrelated same-day run so the newer run cannot replace that association. Walking scenarios provide timestamped speed samples to the existing continuity evaluator; missing metrics remain absent.
 
 | Real workflow | Simulation workflow |
 | --- | --- |
 | Health Connect data | `SimulationDataSource` |
-| Persistent Room data | Isolated in-memory or test storage |
+| Production Room database | Dedicated simulation Room database |
 | Real clock | Fixed clock |
-| Real completed workouts | Simulated workout results |
+| Provider activity inputs | Deterministic synthetic run and metric inputs |
 
-The current developer screen is a timeline runner; shared production screens and isolated simulation storage remain roadmap work.
+The environment is a manual development tool, not a production user feature. Scenario loading never injects final response, coaching-action, or goal-completion results.
 
 ## Roadmap
 
@@ -410,6 +404,7 @@ The current developer screen is a timeline runner; shared production screens and
 - [x] Automatic metric enrichment and Run Detail time-series charts
 - [x] Anthracite and teal application theme
 - [x] Athlete Performance Profile
+- [x] Longitudinal Athlete State and current-readiness interpretation
 - [x] Goal System
 - [x] Structured Workout Model
 - [x] Training Block / Weekly Plan Generation
@@ -421,7 +416,7 @@ The current developer screen is a timeline runner; shared production screens and
 - [ ] Post-run Adaptive Plan Progression
 - [ ] Threshold / Zone Estimation
 - [ ] Technique, cadence, and running economy analysis
-- [ ] Full simulation mode using production screens and isolated storage
+- [x] Debug simulation mode using production screens and isolated storage
 - [ ] Advanced training metrics
 - [ ] Optional additional data providers
 

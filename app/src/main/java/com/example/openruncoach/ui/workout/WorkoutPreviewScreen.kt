@@ -16,11 +16,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.openruncoach.data.StructuredWorkoutRepository
-import com.example.openruncoach.data.local.OpenRunCoachDatabase
+import com.example.openruncoach.LocalOpenRunCoachEnvironment
 import com.example.openruncoach.domain.workout.WorkoutDescriptionFormatter
 import com.example.openruncoach.ui.components.ItemSpacing
 import com.example.openruncoach.ui.components.ScreenPadding
@@ -32,9 +31,9 @@ fun WorkoutPreviewScreen(
   onOpenWorkout: (String) -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  val context = LocalContext.current
+  val environment = LocalOpenRunCoachEnvironment.current
   val viewModel: WorkoutPreviewViewModel = viewModel {
-    WorkoutPreviewViewModel(StructuredWorkoutRepository(OpenRunCoachDatabase.getInstance(context)))
+    WorkoutPreviewViewModel(StructuredWorkoutRepository(environment.database))
   }
   val state by viewModel.uiState.collectAsStateWithLifecycle()
   LaunchedEffect(state.openWorkoutId) {

@@ -21,7 +21,21 @@ import com.example.openruncoach.data.HealthConnectRepository
 import com.example.openruncoach.data.RunFeedbackRepository
 import com.example.openruncoach.data.RunRepository
 import com.example.openruncoach.data.RunSettingsRepository
-import com.example.openruncoach.data.local.OpenRunCoachDatabase
+import com.example.openruncoach.data.WorkoutResponseRepository
+import com.example.openruncoach.LocalOpenRunCoachEnvironment
+import com.example.openruncoach.domain.PainLevel
+import com.example.openruncoach.domain.metrics.RunContinuityEvidence
+import com.example.openruncoach.domain.workout.EffortResponse
+import com.example.openruncoach.domain.workout.PaceResponse
+import com.example.openruncoach.domain.workout.PrescriptionAdherence
+import com.example.openruncoach.domain.workout.SessionCost
+import com.example.openruncoach.domain.workout.VolumeCompletion
+import com.example.openruncoach.domain.workout.WorkoutCompletionOutcome
+import com.example.openruncoach.domain.workout.WorkoutResponse
+import com.example.openruncoach.domain.coaching.CoachingEngine
+import com.example.openruncoach.ui.common.formatDistance
+import com.example.openruncoach.ui.common.formatDuration
+import com.example.openruncoach.ui.common.formatPace
 import com.example.openruncoach.ui.common.coachingActionLabel
 import com.example.openruncoach.ui.components.EmptyState
 import com.example.openruncoach.ui.components.ItemSpacing
@@ -31,13 +45,21 @@ import com.example.openruncoach.ui.components.SectionSpacing
 @Composable
 fun CoachDetailScreen(runId: String, onBack: () -> Unit, modifier: Modifier = Modifier) {
   val context = LocalContext.current
+  val environment = LocalOpenRunCoachEnvironment.current
   val viewModel: CoachDetailViewModel = viewModel(key = "coach-$runId") {
-    val database = OpenRunCoachDatabase.getInstance(context)
+    val database = environment.database
     val settingsRepository = RunSettingsRepository(context)
     CoachDetailViewModel(
       runId,
-      RunRepository(database.runDao(), HealthConnectRepository(context), settingsRepository),
-      RunFeedbackRepository(database),
+      RunRepository(
+        database.runDao(),
+        HealthConnectRepository(context),
+        settingsRepository,
+        clock = environment.clock,
+      ),
+      RunFeedbackRepository(database, environment.clock),
+      WorkoutResponseRepository(database),
+      CoachingEngine(environment.clock),
     )
   }
   val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -52,13 +74,136 @@ fun CoachDetailScreen(runId: String, onBack: () -> Unit, modifier: Modifier = Mo
       state.isLoading -> EmptyState("Loading", "Loading coach analysis…")
       state.errorMessage != null -> EmptyState("Analysis unavailable", state.errorMessage!!)
       state.decision == null -> EmptyState("No analysis", "Analysis is available after feedback on the latest canonical run.")
-      else -> Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(ScreenPadding), verticalArrangement = Arrangement.spacedBy(ItemSpacing)) {
-          Text(coachingActionLabel(state.decision!!.action), style = MaterialTheme.typography.headlineSmall)
-          Text("Score ${state.decision!!.score}", style = MaterialTheme.typography.labelLarge)
-          state.decision!!.reasons.forEach { reason -> Text("✓ $reason") }
+      else -> {
+        Card(Modifier.fillMaxWidth()) {
+          Column(Modifier.padding(ScreenPadding), verticalArrangement = Arrangement.spacedBy(ItemSpacing)) {
+            Text("Coaching response", style = MaterialTheme.typography.titleLarge)
+            Text(coachingActionLabel(state.decision!!.action), style = MaterialTheme.typography.headlineSmall)
+          }
+        }
+        state.response?.let { ResponseAnalysis(it) } ?: Card(Modifier.fillMaxWidth()) {
+          Column(Modifier.padding(ScreenPadding), verticalArrangement = Arrangement.spacedBy(ItemSpacing)) {
+            Text("Available evidence", style = MaterialTheme.typography.titleLarge)
+            state.decision!!.reasons.forEach { reason -> Text("• $reason") }
+          }
         }
       }
     }
   }
 }
+
+@Composable
+private fun ResponseAnalysis(response: WorkoutResponse) {
+  AnalysisCard("Outcome") {
+    AnalysisValue("Completion", response.completion.displayName())
+    AnalysisValue("Prescription adherence", response.adherence.displayName())
+    AnalysisValue("Session cost", response.sessionCost.displayName())
+    AnalysisValue("Interpretation confidence", response.confidence.name.displayName())
+  }
+  AnalysisCard("Actual") {
+    response.actualDistanceMeters?.let { AnalysisValue("Distance", formatDistance(it)) }
+    AnalysisValue("Duration", formatDuration(response.actualDurationSeconds))
+    response.actualPaceSecondsPerKm?.let { AnalysisValue("Average pace", formatPace(it)) }
+    AnalysisValue("Volume", response.volumeCompletion.displayName())
+    AnalysisValue("Effort", response.effortResponse.displayName())
+    if (response.paceResponse != PaceResponse.UNKNOWN) AnalysisValue("Pace", response.paceResponse.displayName())
+    AnalysisValue("Continuity", response.continuity.displayName())
+  }
+  AnalysisCard("Planned") {
+    response.plannedDistanceMeters?.let { AnalysisValue("Distance", formatDistance(it)) }
+    response.plannedDurationSeconds?.let { AnalysisValue("Duration", formatDuration(it)) }
+    plannedPace(response)?.let { AnalysisValue("Target pace", it) }
+    if (response.plannedRpeMinimum != null && response.plannedRpeMaximum != null) {
+      AnalysisValue("Effort", "RPE ${response.plannedRpeMinimum}–${response.plannedRpeMaximum}")
+    }
+  }
+  AnalysisCard("Checkout") {
+    AnalysisValue("RPE", "${response.reportedRpe}/10")
+    AnalysisValue("Pain", response.pain.displayName())
+  }
+  AnalysisCard("Why this matters") {
+    response.reasons.forEach { Text("• $it") }
+  }
+}
+
+@Composable
+private fun AnalysisCard(title: String, content: @Composable () -> Unit) {
+  Card(Modifier.fillMaxWidth()) {
+    Column(Modifier.padding(ScreenPadding), verticalArrangement = Arrangement.spacedBy(ItemSpacing)) {
+      Text(title, style = MaterialTheme.typography.titleLarge)
+      content()
+    }
+  }
+}
+
+@Composable
+private fun AnalysisValue(label: String, value: String) {
+  androidx.compose.foundation.layout.Row(
+    Modifier.fillMaxWidth(),
+    horizontalArrangement = Arrangement.SpaceBetween,
+  ) {
+    Text(label)
+    Text(value)
+  }
+}
+
+private fun plannedPace(response: WorkoutResponse): String? {
+  val minimum = response.plannedPaceMinimumSecondsPerKm ?: return null
+  val maximum = response.plannedPaceMaximumSecondsPerKm ?: return null
+  return "${paceValue(minimum)}–${paceValue(maximum)} min/km"
+}
+
+private fun paceValue(secondsPerKm: Double): String {
+  val seconds = secondsPerKm.toLong()
+  return "%d:%02d".format(seconds / 60, seconds % 60)
+}
+
+private fun WorkoutCompletionOutcome.displayName() = when (this) {
+  WorkoutCompletionOutcome.COMPLETED -> "Completed"
+  WorkoutCompletionOutcome.PARTIAL -> "Partially completed"
+  WorkoutCompletionOutcome.ABORTED -> "Stopped"
+}
+
+private fun PrescriptionAdherence.displayName() = when (this) {
+  PrescriptionAdherence.AS_PLANNED -> "As planned"
+  PrescriptionAdherence.MINOR_DEVIATION -> "Minor deviation"
+  PrescriptionAdherence.MEANINGFUL_DEVIATION -> "Meaningful deviation"
+  PrescriptionAdherence.INSUFFICIENT_EVIDENCE -> "Limited quality-work evidence"
+}
+
+private fun VolumeCompletion.displayName() = when (this) {
+  VolumeCompletion.MET -> "Target met"
+  VolumeCompletion.SUBSTANTIALLY_COMPLETED -> "Substantially completed"
+  VolumeCompletion.PARTIAL -> "Partial"
+  VolumeCompletion.UNKNOWN -> "Not enough data"
+}
+
+private fun EffortResponse.displayName() = when (this) {
+  EffortResponse.BELOW_TARGET -> "Below target"
+  EffortResponse.ON_TARGET -> "On target"
+  EffortResponse.ABOVE_TARGET -> "Higher than planned"
+  EffortResponse.UNKNOWN -> "Not enough data"
+}
+
+private fun PaceResponse.displayName() = when (this) {
+  PaceResponse.FASTER_THAN_TARGET -> "Faster than planned"
+  PaceResponse.ON_TARGET -> "Within target"
+  PaceResponse.SLOWER_THAN_TARGET -> "Slower than planned"
+  PaceResponse.UNKNOWN -> "Not enough data"
+}
+
+private fun RunContinuityEvidence.displayName() = when (this) {
+  RunContinuityEvidence.CONTINUOUS -> "Continuous"
+  RunContinuityEvidence.INTERRUPTED -> "Sustained walking/stopped interval"
+  RunContinuityEvidence.UNKNOWN -> "Not enough movement samples"
+}
+
+private fun SessionCost.displayName() = name.displayName()
+
+private fun PainLevel.displayName() = when (this) {
+  PainLevel.NONE -> "No pain"
+  PainLevel.MILD -> "Mild pain"
+  PainLevel.SIGNIFICANT -> "Significant pain"
+}
+
+private fun String.displayName() = lowercase().replace('_', ' ').replaceFirstChar(Char::titlecase)

@@ -17,7 +17,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.openruncoach.data.HealthConnectRepository
 import com.example.openruncoach.data.RunRepository
 import com.example.openruncoach.data.RunSettingsRepository
-import com.example.openruncoach.data.local.OpenRunCoachDatabase
+import com.example.openruncoach.LocalOpenRunCoachEnvironment
 import com.example.openruncoach.ui.components.EmptyState
 import com.example.openruncoach.ui.components.ItemSpacing
 import com.example.openruncoach.ui.components.RunHistoryItem
@@ -27,14 +27,17 @@ import com.example.openruncoach.ui.components.SectionSpacing
 @Composable
 fun HistoryScreen(onRunClick: (String) -> Unit, modifier: Modifier = Modifier) {
   val context = LocalContext.current
+  val environment = LocalOpenRunCoachEnvironment.current
   val viewModel: HistoryViewModel = viewModel {
     val settingsRepository = RunSettingsRepository(context)
     HistoryViewModel(
       RunRepository(
-        OpenRunCoachDatabase.getInstance(context).runDao(),
+        environment.database.runDao(),
         HealthConnectRepository(context),
         settingsRepository,
-      )
+        clock = environment.clock,
+      ),
+      environment.clock.zone,
     )
   }
   val state by viewModel.uiState.collectAsStateWithLifecycle()

@@ -130,6 +130,27 @@ class WorkoutAdherenceEvaluatorTest {
     assertTrue(result.explanation.contains("could not be fully verified"))
   }
 
+  @Test fun wholeRunAveragePaceIsNotComparedWithAnIntervalWorkTarget() {
+    val intervals = StructuredWorkoutSamples.intervals()
+    val workout = intervals.copy(blocks = intervals.blocks.map { block ->
+      if (block !is RepeatBlock) block else block.copy(segments = block.segments.map { segment ->
+        if (segment.category != SegmentCategory.WORK) segment else segment.copy(
+          secondaryIntensities = segment.secondaryIntensities + PaceTarget(240.0, 270.0),
+        )
+      })
+    })
+
+    val result = evaluator.evaluate(
+      workout,
+      null,
+      run(WorkoutEstimateCalculator.calculate(workout).knownDistanceMeters),
+      feedback(),
+    )
+
+    assertEquals(WorkoutExecutionStatus.COMPLETED_WITH_MINOR_DEVIATION, result.status)
+    assertTrue(result.explanation.contains("could not be fully verified"))
+  }
+
   @Test fun userReportedAbortIsNotHiddenByMatchingDistance() {
     val result = evaluator.evaluate(
       distanceWorkout(4_000.0),

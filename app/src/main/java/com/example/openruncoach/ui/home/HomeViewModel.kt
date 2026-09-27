@@ -5,22 +5,24 @@ import androidx.lifecycle.viewModelScope
 import com.example.openruncoach.data.RunFeedbackRepository
 import com.example.openruncoach.data.RunRepository
 import com.example.openruncoach.data.TrainingPlanRepository
+import com.example.openruncoach.data.WorkoutResponseRepository
 import com.example.openruncoach.domain.RunFeedback
 import com.example.openruncoach.domain.RunSummary
 import com.example.openruncoach.domain.coaching.CoachingDecision
 import com.example.openruncoach.domain.coaching.CoachingEngine
 import com.example.openruncoach.domain.plan.TrainingPlan
 import com.example.openruncoach.domain.workout.WorkoutEstimateCalculator
+import com.example.openruncoach.domain.workout.WorkoutResponse
 import com.example.openruncoach.ui.common.WeekSelectorUiModel
 import com.example.openruncoach.ui.common.buildWeekSelectorUiModel
 import java.time.LocalDate
+import java.time.Clock
 import java.time.ZoneId
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -57,10 +59,12 @@ class HomeViewModel(
   runRepository: RunRepository,
   feedbackRepository: RunFeedbackRepository,
   trainingPlanRepository: TrainingPlanRepository,
+  private val workoutResponseRepository: WorkoutResponseRepository,
   private val coachingEngine: CoachingEngine = CoachingEngine(),
-  private val zoneId: ZoneId = ZoneId.systemDefault(),
+  private val clock: Clock = Clock.systemDefaultZone(),
+  private val zoneId: ZoneId = clock.zone,
 ) : ViewModel() {
-  private val selectedDate = MutableStateFlow(LocalDate.now(zoneId))
+  private val selectedDate = MutableStateFlow(LocalDate.now(clock))
 
   val uiState = combine(
     runRepository.canonicalRuns,
@@ -78,7 +82,8 @@ class HomeViewModel(
   }.flatMapLatest { runState ->
     val run = runState.selectedRun
     val feedbackFlow = if (run == null) flowOf(null) else feedbackRepository.observeFeedbackForRun(run.healthConnectRecordId)
-    feedbackFlow.map { feedback -> runState.toUiState(feedback) }
+    val responseFlow = if (run == null) flowOf(null) else workoutResponseRepository.observeForRun(run.healthConnectRecordId)
+    combine(feedbackFlow, responseFlow) { feedback, response -> runState.toUiState(feedback, response) }
   }.catch {
     emit(HomeUiState(isLoading = false, selectedDate = selectedDate.value, errorMessage = "Could not load runs."))
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState(selectedDate = selectedDate.value))
@@ -89,7 +94,7 @@ class HomeViewModel(
 
   fun nextWeek() { selectedDate.value = selectedDate.value.plusWeeks(1) }
 
-  private fun HomeRunState.toUiState(feedback: RunFeedback?): HomeUiState {
+  private fun HomeRunState.toUiState(feedback: RunFeedback?, response: WorkoutResponse?): HomeUiState {
     val run = selectedRun
     val execution = run?.let { selected ->
       plan?.weeks.orEmpty().flatMap { it.workouts }.mapNotNull { it.executionResult }
@@ -107,9 +112,9 @@ class HomeViewModel(
       selectedRun = run,
       sourceCount = sourceCount,
       coachingDecision = if (run != null && feedback != null) {
-        coachingEngine.analyze(run, canonicalRuns, feedback, execution)
+        coachingEngine.analyze(run, canonicalRuns, feedback, execution, response)
       } else null,
-      planSummary = plan.toHomeSummary(LocalDate.now(zoneId)),
+      planSummary = plan.toHomeSummary(LocalDate.now(clock)),
     )
   }
 }

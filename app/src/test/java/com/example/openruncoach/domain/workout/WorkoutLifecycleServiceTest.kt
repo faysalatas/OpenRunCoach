@@ -1,9 +1,15 @@
 package com.example.openruncoach.domain.workout
 
-import com.example.openruncoach.domain.simulation.BuiltInScenario
-import com.example.openruncoach.domain.simulation.SimulationFixtures
-import com.example.openruncoach.domain.simulation.SimulationRunner
+import com.example.openruncoach.domain.CardioEffort
+import com.example.openruncoach.domain.CompletionStatus
+import com.example.openruncoach.domain.MuscleFatigue
+import com.example.openruncoach.domain.PainLevel
+import com.example.openruncoach.domain.RunFeedback
+import com.example.openruncoach.domain.RunSummary
+import com.example.openruncoach.domain.coaching.CoachingEngine
 import java.time.Clock
+import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneOffset
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -12,38 +18,53 @@ import org.junit.Test
 
 class WorkoutLifecycleServiceTest {
   private val service = WorkoutLifecycleService()
-  private val scenario = SimulationFixtures.scenario(BuiltInScenario.WELL_RECOVERED)
-  private val result = SimulationRunner(
-    Clock.fixed(SimulationFixtures.fixedInstant, ZoneOffset.UTC),
-    IdGenerator { "next-workout" },
-  ).run(scenario)
+  private val now = Instant.parse("2026-09-21T12:00:00Z")
+  private val clock = Clock.fixed(now, ZoneOffset.UTC)
+  private val plannedWorkout = StructuredWorkoutSamples.easyRun()
+  private val checkIn = PreRunCheckIn(
+    LocalDate.of(2026, 9, 21), 5, 5, 5, SorenessLevel.NONE, emptySet(),
+    PainLevel.NONE, 2, 5, IllnessLevel.NONE, null,
+  )
+  private val actualRun = RunSummary(
+    "actual-run", now.minusSeconds(1_800), now, 1_800, 4_800.0, 140.0, 160, 375.0,
+  )
+  private val feedback = RunFeedback(
+    "feedback", actualRun.healthConnectRecordId, 4, CardioEffort.APPROPRIATE,
+    MuscleFatigue.NONE, PainLevel.NONE, CompletionStatus.COMPLETED, 4, null, now, now,
+  )
+  private val adjustment = CheckInEvaluator(clock).evaluate(
+    plannedWorkout,
+    checkIn,
+    emptyList(),
+    RecentTrainingVolume(0, 0, 0.0),
+    null,
+  )
+  private val execution = WorkoutAdherenceEvaluator(clock).evaluate(
+    plannedWorkout, adjustment.adjustedWorkout, actualRun, feedback,
+  )
+  private val coaching = requireNotNull(CoachingEngine(clock).analyze(actualRun, listOf(actualRun), feedback, execution))
+  private val nextWorkout = NextWorkoutGenerator(clock, IdGenerator { "next-workout" }).generate(
+    adjustment.adjustedWorkout, actualRun, feedback, coaching,
+  )
 
   @Test
   fun completeLifecycleTransitionsInOrderAndKeepsConceptsSeparate() {
-    var lifecycle = WorkoutLifecycle(scenario.baselinePlannedWorkout)
+    var lifecycle = WorkoutLifecycle(plannedWorkout)
 
     lifecycle = service.transition(lifecycle, WorkoutLifecycleEvent.RequireCheckIn)
     assertEquals(WorkoutLifecycleState.CHECK_IN_REQUIRED, lifecycle.state)
 
     lifecycle = service.transition(
       lifecycle,
-      WorkoutLifecycleEvent.CheckInCompleted(scenario.preRunCheckIn, result.adjustmentDecision),
+      WorkoutLifecycleEvent.CheckInCompleted(checkIn, adjustment),
     )
     assertEquals(WorkoutLifecycleState.READY, lifecycle.state)
     assertNotNull(lifecycle.preRunCheckIn)
     assertNotNull(lifecycle.adjustmentDecision)
 
-    val execution = WorkoutAdherenceEvaluator(
-      Clock.fixed(SimulationFixtures.fixedInstant, ZoneOffset.UTC)
-    ).evaluate(
-      scenario.baselinePlannedWorkout,
-      result.adjustmentDecision.adjustedWorkout,
-      scenario.simulatedActualRun,
-      scenario.postRunFeedback,
-    )
-    lifecycle = service.transition(lifecycle, WorkoutLifecycleEvent.RunCompleted(scenario.simulatedActualRun, execution))
+    lifecycle = service.transition(lifecycle, WorkoutLifecycleEvent.RunCompleted(actualRun, execution))
     assertEquals(WorkoutLifecycleState.COMPLETED, lifecycle.state)
-    assertEquals(scenario.simulatedActualRun, lifecycle.actualRun)
+    assertEquals(actualRun, lifecycle.actualRun)
     assertEquals(execution, lifecycle.executionResult)
 
     lifecycle = service.transition(lifecycle, WorkoutLifecycleEvent.RequireCheckout)
@@ -51,27 +72,27 @@ class WorkoutLifecycleServiceTest {
 
     lifecycle = service.transition(
       lifecycle,
-      WorkoutLifecycleEvent.AnalysisCompleted(scenario.postRunFeedback, result.coachingDecision),
+      WorkoutLifecycleEvent.AnalysisCompleted(feedback, coaching),
     )
     assertEquals(WorkoutLifecycleState.ANALYZED, lifecycle.state)
-    assertEquals(scenario.postRunFeedback, lifecycle.postRunFeedback)
-    assertEquals(result.coachingDecision, lifecycle.coachingDecision)
+    assertEquals(feedback, lifecycle.postRunFeedback)
+    assertEquals(coaching, lifecycle.coachingDecision)
 
     lifecycle = service.transition(
       lifecycle,
-      WorkoutLifecycleEvent.NextWorkoutCreated(result.nextWorkout),
+      WorkoutLifecycleEvent.NextWorkoutCreated(nextWorkout),
     )
     assertEquals(WorkoutLifecycleState.NEXT_WORKOUT_CREATED, lifecycle.state)
-    assertEquals(result.nextWorkout, lifecycle.nextWorkout)
-    assertEquals(scenario.baselinePlannedWorkout, lifecycle.plannedWorkout)
+    assertEquals(nextWorkout, lifecycle.nextWorkout)
+    assertEquals(plannedWorkout, lifecycle.plannedWorkout)
   }
 
   @Test
   fun invalidTransitionsAreRejected() {
-    val planned = WorkoutLifecycle(scenario.baselinePlannedWorkout)
+    val planned = WorkoutLifecycle(plannedWorkout)
 
     assertThrows(InvalidWorkoutLifecycleTransition::class.java) {
-      service.transition(planned, WorkoutLifecycleEvent.RunCompleted(scenario.simulatedActualRun))
+      service.transition(planned, WorkoutLifecycleEvent.RunCompleted(actualRun))
     }
     val checkInRequired = service.transition(planned, WorkoutLifecycleEvent.RequireCheckIn)
     assertThrows(InvalidWorkoutLifecycleTransition::class.java) {

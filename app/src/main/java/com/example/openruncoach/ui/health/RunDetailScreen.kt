@@ -35,7 +35,9 @@ import com.example.openruncoach.data.RunSettingsRepository
 import com.example.openruncoach.data.GoalCompletionRepository
 import com.example.openruncoach.data.TrainingGoalRepository
 import com.example.openruncoach.data.WorkoutExecutionRepository
-import com.example.openruncoach.data.local.OpenRunCoachDatabase
+import com.example.openruncoach.data.WorkoutResponseRepository
+import com.example.openruncoach.LocalOpenRunCoachEnvironment
+import com.example.openruncoach.domain.coaching.CoachingEngine
 import com.example.openruncoach.domain.CardioEffort
 import com.example.openruncoach.domain.CompletionStatus
 import com.example.openruncoach.domain.MuscleFatigue
@@ -68,20 +70,25 @@ fun RunDetailScreen(
   modifier: Modifier = Modifier,
 ) {
   val context = LocalContext.current
+  val environment = LocalOpenRunCoachEnvironment.current
   val viewModel: RunDetailViewModel = viewModel(key = runId) {
-    val database = OpenRunCoachDatabase.getInstance(context)
+    val database = environment.database
     val settingsRepository = RunSettingsRepository(context)
-    val profileRepository = AthletePerformanceProfileRepository(database)
-    val metricsRefresher = RunMetricsAutoRefreshCoordinator.create(context, database, profileRepository)
+    val profileRepository = environment.profileRepository()
+    val metricsRefresher = if (environment.isSimulation) null else {
+      RunMetricsAutoRefreshCoordinator.create(context, database, profileRepository)
+    }
     RunDetailViewModel(
       runId,
       RunRepository(database.runDao(), HealthConnectRepository(context), settingsRepository),
-      RunFeedbackRepository(database, athleteProfileRepository = profileRepository),
+      RunFeedbackRepository(database, environment.clock, athleteProfileRepository = profileRepository),
       RunMetricsRepository(database.runMetricsDao()),
       metricsRefresher,
       TrainingGoalRepository(database, profileRepository),
-      GoalCompletionRepository(database),
-      WorkoutExecutionRepository(database, athleteProfileRepository = profileRepository),
+      GoalCompletionRepository(database, environment.clock),
+      WorkoutExecutionRepository(database, environment.clock, athleteProfileRepository = profileRepository),
+      WorkoutResponseRepository(database),
+      CoachingEngine(environment.clock),
     )
   }
   val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -100,12 +107,14 @@ fun RunDetailScreen(
         if (state.isUpdatingMetrics) Text("Updating run data…", color = MaterialTheme.colorScheme.onSurfaceVariant)
         state.metrics?.let { RunMetricsCard(it, state.showMetricDetails, viewModel::toggleMetricDetails) }
         state.metrics?.let { metrics -> state.charts?.let { charts -> RunChartsSection(metrics, charts) } }
-        TextButton(onClick = viewModel::refreshMetrics, enabled = !state.isUpdatingMetrics) { Text("Refresh metrics") }
+        if (!environment.isSimulation) {
+          TextButton(onClick = viewModel::refreshMetrics, enabled = !state.isUpdatingMetrics) { Text("Refresh metrics") }
+        }
         if (state.metricsUpdateError) Text(
           "Could not update run metrics. Saved data is still available.",
           color = MaterialTheme.colorScheme.error,
         )
-        if (state.run!!.isCanonical) {
+        if (state.run!!.isCanonical && !environment.isSimulation) {
           Button(onClick = { onInspectHealthData(runId) }) { Text("Inspect Health Data") }
         }
         FeedbackCard(state, viewModel)

@@ -362,11 +362,20 @@ abstract class OpenRunCoachDatabase : RoomDatabase() {
     fun getInstance(context: Context): OpenRunCoachDatabase =
       instance ?: synchronized(this) {
         instance
-          ?: Room.databaseBuilder(
-              context.applicationContext,
-              OpenRunCoachDatabase::class.java,
-              "open_run_coach.db",
-            ).addMigrations(
+          ?: build(context, "open_run_coach.db").also { instance = it }
+      }
+
+    internal fun createIsolated(context: Context, databaseName: String): OpenRunCoachDatabase {
+      require(databaseName.isNotBlank() && databaseName != "open_run_coach.db")
+      return build(context, databaseName)
+    }
+
+    private fun build(context: Context, databaseName: String): OpenRunCoachDatabase =
+      Room.databaseBuilder(
+        context.applicationContext,
+        OpenRunCoachDatabase::class.java,
+        databaseName,
+      ).addMigrations(
               MIGRATION_1_2,
               MIGRATION_2_3,
               MIGRATION_3_4,
@@ -382,7 +391,6 @@ abstract class OpenRunCoachDatabase : RoomDatabase() {
               MIGRATION_13_14,
               MIGRATION_14_15,
               MIGRATION_15_16,
-            ).build().also { instance = it }
-      }
+            ).build()
   }
 }

@@ -21,13 +21,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.openruncoach.data.AthletePerformanceProfileRepository
 import com.example.openruncoach.data.TrainingGoalRepository
-import com.example.openruncoach.data.local.OpenRunCoachDatabase
+import com.example.openruncoach.LocalOpenRunCoachEnvironment
+import com.example.openruncoach.domain.goal.TrainingGoalFactory
 import com.example.openruncoach.domain.goal.DistanceGoalCapability
 import com.example.openruncoach.domain.goal.GoalAssessment
 import com.example.openruncoach.domain.goal.GoalAssessmentLevel
@@ -46,11 +45,15 @@ import java.util.Locale
 
 @Composable
 fun GoalScreen(onBack: () -> Unit, onOpenTrainingPlan: () -> Unit, modifier: Modifier = Modifier) {
-  val context = LocalContext.current
+  val environment = LocalOpenRunCoachEnvironment.current
   val viewModel: GoalViewModel = viewModel {
-    val database = OpenRunCoachDatabase.getInstance(context)
-    val profiles = AthletePerformanceProfileRepository(database)
-    GoalViewModel(TrainingGoalRepository(database, profiles), profiles)
+    val database = environment.database
+    val profiles = environment.profileRepository()
+    GoalViewModel(
+      TrainingGoalRepository(database, profiles, TrainingGoalFactory(environment.clock)),
+      profiles,
+      environment.clock,
+    )
   }
   val state by viewModel.uiState.collectAsStateWithLifecycle()
 

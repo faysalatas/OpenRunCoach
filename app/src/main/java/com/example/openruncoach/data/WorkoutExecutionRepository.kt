@@ -162,7 +162,7 @@ internal fun WorkoutExecutionEntity.toDomain() = WorkoutExecutionResult(
   evaluatedAt = Instant.ofEpochMilli(evaluatedAtEpochMillis),
 )
 
-private fun WorkoutAdjustmentEntity.toAdjustedWorkout() = AdjustedWorkout(
+internal fun WorkoutAdjustmentEntity.toAdjustedWorkout() = AdjustedWorkout(
   originalWorkoutId = plannedWorkoutId,
   type = WorkoutType.valueOf(adjustedType),
   durationMinutes = adjustedDurationMinutes,

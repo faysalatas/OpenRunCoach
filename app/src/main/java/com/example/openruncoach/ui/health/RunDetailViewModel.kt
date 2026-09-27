@@ -9,6 +9,7 @@ import com.example.openruncoach.data.RunMetricsRefresher
 import com.example.openruncoach.data.GoalCompletionRepository
 import com.example.openruncoach.data.TrainingGoalRepository
 import com.example.openruncoach.data.WorkoutExecutionRepository
+import com.example.openruncoach.data.WorkoutResponseRepository
 import com.example.openruncoach.domain.CardioEffort
 import com.example.openruncoach.domain.CompletionStatus
 import com.example.openruncoach.domain.MuscleFatigue
@@ -23,6 +24,7 @@ import com.example.openruncoach.domain.metrics.RunMetrics
 import com.example.openruncoach.domain.metrics.RunChartData
 import com.example.openruncoach.domain.metrics.RunChartPreparer
 import com.example.openruncoach.domain.workout.WorkoutExecutionResult
+import com.example.openruncoach.domain.workout.WorkoutResponse
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -62,6 +64,7 @@ data class RunDetailUiState(
   val isUpdatingMetrics: Boolean = false,
   val metricsUpdateError: Boolean = false,
   val workoutExecution: WorkoutExecutionResult? = null,
+  val workoutResponse: WorkoutResponse? = null,
 )
 
 class RunDetailViewModel(
@@ -69,10 +72,11 @@ class RunDetailViewModel(
   runRepository: RunRepository,
   private val feedbackRepository: RunFeedbackRepository,
   runMetricsRepository: RunMetricsRepository,
-  private val runMetricsRefresher: RunMetricsRefresher,
+  private val runMetricsRefresher: RunMetricsRefresher?,
   private val goalRepository: TrainingGoalRepository? = null,
   private val goalCompletionRepository: GoalCompletionRepository? = null,
   private val workoutExecutionRepository: WorkoutExecutionRepository? = null,
+  private val workoutResponseRepository: WorkoutResponseRepository? = null,
   private val coachingEngine: CoachingEngine = CoachingEngine(),
 ) : ViewModel() {
   private val _uiState = MutableStateFlow(RunDetailUiState())
@@ -94,7 +98,7 @@ class RunDetailViewModel(
               charts = state.metrics?.let { metrics -> prepareCharts(metrics, run) },
             ).withDerivedState()
           }
-          if (run != null && run.isCanonical && autoRefreshRunId != run.healthConnectRecordId) {
+          if (runMetricsRefresher != null && run != null && run.isCanonical && autoRefreshRunId != run.healthConnectRecordId) {
             autoRefreshRunId = run.healthConnectRecordId
             refreshMetrics(run, force = false)
           }
@@ -147,6 +151,13 @@ class RunDetailViewModel(
           .collect { execution -> _uiState.update { it.copy(workoutExecution = execution).withDerivedState() } }
       }
     }
+    workoutResponseRepository?.let { repository ->
+      viewModelScope.launch {
+        repository.observeForRun(runId)
+          .catch { _uiState.update { it.copy(error = "Could not interpret workout response.") } }
+          .collect { response -> _uiState.update { it.copy(workoutResponse = response).withDerivedState() } }
+      }
+    }
   }
 
   fun updateForm(change: (FeedbackForm) -> FeedbackForm) {
@@ -182,11 +193,12 @@ class RunDetailViewModel(
   }
 
   private fun refreshMetrics(run: RunSummary, force: Boolean) {
+    val refresher = runMetricsRefresher ?: return
     if (metricsRefreshJob?.isActive == true) return
     metricsRefreshJob = viewModelScope.launch {
       _uiState.update { it.copy(isUpdatingMetrics = true, metricsUpdateError = false) }
       try {
-        val outcome = runMetricsRefresher.refresh(run, force)
+        val outcome = refresher.refresh(run, force)
         _uiState.update {
           it.copy(
             metrics = outcome.metrics,
@@ -265,7 +277,7 @@ class RunDetailViewModel(
     return copy(
       duplicateRecords = duplicateRecords,
       coachingDecision = if (selectedRun != null && feedback != null) {
-        coachingEngine.analyze(selectedRun, canonicalHistory, feedback, workoutExecution)
+        coachingEngine.analyze(selectedRun, canonicalHistory, feedback, workoutExecution, workoutResponse)
       } else null,
     )
   }

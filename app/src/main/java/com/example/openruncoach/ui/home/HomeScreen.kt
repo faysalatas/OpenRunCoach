@@ -19,7 +19,11 @@ import com.example.openruncoach.data.RunFeedbackRepository
 import com.example.openruncoach.data.RunRepository
 import com.example.openruncoach.data.RunSettingsRepository
 import com.example.openruncoach.data.TrainingPlanRepository
-import com.example.openruncoach.data.local.OpenRunCoachDatabase
+import com.example.openruncoach.data.WorkoutResponseRepository
+import com.example.openruncoach.data.WorkoutExecutionRepository
+import com.example.openruncoach.LocalOpenRunCoachEnvironment
+import com.example.openruncoach.domain.coaching.CoachingEngine
+import com.example.openruncoach.domain.plan.TrainingPlanGenerator
 import com.example.openruncoach.ui.components.CoachSummaryCard
 import com.example.openruncoach.ui.components.EmptyState
 import com.example.openruncoach.ui.components.NextWorkoutCard
@@ -36,13 +40,23 @@ fun HomeScreen(
   modifier: Modifier = Modifier,
 ) {
   val context = LocalContext.current
+  val environment = LocalOpenRunCoachEnvironment.current
   val viewModel: HomeViewModel = viewModel {
-    val database = OpenRunCoachDatabase.getInstance(context)
+    val database = environment.database
     val settingsRepository = RunSettingsRepository(context)
+    val completion = com.example.openruncoach.data.GoalCompletionRepository(database, environment.clock)
     HomeViewModel(
-      RunRepository(database.runDao(), HealthConnectRepository(context), settingsRepository),
-      RunFeedbackRepository(database),
-      TrainingPlanRepository(database),
+      RunRepository(database.runDao(), HealthConnectRepository(context), settingsRepository, clock = environment.clock),
+      RunFeedbackRepository(database, environment.clock),
+      TrainingPlanRepository(
+        database,
+        generator = TrainingPlanGenerator(environment.clock),
+        completionRepository = completion,
+        executionRepository = WorkoutExecutionRepository(database, environment.clock),
+      ),
+      WorkoutResponseRepository(database),
+      CoachingEngine(environment.clock),
+      environment.clock,
     )
   }
   val state by viewModel.uiState.collectAsStateWithLifecycle()

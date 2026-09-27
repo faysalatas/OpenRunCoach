@@ -8,6 +8,12 @@ import com.example.openruncoach.domain.RunFeedback
 import com.example.openruncoach.domain.RunSummary
 import com.example.openruncoach.domain.workout.WorkoutExecutionResult
 import com.example.openruncoach.domain.workout.WorkoutExecutionStatus
+import com.example.openruncoach.domain.workout.PaceStability
+import com.example.openruncoach.domain.workout.PrescriptionAdherence
+import com.example.openruncoach.domain.workout.SessionCost
+import com.example.openruncoach.domain.workout.WorkoutCompletionOutcome
+import com.example.openruncoach.domain.workout.WorkoutResponse
+import com.example.openruncoach.domain.metrics.RunContinuityEvidence
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -20,6 +26,7 @@ data class CoachingDecision(
   val score: Int,
   val reasons: List<String>,
   val generatedAt: Instant,
+  val workoutResponse: WorkoutResponse? = null,
 )
 
 class CoachingEngine(private val clock: Clock = Clock.systemUTC()) {
@@ -28,6 +35,7 @@ class CoachingEngine(private val clock: Clock = Clock.systemUTC()) {
     recentRunHistory: List<RunSummary>,
     feedback: RunFeedback,
     executionResult: WorkoutExecutionResult? = null,
+    workoutResponse: WorkoutResponse? = null,
   ): CoachingDecision? {
     val canonicalHistory = recentRunHistory.filter(RunSummary::isCanonical)
     val newestCanonicalRun = canonicalHistory.maxWithOrNull(
@@ -42,7 +50,7 @@ class CoachingEngine(private val clock: Clock = Clock.systemUTC()) {
       painScore(feedback.painLevel) +
       muscleScore(feedback.muscleFatigue) +
       cardioScore(feedback.cardioEffort)
-    val action = when {
+    val baseAction = when {
       feedback.painLevel == PainLevel.SIGNIFICANT -> CoachingAction.RECOVERY
       isAborted(feedback, executionResult) && feedback.painLevel != PainLevel.NONE -> CoachingAction.RECOVERY
       isAborted(feedback, executionResult) -> CoachingAction.REDUCE
@@ -53,15 +61,39 @@ class CoachingEngine(private val clock: Clock = Clock.systemUTC()) {
       score >= -3 -> CoachingAction.REDUCE
       else -> CoachingAction.RECOVERY
     }
+    val action = applyResponseConstraints(baseAction, workoutResponse)
     return CoachingDecision(
       action = action,
       score = score,
       reasons = feedbackReasons(feedback, executionResult) +
         listOfNotNull(executionResult?.explanation) +
+        workoutResponse?.reasons.orEmpty() +
         recentVolumeReason(latestRun, canonicalHistory),
       generatedAt = clock.instant(),
+      workoutResponse = workoutResponse,
     )
   }
+}
+
+private fun applyResponseConstraints(
+  action: CoachingAction,
+  response: WorkoutResponse?,
+): CoachingAction {
+  response ?: return action
+  if (response.pain == PainLevel.SIGNIFICANT) return CoachingAction.RECOVERY
+  if (response.completion == WorkoutCompletionOutcome.ABORTED) return action
+  if (response.sessionCost == SessionCost.HIGH && (
+      response.continuity == RunContinuityEvidence.INTERRUPTED ||
+        response.paceStability == PaceStability.STRONG_FADE ||
+        response.pain != PainLevel.NONE
+      )) return if (action == CoachingAction.RECOVERY) CoachingAction.RECOVERY else CoachingAction.REDUCE
+  val avoidProgression = response.sessionCost == SessionCost.HIGH ||
+    response.sessionCost == SessionCost.ELEVATED ||
+    response.adherence == PrescriptionAdherence.MEANINGFUL_DEVIATION ||
+    response.pain == PainLevel.MILD
+  return if (avoidProgression && (action == CoachingAction.PROGRESS || action == CoachingAction.SMALL_PROGRESS)) {
+    CoachingAction.MAINTAIN
+  } else action
 }
 
 private fun isAborted(feedback: RunFeedback, execution: WorkoutExecutionResult?): Boolean =

@@ -15,11 +15,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.openruncoach.data.AthletePerformanceProfileRepository
-import com.example.openruncoach.data.local.OpenRunCoachDatabase
+import com.example.openruncoach.LocalOpenRunCoachEnvironment
 import com.example.openruncoach.domain.profile.AthletePerformanceProfile
 import com.example.openruncoach.domain.profile.DistanceBenchmark
 import com.example.openruncoach.domain.profile.ProfileBaseline
@@ -36,9 +34,9 @@ import java.util.Locale
 
 @Composable
 fun PerformanceProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
-  val context = LocalContext.current
+  val environment = LocalOpenRunCoachEnvironment.current
   val viewModel: PerformanceProfileViewModel = viewModel {
-    PerformanceProfileViewModel(AthletePerformanceProfileRepository(OpenRunCoachDatabase.getInstance(context)))
+    PerformanceProfileViewModel(environment.profileRepository())
   }
   val state by viewModel.uiState.collectAsStateWithLifecycle()
 

@@ -9,6 +9,17 @@ import com.example.openruncoach.domain.RunSummary
 import com.example.openruncoach.domain.workout.WorkoutComparisonBasis
 import com.example.openruncoach.domain.workout.WorkoutExecutionResult
 import com.example.openruncoach.domain.workout.WorkoutExecutionStatus
+import com.example.openruncoach.domain.metrics.RunContinuityEvidence
+import com.example.openruncoach.domain.workout.EffortResponse
+import com.example.openruncoach.domain.workout.PaceResponse
+import com.example.openruncoach.domain.workout.PaceStability
+import com.example.openruncoach.domain.workout.PrescriptionAdherence
+import com.example.openruncoach.domain.workout.SessionCost
+import com.example.openruncoach.domain.workout.VolumeCompletion
+import com.example.openruncoach.domain.workout.WorkoutCompletionOutcome
+import com.example.openruncoach.domain.workout.WorkoutPurpose
+import com.example.openruncoach.domain.workout.WorkoutResponse
+import com.example.openruncoach.domain.workout.WorkoutResponseConfidence
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -76,6 +87,71 @@ class CoachingEngineTest {
     )
 
     assertEquals(CoachingAction.MAINTAIN, decision?.action)
+  }
+
+  @Test fun elevatedMeaningfulResponseCapsOtherwisePositiveDecisionAtMaintain() {
+    val feedback = feedback(rpe = 6, pain = PainLevel.MILD)
+    val response = response()
+
+    val decision = engine.analyze(
+      run(),
+      listOf(run()),
+      feedback,
+      execution(WorkoutExecutionStatus.COMPLETED_WITH_PRESCRIPTION_DEVIATION),
+      response,
+    )
+
+    assertEquals(CoachingAction.MAINTAIN, decision?.action)
+    assertEquals(response, decision?.workoutResponse)
+  }
+
+  @Test fun cleanHighCostPerformanceRemainsSuccessfulWhilePoorHighCostResponseReduces() {
+    val clean = response().copy(
+      purpose = WorkoutPurpose.GOAL_COMPLETION,
+      adherence = PrescriptionAdherence.AS_PLANNED,
+      paceResponse = PaceResponse.UNKNOWN,
+      continuity = RunContinuityEvidence.CONTINUOUS,
+      paceStability = PaceStability.STABLE,
+      sessionCost = SessionCost.HIGH,
+      pain = PainLevel.NONE,
+    )
+    val poor = clean.copy(
+      continuity = RunContinuityEvidence.INTERRUPTED,
+      paceStability = PaceStability.STRONG_FADE,
+      pain = PainLevel.MILD,
+    )
+
+    val cleanDecision = engine.analyze(
+      run(), listOf(run()), feedback(rpe = 9),
+      execution(WorkoutExecutionStatus.COMPLETED_WITH_PRESCRIPTION_DEVIATION), clean,
+    )
+    val poorDecision = engine.analyze(
+      run(), listOf(run()), feedback(rpe = 9, pain = PainLevel.MILD),
+      execution(WorkoutExecutionStatus.COMPLETED_WITH_PRESCRIPTION_DEVIATION), poor,
+    )
+
+    assertEquals(CoachingAction.MAINTAIN, cleanDecision?.action)
+    assertEquals(CoachingAction.REDUCE, poorDecision?.action)
+  }
+
+  @Test fun workoutResponseNeverRelaxesAnExistingRecoveryDecision() {
+    val poor = response().copy(
+      completion = WorkoutCompletionOutcome.PARTIAL,
+      continuity = RunContinuityEvidence.INTERRUPTED,
+      paceStability = PaceStability.STRONG_FADE,
+      sessionCost = SessionCost.HIGH,
+      pain = PainLevel.NONE,
+    )
+
+    val decision = engine.analyze(
+      run(),
+      listOf(run()),
+      feedback(rpe = 10, muscle = MuscleFatigue.SEVERE, cardio = CardioEffort.LIMIT),
+      execution(WorkoutExecutionStatus.PARTIALLY_COMPLETED),
+      poor,
+    )
+
+    assertEquals(CoachingAction.RECOVERY, decision?.action)
   }
 
   @Test fun ignoresNonCanonicalLatestRunAndNonCanonicalHistoryVolume() {
@@ -150,5 +226,33 @@ class CoachingEngineTest {
       "The easy aerobic stimulus was completed with a small prescription deviation."
     },
     evaluatedAt = generatedAt,
+  )
+
+  private fun response() = WorkoutResponse(
+    runId = "run-1",
+    plannedWorkoutId = "planned",
+    purpose = WorkoutPurpose.AEROBIC_BASE,
+    completion = WorkoutCompletionOutcome.COMPLETED,
+    adherence = PrescriptionAdherence.MEANINGFUL_DEVIATION,
+    volumeCompletion = VolumeCompletion.SUBSTANTIALLY_COMPLETED,
+    effortResponse = EffortResponse.ABOVE_TARGET,
+    paceResponse = PaceResponse.FASTER_THAN_TARGET,
+    continuity = RunContinuityEvidence.UNKNOWN,
+    paceStability = PaceStability.UNKNOWN,
+    sessionCost = SessionCost.ELEVATED,
+    pain = PainLevel.MILD,
+    confidence = WorkoutResponseConfidence.MEDIUM,
+    actualDistanceMeters = 3_780.0,
+    actualDurationSeconds = 1_571,
+    actualPaceSecondsPerKm = 415.0,
+    plannedDistanceMeters = 4_000.0,
+    plannedDurationSeconds = null,
+    plannedPaceMinimumSecondsPerKm = 465.0,
+    plannedPaceMaximumSecondsPerKm = 545.0,
+    plannedRpeMinimum = 3,
+    plannedRpeMaximum = 4,
+    reportedRpe = 6,
+    qualityWorkCompletionFraction = null,
+    reasons = listOf("Effort was higher than planned."),
   )
 }
