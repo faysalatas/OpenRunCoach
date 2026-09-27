@@ -27,22 +27,32 @@ import java.time.Instant
 import java.time.LocalDate
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 
 class TrainingPlanRepository(
   private val database: OpenRunCoachDatabase,
   private val generator: TrainingPlanGenerator = TrainingPlanGenerator(),
   private val completionRepository: GoalCompletionRepository = GoalCompletionRepository(database),
   private val completionService: GoalCompletionMilestoneService = GoalCompletionMilestoneService(),
+  private val executionRepository: WorkoutExecutionRepository = WorkoutExecutionRepository(database),
 ) {
   private val dao = database.trainingPlanDao()
   private val workoutDao = database.coachingWorkflowDao()
 
-  fun observeActivePlan(): Flow<TrainingPlan?> = dao.observeActivePlan().map { entity ->
-    entity?.let { loadPlan(it) }
+  fun observeActivePlan(): Flow<TrainingPlan?> = flow {
+    executionRepository.reconcileExistingCheckouts()
+    emitAll(combine(
+      dao.observeActivePlan(),
+      dao.observeActivePlanExecutionRevision(),
+    ) { entity, _ -> entity?.let { loadPlan(it) } })
   }
 
-  suspend fun getActivePlan(): TrainingPlan? = dao.getActivePlan()?.let { loadPlan(it) }
+  suspend fun getActivePlan(): TrainingPlan? {
+    executionRepository.reconcileExistingCheckouts()
+    return dao.getActivePlan()?.let { loadPlan(it) }
+  }
 
   suspend fun generate(goal: TrainingGoal, profile: AthletePerformanceProfile): TrainingPlan {
     val milestone = completionRepository.refreshReadiness(goal, profile)
@@ -181,6 +191,9 @@ class TrainingPlanRepository(
         "Missing structured workout ${reference.workoutId} for plan $planId"
       }
     }
+    val executions = workoutDao.getExecutionsForPlan(planId).associate { execution ->
+      execution.plannedWorkoutId to execution.toDomain()
+    }
     return TrainingPlanPersistenceMapper.toDomain(
       TrainingPlanSnapshot(
         entity,
@@ -190,6 +203,7 @@ class TrainingPlanRepository(
         references,
       ),
       workouts.mapValues { StructuredWorkoutPersistenceMapper.toDomain(it.value) },
+      executions,
     )
   }
 }
@@ -240,6 +254,7 @@ internal object TrainingPlanPersistenceMapper {
   fun toDomain(
     snapshot: TrainingPlanSnapshot,
     workoutsById: Map<String, com.example.openruncoach.domain.workout.StructuredWorkout>,
+    executionsByWorkoutId: Map<String, com.example.openruncoach.domain.workout.WorkoutExecutionResult> = emptyMap(),
   ): TrainingPlan {
     val reasons = snapshot.reasons.groupBy { it.weekIndex }
     val references = snapshot.workouts.groupBy { it.weekIndex }
@@ -258,6 +273,7 @@ internal object TrainingPlanPersistenceMapper {
               WeeklyWorkoutSlot.valueOf(reference.slot),
               requireNotNull(workoutsById[reference.workoutId]),
               reference.generationReason,
+              executionsByWorkoutId[reference.workoutId],
             )
           },
           week.targetDistanceMeters,

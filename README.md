@@ -34,6 +34,7 @@ The long-term goal is a transparent, explainable running coach inspired by feedb
   - `RECOVERY`
 - Persistent baseline workouts, pre-run check-ins, and workout adjustments
 - Explicit persistent workout lifecycle states
+- Purpose-aware persisted workout execution results with visible Plan completion state
 - Rule-based readiness evaluation and safety overrides
 - Basic next-workout generation in the domain workflow
 - Deterministic developer coaching simulator with built-in scenarios
@@ -46,7 +47,7 @@ The long-term goal is a transparent, explainable running coach inspired by feedb
 - Provider-independent structured workouts with ordered segments, repeat blocks, intensity guidance, estimates, purposes, and cues
 - Persistent deterministic training plans with weekly navigation, explainable blocks, recovery weeks, and goal-aware workout selection
 
-OpenRunCoach can generate a base plan explicitly from an active goal and the current Performance Profile. Automatic matching between a planned workout and an imported Health Connect run is not implemented yet. A completed canonical run is nevertheless evaluated against an active Complete Distance goal when post-run feedback is saved, regardless of the planned workout's name. Broader production plan adaptation after imports is not yet implemented; the domain simulator exercises that completed-workout coaching loop today.
+OpenRunCoach can generate a base plan explicitly from an active goal and the current Performance Profile. On post-run checkout, a run is associated automatically only when it is the sole canonical run for the date and exactly one uncompleted active-plan prescription is compatible with its observed distance or duration. Ambiguous dates, duplicate/non-canonical records, incompatible prescriptions, and runs predating the prescription remain unassociated. Existing unambiguous checkouts are reconciled into the same persisted execution association when a plan is loaded. A completed canonical run is also evaluated independently against an active Complete Distance goal, regardless of the planned workout's name. Broader production plan adaptation after imports is not yet implemented; the domain simulator exercises that completed-workout coaching loop today.
 
 ## Core product idea
 
@@ -163,13 +164,15 @@ Choosing a date creates a planned Completion Run milestone without changing read
 
 The completion date is a forecast milestone, not a deadline for the goal. Passing it without demonstrated success leaves the goal active and allows another attempt while useful training continues. A qualifying result before the planned date completes the goal immediately, and no repeat attempt is required. The coach may explain that more preparation is useful, but it never silently moves a user-selected date.
 
-Database version 15 removes the former goal date column and moves scheduling state onto `training_plans`. During migration, an existing active Complete Distance plan receives the old persisted Completion Run date, or the legacy goal date when no explicit milestone date exists. Legacy dates on other goal types are not treated as Completion Run intent because that meaning is ambiguous; the goal itself is preserved without a date. The migration retains goals, distinct assessment reasons in deterministic per-goal order, plans, weeks, blocks, and workout references without destructive fallback.
+Database version 15 removes the former goal date column and moves scheduling state onto `training_plans`. During migration, an existing active Complete Distance plan receives the old persisted Completion Run date, or the legacy goal date when no explicit milestone date exists. Legacy dates on other goal types are not treated as Completion Run intent because that meaning is ambiguous; the goal itself is preserved without a date. The migration retains goals, distinct assessment reasons in deterministic per-goal order, plans, weeks, blocks, and workout references without destructive fallback. Database version 16 adds the one-to-one persisted workout execution result and its actual-run association.
 
 `GoalCompletionEvaluator` uses the canonical completed run, unified `RunMetrics`, lifecycle state, and feedback to explain whether the full continuous target was demonstrated; a 4.8 km run and a 5 km run with a clearly sustained walking/stopped interval do not complete a continuous 5K goal. Any qualifying 5.00+ km run completes the goal immediately regardless of workout name, clears the future Completion Run milestone, and completes the active plan. If history already demonstrates the distance, the UI says so and suggests Improve Performance or Target Time without changing the user's selection.
 
 For `IMPROVE_PERFORMANCE` and `TARGET_TIME`, race distance is not a training-distance cap. Longer aerobic runs may exceed the race distance, and supported athletes can receive sustainable goal-distance practice before a final target-time attempt. Weekly displayed distance is the sum of explicit prescribed segment distances, while displayed weekly duration is derived when every segment has enough duration or pace information.
 
 Every week stores its focus, load classification, targets, and generation reasons. Each generated workout keeps its purpose, cues, structured segments, and a reason for inclusion. The Home screen shows only a compact current-week summary and link to the full plan.
+
+Normal training prescriptions allow purpose-aware real-world variation. Workout completion and prescription adherence are distinct: a slightly short easy or recovery run can be completed with a minor distance deviation, while an RPE or trusted pace outside the intended easy range remains a meaningful prescription deviation without erasing the completed training volume. Interval, stride, threshold, and drill adherence depends on the relevant quality work when that evidence exists. Actual distance and duration remain authoritative for volume and history; accepting a session never replaces actual metrics with prescribed values. Persisted execution results keep as-planned, minor-deviation, meaningful-prescription-deviation, partial, and aborted outcomes separate, and completed sessions are visibly marked Completed in the Plan after restart. Strict Goal achievement remains a separate evaluation against the observed distance and continuity criteria.
 
 ## Pre-run check-in
 
@@ -413,7 +416,7 @@ The current developer screen is a timeline runner; shared production screens and
 - [x] Training Data Assessment and goal-specific distance semantics
 - [ ] Pre-run Check-in / Adaptive Workout Adjustment
 - [x] Basic pre-run check-in and duration adjustment
-- [ ] Planned versus actual workout matching
+- [x] Unambiguous same-date planned versus actual workout association at checkout
 - [ ] Post-run checkout lifecycle integration
 - [ ] Post-run Adaptive Plan Progression
 - [ ] Threshold / Zone Estimation

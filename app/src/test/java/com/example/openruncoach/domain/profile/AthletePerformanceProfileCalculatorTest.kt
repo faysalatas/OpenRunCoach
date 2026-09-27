@@ -12,6 +12,9 @@ import com.example.openruncoach.domain.metrics.MetricValue
 import com.example.openruncoach.domain.metrics.RunMetrics
 import com.example.openruncoach.domain.metrics.RunTimeSeries
 import com.example.openruncoach.domain.metrics.TimedMetricSample
+import com.example.openruncoach.domain.workout.WorkoutComparisonBasis
+import com.example.openruncoach.domain.workout.WorkoutExecutionResult
+import com.example.openruncoach.domain.workout.WorkoutExecutionStatus
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -259,6 +262,37 @@ class AthletePerformanceProfileCalculatorTest {
   }
 
   @Test
+  fun minorDeviationRemainsCompletedEvidenceWhileActualVolumeStaysAuthoritative() {
+    val run = run("minor", 1, distance = 3_780.0, duration = 1_720)
+    val profile = calculate(
+      runs = listOf(run),
+      metrics = listOf(metrics(run)),
+      feedback = listOf(feedback(run)),
+      executions = listOf(execution(run, WorkoutExecutionStatus.COMPLETED_WITH_MINOR_DEVIATION)),
+    )
+
+    assertEquals(1.0, profile.feedback.completedFraction!!, 0.01)
+    assertEquals(3_780.0, profile.distanceLast7DaysMeters, 0.01)
+    assertEquals(1, profile.typicalEasyPace?.contributingRuns)
+  }
+
+  @Test
+  fun automaticPartialClassificationOverridesOptimisticCheckoutForProgressionEvidence() {
+    val run = run("partial", 1, distance = 2_100.0)
+    val profile = calculate(
+      runs = listOf(run),
+      metrics = listOf(metrics(run)),
+      feedback = listOf(feedback(run)),
+      executions = listOf(execution(run, WorkoutExecutionStatus.PARTIALLY_COMPLETED)),
+    )
+
+    assertEquals(1.0, profile.feedback.partialFraction!!, 0.01)
+    assertEquals(0.0, profile.feedback.completedFraction!!, 0.01)
+    assertNull(profile.typicalEasyPace)
+    assertEquals(2_100.0, profile.distanceLast7DaysMeters, 0.01)
+  }
+
+  @Test
   fun recentContinuitySummarizesWalkingAndContinuousEvidence() {
     val continuous = run("continuous", 2, distance = 4_760.0)
     val walking = run("walking", 1, distance = 5_000.0)
@@ -286,7 +320,8 @@ class AthletePerformanceProfileCalculatorTest {
     runs: List<RunSummary> = emptyList(),
     metrics: List<RunMetrics> = emptyList(),
     feedback: List<RunFeedback> = emptyList(),
-  ) = calculator.calculate(runs, metrics, feedback)
+    executions: List<WorkoutExecutionResult> = emptyList(),
+  ) = calculator.calculate(runs, metrics, feedback, executions)
 
   private fun run(
     id: String,
@@ -351,6 +386,20 @@ class AthletePerformanceProfileCalculatorTest {
     notes = null,
     createdAt = run.endTime,
     updatedAt = run.endTime,
+  )
+
+  private fun execution(run: RunSummary, status: WorkoutExecutionStatus) = WorkoutExecutionResult(
+    plannedWorkoutId = "planned-${run.healthConnectRecordId}",
+    actualRunId = run.healthConnectRecordId,
+    status = status,
+    comparisonBasis = WorkoutComparisonBasis.ORIGINAL_PRESCRIPTION,
+    intendedDistanceMeters = 4_000.0,
+    intendedDurationSeconds = null,
+    actualDistanceMeters = run.distanceMeters,
+    actualDurationSeconds = run.durationSeconds,
+    qualityWorkCompletionFraction = null,
+    explanation = "Fixture execution.",
+    evaluatedAt = run.endTime,
   )
 
   private fun metric(value: Double) = MetricValue(value, MetricSource.HEALTH_CONNECT, MetricConfidence.HIGH)

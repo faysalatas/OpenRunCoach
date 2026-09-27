@@ -45,6 +45,8 @@ import com.example.openruncoach.domain.workout.WorkoutBlock
 import com.example.openruncoach.domain.workout.WorkoutDescriptionFormatter
 import com.example.openruncoach.domain.workout.WorkoutEstimateCalculator
 import com.example.openruncoach.domain.workout.WorkoutPurpose
+import com.example.openruncoach.domain.workout.WorkoutExecutionResult
+import com.example.openruncoach.domain.workout.WorkoutExecutionStatus
 import com.example.openruncoach.ui.common.formatDistance
 import com.example.openruncoach.ui.common.formatDuration
 import com.example.openruncoach.ui.common.formatUserDate
@@ -270,6 +272,20 @@ private fun WeekContent(week: TrainingWeek, block: TrainingBlock?, onOpenWorkout
             "${workout.date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault())} · ${workout.name}",
             style = MaterialTheme.typography.titleMedium,
           )
+          entry.executionResult?.let { execution ->
+            Text(
+              when (execution.status) {
+                WorkoutExecutionStatus.COMPLETED_AS_PLANNED,
+                WorkoutExecutionStatus.COMPLETED_WITH_MINOR_DEVIATION,
+                WorkoutExecutionStatus.COMPLETED_WITH_PRESCRIPTION_DEVIATION -> "✓ Completed"
+                WorkoutExecutionStatus.PARTIALLY_COMPLETED -> "Partially completed"
+                WorkoutExecutionStatus.ABORTED -> "Stopped"
+              },
+              color = if (execution.isCompleted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+              style = MaterialTheme.typography.titleSmall,
+            )
+            Text(execution.actualPlannedSummary(), style = MaterialTheme.typography.bodySmall)
+          }
           val segments = workout.blocks.flatMap { it.segments }
           val simpleSegment = segments.singleOrNull()
           val simpleDistance = simpleSegment?.completion as? DistanceCompletion
@@ -362,3 +378,19 @@ private fun GoalType.displayName() = when (this) {
 
 private fun formatCompletionDate(date: LocalDate): String =
   "${date.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.getDefault())}, ${formatUserDate(date)}"
+
+private fun WorkoutExecutionResult.actualPlannedSummary(): String {
+  val targetLabel = if (comparisonBasis == com.example.openruncoach.domain.workout.WorkoutComparisonBasis.ADJUSTED_PRESCRIPTION) {
+    "adjusted"
+  } else {
+    "planned"
+  }
+  return when {
+    intendedDistanceMeters != null ->
+      "${formatDistance(actualDistanceMeters)} actual / ${formatDistance(intendedDistanceMeters)} $targetLabel"
+    intendedDurationSeconds != null ->
+      "${formatDuration(actualDurationSeconds)} actual / ${formatDuration(intendedDurationSeconds)} $targetLabel"
+    actualDistanceMeters != null -> "${formatDistance(actualDistanceMeters)} actual"
+    else -> "${formatDuration(actualDurationSeconds)} actual"
+  }
+}

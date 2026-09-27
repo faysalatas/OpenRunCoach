@@ -33,9 +33,18 @@ class WorkoutLifecycleServiceTest {
     assertNotNull(lifecycle.preRunCheckIn)
     assertNotNull(lifecycle.adjustmentDecision)
 
-    lifecycle = service.transition(lifecycle, WorkoutLifecycleEvent.RunCompleted(scenario.simulatedActualRun))
+    val execution = WorkoutAdherenceEvaluator(
+      Clock.fixed(SimulationFixtures.fixedInstant, ZoneOffset.UTC)
+    ).evaluate(
+      scenario.baselinePlannedWorkout,
+      result.adjustmentDecision.adjustedWorkout,
+      scenario.simulatedActualRun,
+      scenario.postRunFeedback,
+    )
+    lifecycle = service.transition(lifecycle, WorkoutLifecycleEvent.RunCompleted(scenario.simulatedActualRun, execution))
     assertEquals(WorkoutLifecycleState.COMPLETED, lifecycle.state)
     assertEquals(scenario.simulatedActualRun, lifecycle.actualRun)
+    assertEquals(execution, lifecycle.executionResult)
 
     lifecycle = service.transition(lifecycle, WorkoutLifecycleEvent.RequireCheckout)
     assertEquals(WorkoutLifecycleState.CHECKOUT_REQUIRED, lifecycle.state)

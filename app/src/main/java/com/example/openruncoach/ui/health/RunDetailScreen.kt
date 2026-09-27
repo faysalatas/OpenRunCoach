@@ -34,6 +34,7 @@ import com.example.openruncoach.data.RunMetricsAutoRefreshCoordinator
 import com.example.openruncoach.data.RunSettingsRepository
 import com.example.openruncoach.data.GoalCompletionRepository
 import com.example.openruncoach.data.TrainingGoalRepository
+import com.example.openruncoach.data.WorkoutExecutionRepository
 import com.example.openruncoach.data.local.OpenRunCoachDatabase
 import com.example.openruncoach.domain.CardioEffort
 import com.example.openruncoach.domain.CompletionStatus
@@ -80,6 +81,7 @@ fun RunDetailScreen(
       metricsRefresher,
       TrainingGoalRepository(database, profileRepository),
       GoalCompletionRepository(database),
+      WorkoutExecutionRepository(database, athleteProfileRepository = profileRepository),
     )
   }
   val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -107,6 +109,13 @@ fun RunDetailScreen(
           Button(onClick = { onInspectHealthData(runId) }) { Text("Inspect Health Data") }
         }
         FeedbackCard(state, viewModel)
+        state.workoutExecution?.let { execution ->
+          DetailCard("Planned workout") {
+            Text(if (execution.isCompleted) "✓ Completed" else execution.status.displayName(), style = MaterialTheme.typography.titleMedium)
+            Text(execution.actualPlannedSummary())
+            Text(execution.explanation, style = MaterialTheme.typography.bodySmall)
+          }
+        }
         state.feedback?.let { CoachCard(state) { onViewAnalysis(runId) } }
         SourceCard(state, viewModel::toggleSourceDetails)
       }
@@ -350,6 +359,30 @@ private fun PainLevel.displayName() = when (this) {
 }
 private fun MuscleFatigue.displayName() = name.lowercase().replaceFirstChar(Char::titlecase)
 private fun CompletionStatus.displayName() = name.lowercase().replaceFirstChar(Char::titlecase)
+private fun com.example.openruncoach.domain.workout.WorkoutExecutionStatus.displayName() =
+  when (this) {
+    com.example.openruncoach.domain.workout.WorkoutExecutionStatus.COMPLETED_AS_PLANNED -> "Completed as planned"
+    com.example.openruncoach.domain.workout.WorkoutExecutionStatus.COMPLETED_WITH_MINOR_DEVIATION -> "Completed with minor deviation"
+    com.example.openruncoach.domain.workout.WorkoutExecutionStatus.COMPLETED_WITH_PRESCRIPTION_DEVIATION -> "Completed with prescription deviation"
+    com.example.openruncoach.domain.workout.WorkoutExecutionStatus.PARTIALLY_COMPLETED -> "Partially completed"
+    com.example.openruncoach.domain.workout.WorkoutExecutionStatus.ABORTED -> "Stopped"
+  }
+
+private fun com.example.openruncoach.domain.workout.WorkoutExecutionResult.actualPlannedSummary(): String {
+  val targetLabel = if (comparisonBasis == com.example.openruncoach.domain.workout.WorkoutComparisonBasis.ADJUSTED_PRESCRIPTION) {
+    "adjusted"
+  } else {
+    "planned"
+  }
+  return when {
+    intendedDistanceMeters != null ->
+      "${formatDistance(actualDistanceMeters)} actual / ${formatDistance(intendedDistanceMeters)} $targetLabel"
+    intendedDurationSeconds != null ->
+      "${formatDuration(actualDurationSeconds)} actual / ${formatDuration(intendedDurationSeconds)} $targetLabel"
+    actualDistanceMeters != null -> "${formatDistance(actualDistanceMeters)} actual"
+    else -> "${formatDuration(actualDurationSeconds)} actual"
+  }
+}
 
 private fun MetricSource.displayName() = when (this) {
   MetricSource.HEALTH_CONNECT -> "Health Connect"

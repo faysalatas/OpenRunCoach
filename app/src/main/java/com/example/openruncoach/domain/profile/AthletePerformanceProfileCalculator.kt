@@ -11,6 +11,8 @@ import com.example.openruncoach.domain.metrics.RunMetrics
 import com.example.openruncoach.domain.metrics.RunContinuityEvaluator
 import com.example.openruncoach.domain.metrics.RunContinuityEvidence
 import com.example.openruncoach.domain.metrics.metricValues
+import com.example.openruncoach.domain.workout.WorkoutExecutionResult
+import com.example.openruncoach.domain.workout.WorkoutExecutionStatus
 import java.time.Clock
 import java.time.DayOfWeek
 import java.time.Duration
@@ -45,6 +47,7 @@ class AthletePerformanceProfileCalculator(
     runs: List<RunSummary>,
     metrics: List<RunMetrics>,
     feedback: List<RunFeedback>,
+    executionResults: List<WorkoutExecutionResult> = emptyList(),
   ): AthletePerformanceProfile {
     val now = clock.instant()
     val canonicalRuns = runs.filter(RunSummary::isCanonical)
@@ -53,6 +56,7 @@ class AthletePerformanceProfileCalculator(
       .sortedBy(RunSummary::startTime)
     val metricsByRun = metrics.associateBy(RunMetrics::runId)
     val feedbackByRun = feedback.associateBy(RunFeedback::runId)
+    val executionByRun = executionResults.associateBy(WorkoutExecutionResult::actualRunId)
     val recent7 = canonicalRuns.inWindow(now.minus(Duration.ofDays(7)), now)
     val recent28 = canonicalRuns.inWindow(now.minus(Duration.ofDays(28)), now)
     val currentWeekStart = now.atZone(zoneId).toLocalDate().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
@@ -62,7 +66,13 @@ class AthletePerformanceProfileCalculator(
     }
     val easyRuns = recent28.mapNotNull { run ->
       val runFeedback = feedbackByRun[run.healthConnectRecordId] ?: return@mapNotNull null
-      if (!qualifiesAsEasy(run, metricsByRun[run.healthConnectRecordId], runFeedback)) return@mapNotNull null
+      val qualifies = qualifiesAsEasy(
+        run,
+        metricsByRun[run.healthConnectRecordId],
+        runFeedback,
+        executionByRun[run.healthConnectRecordId],
+      )
+      if (!qualifies) return@mapNotNull null
       EasyRun(run, metricsByRun[run.healthConnectRecordId])
     }
     val easyPaces = easyRuns.mapNotNull { it.paceSecondsPerKm }
@@ -104,7 +114,7 @@ class AthletePerformanceProfileCalculator(
       vo2MaxTrend = fitnessTrend(vo2Values.map { it.second }),
       typicalEasyCadence = baseline(easyCadences, "completed easy runs with unified cadence data"),
       recentCadenceTrend = valueTrend(easyCadences, config.cadenceStableSpm),
-      feedback = feedbackAggregates(feedbackRecent),
+      feedback = feedbackAggregates(feedbackRecent, executionByRun),
       calculatedAt = now,
       profileConfidence = confidence.first,
       confidenceReasons = confidence.second,
@@ -131,9 +141,14 @@ class AthletePerformanceProfileCalculator(
     )
   }
 
-  private fun qualifiesAsEasy(run: RunSummary, metrics: RunMetrics?, feedback: RunFeedback): Boolean {
+  private fun qualifiesAsEasy(
+    run: RunSummary,
+    metrics: RunMetrics?,
+    feedback: RunFeedback,
+    execution: WorkoutExecutionResult?,
+  ): Boolean {
     val values = runValue(run, metrics)
-    return feedback.completionStatus == CompletionStatus.COMPLETED &&
+    return effectiveCompletion(feedback, execution) == CompletionStatus.COMPLETED &&
       feedback.rpe <= 4 &&
       feedback.cardioEffort in setOf(CardioEffort.EASY, CardioEffort.APPROPRIATE) &&
       feedback.painLevel != PainLevel.SIGNIFICANT &&
@@ -345,19 +360,34 @@ class AthletePerformanceProfileCalculator(
     }
   }
 
-  private fun feedbackAggregates(feedback: List<RunFeedback>): FeedbackAggregates {
+  private fun feedbackAggregates(
+    feedback: List<RunFeedback>,
+    executionByRun: Map<String, WorkoutExecutionResult>,
+  ): FeedbackAggregates {
     val count = feedback.size
     fun fraction(predicate: (RunFeedback) -> Boolean) = if (count == 0) null else feedback.count(predicate).toDouble() / count
     return FeedbackAggregates(
       feedbackCount = count,
       averageRpe = feedback.map { it.rpe.toDouble() }.averageOrNull(),
-      completedFraction = fraction { it.completionStatus == CompletionStatus.COMPLETED },
-      partialFraction = fraction { it.completionStatus == CompletionStatus.PARTIAL },
-      abortedFraction = fraction { it.completionStatus == CompletionStatus.ABORTED },
+      completedFraction = fraction { effectiveCompletion(it, executionByRun[it.runId]) == CompletionStatus.COMPLETED },
+      partialFraction = fraction { effectiveCompletion(it, executionByRun[it.runId]) == CompletionStatus.PARTIAL },
+      abortedFraction = fraction { effectiveCompletion(it, executionByRun[it.runId]) == CompletionStatus.ABORTED },
       painFrequency = fraction { it.painLevel != PainLevel.NONE },
       significantPainFrequency = fraction { it.painLevel == PainLevel.SIGNIFICANT },
       averageReadiness = feedback.mapNotNull { it.readiness?.toDouble() }.averageOrNull(),
     )
+  }
+
+  private fun effectiveCompletion(
+    feedback: RunFeedback,
+    execution: WorkoutExecutionResult?,
+  ): CompletionStatus = when (execution?.status) {
+    WorkoutExecutionStatus.COMPLETED_AS_PLANNED,
+    WorkoutExecutionStatus.COMPLETED_WITH_MINOR_DEVIATION,
+    WorkoutExecutionStatus.COMPLETED_WITH_PRESCRIPTION_DEVIATION -> CompletionStatus.COMPLETED
+    WorkoutExecutionStatus.PARTIALLY_COMPLETED -> CompletionStatus.PARTIAL
+    WorkoutExecutionStatus.ABORTED -> CompletionStatus.ABORTED
+    null -> feedback.completionStatus
   }
 
   private fun runValue(run: RunSummary, metrics: RunMetrics?) = RunValues(

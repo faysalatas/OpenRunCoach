@@ -6,6 +6,9 @@ import com.example.openruncoach.domain.MuscleFatigue
 import com.example.openruncoach.domain.PainLevel
 import com.example.openruncoach.domain.RunFeedback
 import com.example.openruncoach.domain.RunSummary
+import com.example.openruncoach.domain.workout.WorkoutComparisonBasis
+import com.example.openruncoach.domain.workout.WorkoutExecutionResult
+import com.example.openruncoach.domain.workout.WorkoutExecutionStatus
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -53,6 +56,26 @@ class CoachingEngineTest {
 
   @Test fun abortedWorkoutWithoutPainOverridesScore() {
     assertAction(CoachingAction.REDUCE, 2, feedback(rpe = 1, completion = CompletionStatus.ABORTED, pain = PainLevel.NONE))
+  }
+
+  @Test fun minorPrescriptionDeviationKeepsCompletedEvidencePositive() {
+    val execution = execution(WorkoutExecutionStatus.COMPLETED_WITH_MINOR_DEVIATION)
+
+    val decision = engine.analyze(run(), listOf(run()), feedback(rpe = 3), execution)
+
+    assertEquals(CoachingAction.PROGRESS, decision?.action)
+    assertTrue(decision!!.reasons.contains(execution.explanation))
+  }
+
+  @Test fun partialExecutionDoesNotProgressOnlyBecauseTheOtherResponseSignalsAreGood() {
+    val decision = engine.analyze(
+      run(),
+      listOf(run()),
+      feedback(rpe = 3),
+      execution(WorkoutExecutionStatus.PARTIALLY_COMPLETED),
+    )
+
+    assertEquals(CoachingAction.MAINTAIN, decision?.action)
   }
 
   @Test fun ignoresNonCanonicalLatestRunAndNonCanonicalHistoryVolume() {
@@ -109,5 +132,23 @@ class CoachingEngineTest {
     notes = null,
     createdAt = generatedAt,
     updatedAt = generatedAt,
+  )
+
+  private fun execution(status: WorkoutExecutionStatus) = WorkoutExecutionResult(
+    plannedWorkoutId = "planned",
+    actualRunId = "run-1",
+    status = status,
+    comparisonBasis = WorkoutComparisonBasis.ORIGINAL_PRESCRIPTION,
+    intendedDistanceMeters = 4_000.0,
+    intendedDurationSeconds = null,
+    actualDistanceMeters = if (status == WorkoutExecutionStatus.PARTIALLY_COMPLETED) 2_100.0 else 3_780.0,
+    actualDurationSeconds = 1_800,
+    qualityWorkCompletionFraction = null,
+    explanation = if (status == WorkoutExecutionStatus.PARTIALLY_COMPLETED) {
+      "Only part of the intended easy aerobic stimulus was completed."
+    } else {
+      "The easy aerobic stimulus was completed with a small prescription deviation."
+    },
+    evaluatedAt = generatedAt,
   )
 }

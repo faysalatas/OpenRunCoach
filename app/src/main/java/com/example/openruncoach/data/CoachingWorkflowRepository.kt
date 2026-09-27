@@ -18,6 +18,7 @@ import com.example.openruncoach.domain.workout.ReadinessStatus
 import com.example.openruncoach.domain.workout.RecentTrainingVolume
 import com.example.openruncoach.domain.workout.SorenessLevel
 import com.example.openruncoach.domain.workout.WorkoutAdjustmentDecision
+import com.example.openruncoach.domain.workout.WorkoutExecutionResult
 import com.example.openruncoach.domain.workout.WorkoutType
 import com.example.openruncoach.domain.workout.WorkoutLifecycle
 import com.example.openruncoach.domain.workout.WorkoutLifecycleEvent
@@ -38,6 +39,7 @@ data class PersistedWorkoutLifecycle(
   val baselineWorkout: PlannedWorkout,
   val checkIn: PreRunCheckIn?,
   val adjustmentDecision: WorkoutAdjustmentDecision?,
+  val executionResult: WorkoutExecutionResult?,
   val lifecycleState: WorkoutLifecycleState,
 ) {
   fun toDomainLifecycle() = WorkoutLifecycle(
@@ -45,6 +47,7 @@ data class PersistedWorkoutLifecycle(
     state = lifecycleState,
     preRunCheckIn = checkIn,
     adjustmentDecision = adjustmentDecision,
+    executionResult = executionResult,
   )
 }
 
@@ -60,12 +63,17 @@ class CoachingWorkflowRepository(
 
   val currentLifecycle: Flow<PersistedWorkoutLifecycle?> = dao.observeLatestPlannedWorkout().flatMapLatest { entity ->
     if (entity == null) flowOf(null)
-    else combine(dao.observeCheckIn(entity.workout.id), dao.observeAdjustment(entity.workout.id)) { checkIn, adjustment ->
+    else combine(
+      dao.observeCheckIn(entity.workout.id),
+      dao.observeAdjustment(entity.workout.id),
+      dao.observeExecution(entity.workout.id),
+    ) { checkIn, adjustment, execution ->
       val baseline = StructuredWorkoutPersistenceMapper.toDomain(entity)
       PersistedWorkoutLifecycle(
         baseline,
         checkIn?.toDomain(),
         adjustment?.toDomain(baseline),
+        execution?.toDomain(),
         WorkoutLifecycleState.valueOf(entity.workout.lifecycleState),
       )
     }

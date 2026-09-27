@@ -3,6 +3,7 @@ package com.example.openruncoach.domain.plan
 import com.example.openruncoach.domain.profile.ProfileConfidence
 import com.example.openruncoach.domain.goal.GoalCompletionMilestone
 import com.example.openruncoach.domain.workout.StructuredWorkout
+import com.example.openruncoach.domain.workout.WorkoutExecutionResult
 import java.time.Instant
 import java.time.LocalDate
 
@@ -18,6 +19,7 @@ data class PlannedWorkoutEntry(
   val slot: WeeklyWorkoutSlot,
   val workout: StructuredWorkout,
   val generationReason: String,
+  val executionResult: WorkoutExecutionResult? = null,
 )
 
 data class TrainingWeek(

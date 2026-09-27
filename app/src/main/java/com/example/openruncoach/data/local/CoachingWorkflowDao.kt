@@ -48,6 +48,55 @@ interface CoachingWorkflowDao {
   @Query("SELECT * FROM workout_adjustments WHERE plannedWorkoutId = :plannedWorkoutId LIMIT 1")
   fun observeAdjustment(plannedWorkoutId: String): Flow<WorkoutAdjustmentEntity?>
 
+  @Query("SELECT * FROM workout_adjustments WHERE plannedWorkoutId = :plannedWorkoutId LIMIT 1")
+  suspend fun getAdjustment(plannedWorkoutId: String): WorkoutAdjustmentEntity?
+
+  @Query("SELECT * FROM workout_executions WHERE plannedWorkoutId = :plannedWorkoutId LIMIT 1")
+  fun observeExecution(plannedWorkoutId: String): Flow<WorkoutExecutionEntity?>
+
+  @Query("SELECT * FROM workout_executions WHERE actualRunId = :actualRunId LIMIT 1")
+  fun observeExecutionForRun(actualRunId: String): Flow<WorkoutExecutionEntity?>
+
+  @Query("SELECT * FROM workout_executions WHERE actualRunId = :actualRunId LIMIT 1")
+  suspend fun getExecutionForRun(actualRunId: String): WorkoutExecutionEntity?
+
+  @Query("SELECT * FROM workout_executions")
+  suspend fun getAllExecutions(): List<WorkoutExecutionEntity>
+
+  @Transaction
+  @Query(
+    """SELECT planned_workouts.* FROM planned_workouts
+      INNER JOIN training_plan_workouts ON training_plan_workouts.workoutId = planned_workouts.id
+      INNER JOIN training_plans ON training_plans.id = training_plan_workouts.planId
+      INNER JOIN training_goals ON training_goals.id = training_plans.goalId
+      LEFT JOIN workout_executions ON workout_executions.plannedWorkoutId = planned_workouts.id
+      WHERE training_plans.status = 'ACTIVE' AND training_goals.status = 'ACTIVE' AND planned_workouts.isPreview = 0
+        AND planned_workouts.dateEpochDay = :dateEpochDay AND planned_workouts.type != 'REST'
+        AND workout_executions.plannedWorkoutId IS NULL
+      ORDER BY planned_workouts.createdAtEpochMillis DESC"""
+  )
+  suspend fun getUnassociatedActivePlanWorkouts(dateEpochDay: Long): List<PlannedWorkoutRecord>
+
+  @Transaction
+  @Query(
+    """SELECT planned_workouts.* FROM planned_workouts
+      INNER JOIN training_plan_workouts ON training_plan_workouts.workoutId = planned_workouts.id
+      INNER JOIN training_plans ON training_plans.id = training_plan_workouts.planId
+      INNER JOIN training_goals ON training_goals.id = training_plans.goalId
+      LEFT JOIN workout_executions ON workout_executions.plannedWorkoutId = planned_workouts.id
+      WHERE training_plans.status = 'ACTIVE' AND training_goals.status = 'ACTIVE' AND planned_workouts.isPreview = 0
+        AND planned_workouts.type != 'REST' AND workout_executions.plannedWorkoutId IS NULL
+      ORDER BY planned_workouts.dateEpochDay, planned_workouts.createdAtEpochMillis DESC"""
+  )
+  suspend fun getAllUnassociatedActivePlanWorkouts(): List<PlannedWorkoutRecord>
+
+  @Query(
+    """SELECT workout_executions.* FROM workout_executions
+      INNER JOIN training_plan_workouts ON training_plan_workouts.workoutId = workout_executions.plannedWorkoutId
+      WHERE training_plan_workouts.planId = :planId"""
+  )
+  suspend fun getExecutionsForPlan(planId: String): List<WorkoutExecutionEntity>
+
   @Query("SELECT COUNT(*) FROM planned_workouts WHERE isPreview = 0")
   suspend fun workoutCount(): Int
 
@@ -71,6 +120,7 @@ interface CoachingWorkflowDao {
   @Upsert suspend fun upsertCues(cues: List<WorkoutCueEntity>)
   @Upsert suspend fun upsertCheckIn(checkIn: PreRunCheckInEntity)
   @Upsert suspend fun upsertAdjustment(adjustment: WorkoutAdjustmentEntity)
+  @Upsert suspend fun upsertExecution(execution: WorkoutExecutionEntity)
 
   @Query("DELETE FROM workout_blocks WHERE workoutId = :workoutId")
   suspend fun deleteBlocks(workoutId: String)

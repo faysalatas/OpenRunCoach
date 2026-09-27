@@ -6,6 +6,8 @@ import com.example.openruncoach.domain.MuscleFatigue
 import com.example.openruncoach.domain.PainLevel
 import com.example.openruncoach.domain.RunFeedback
 import com.example.openruncoach.domain.RunSummary
+import com.example.openruncoach.domain.workout.WorkoutExecutionResult
+import com.example.openruncoach.domain.workout.WorkoutExecutionStatus
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -25,6 +27,7 @@ class CoachingEngine(private val clock: Clock = Clock.systemUTC()) {
     latestRun: RunSummary,
     recentRunHistory: List<RunSummary>,
     feedback: RunFeedback,
+    executionResult: WorkoutExecutionResult? = null,
   ): CoachingDecision? {
     val canonicalHistory = recentRunHistory.filter(RunSummary::isCanonical)
     val newestCanonicalRun = canonicalHistory.maxWithOrNull(
@@ -34,15 +37,16 @@ class CoachingEngine(private val clock: Clock = Clock.systemUTC()) {
       feedback.runId != latestRun.healthConnectRecordId ||
       newestCanonicalRun?.healthConnectRecordId != latestRun.healthConnectRecordId
     ) return null
-    val score = completionScore(feedback.completionStatus) +
+    val score = completionScore(feedback.completionStatus, executionResult) +
       rpeScore(feedback.rpe) +
       painScore(feedback.painLevel) +
       muscleScore(feedback.muscleFatigue) +
       cardioScore(feedback.cardioEffort)
     val action = when {
       feedback.painLevel == PainLevel.SIGNIFICANT -> CoachingAction.RECOVERY
-      feedback.completionStatus == CompletionStatus.ABORTED && feedback.painLevel != PainLevel.NONE -> CoachingAction.RECOVERY
-      feedback.completionStatus == CompletionStatus.ABORTED -> CoachingAction.REDUCE
+      isAborted(feedback, executionResult) && feedback.painLevel != PainLevel.NONE -> CoachingAction.RECOVERY
+      isAborted(feedback, executionResult) -> CoachingAction.REDUCE
+      executionResult?.status == WorkoutExecutionStatus.PARTIALLY_COMPLETED && score >= 0 -> CoachingAction.MAINTAIN
       score >= 5 -> CoachingAction.PROGRESS
       score >= 3 -> CoachingAction.SMALL_PROGRESS
       score >= 0 -> CoachingAction.MAINTAIN
@@ -52,20 +56,32 @@ class CoachingEngine(private val clock: Clock = Clock.systemUTC()) {
     return CoachingDecision(
       action = action,
       score = score,
-      reasons = feedbackReasons(feedback) + recentVolumeReason(latestRun, canonicalHistory),
+      reasons = feedbackReasons(feedback, executionResult) +
+        listOfNotNull(executionResult?.explanation) +
+        recentVolumeReason(latestRun, canonicalHistory),
       generatedAt = clock.instant(),
     )
   }
 }
 
+private fun isAborted(feedback: RunFeedback, execution: WorkoutExecutionResult?): Boolean =
+  feedback.completionStatus == CompletionStatus.ABORTED || execution?.status == WorkoutExecutionStatus.ABORTED
+
 private const val COMPLETED_SCORE = 2
 private const val PARTIAL_SCORE = 0
 private const val ABORTED_SCORE = -2
 
-private fun completionScore(status: CompletionStatus): Int = when (status) {
-  CompletionStatus.COMPLETED -> COMPLETED_SCORE
-  CompletionStatus.PARTIAL -> PARTIAL_SCORE
-  CompletionStatus.ABORTED -> ABORTED_SCORE
+private fun completionScore(status: CompletionStatus, execution: WorkoutExecutionResult?): Int = when (execution?.status) {
+  WorkoutExecutionStatus.COMPLETED_AS_PLANNED,
+  WorkoutExecutionStatus.COMPLETED_WITH_MINOR_DEVIATION,
+  WorkoutExecutionStatus.COMPLETED_WITH_PRESCRIPTION_DEVIATION -> COMPLETED_SCORE
+  WorkoutExecutionStatus.PARTIALLY_COMPLETED -> PARTIAL_SCORE
+  WorkoutExecutionStatus.ABORTED -> ABORTED_SCORE
+  null -> when (status) {
+    CompletionStatus.COMPLETED -> COMPLETED_SCORE
+    CompletionStatus.PARTIAL -> PARTIAL_SCORE
+    CompletionStatus.ABORTED -> ABORTED_SCORE
+  }
 }
 
 private fun rpeScore(rpe: Int): Int = when (rpe) {
@@ -95,11 +111,18 @@ private fun cardioScore(effort: CardioEffort): Int = when (effort) {
   CardioEffort.LIMIT -> -2
 }
 
-private fun feedbackReasons(feedback: RunFeedback): List<String> = listOf(
-  when (feedback.completionStatus) {
-    CompletionStatus.COMPLETED -> "Workout completed"
-    CompletionStatus.PARTIAL -> "Workout partially completed"
-    CompletionStatus.ABORTED -> "Workout aborted"
+private fun feedbackReasons(feedback: RunFeedback, execution: WorkoutExecutionResult?): List<String> = listOf(
+  when (execution?.status) {
+    WorkoutExecutionStatus.COMPLETED_AS_PLANNED -> "Workout completed as planned"
+    WorkoutExecutionStatus.COMPLETED_WITH_MINOR_DEVIATION -> "Workout completed with a minor prescription deviation"
+    WorkoutExecutionStatus.COMPLETED_WITH_PRESCRIPTION_DEVIATION -> "Workout completed with a meaningful prescription deviation"
+    WorkoutExecutionStatus.PARTIALLY_COMPLETED -> "Workout partially completed"
+    WorkoutExecutionStatus.ABORTED -> "Workout aborted"
+    null -> when (feedback.completionStatus) {
+      CompletionStatus.COMPLETED -> "Workout completed"
+      CompletionStatus.PARTIAL -> "Workout partially completed"
+      CompletionStatus.ABORTED -> "Workout aborted"
+    }
   },
   "RPE ${feedback.rpe}/10",
   when (feedback.painLevel) {

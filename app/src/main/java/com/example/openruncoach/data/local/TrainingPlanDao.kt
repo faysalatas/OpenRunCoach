@@ -16,6 +16,15 @@ interface TrainingPlanDao {
   fun observeActivePlan(): Flow<TrainingPlanEntity?>
 
   @Query(
+    """SELECT COUNT(workout_executions.plannedWorkoutId) FROM workout_executions
+      INNER JOIN training_plan_workouts ON training_plan_workouts.workoutId = workout_executions.plannedWorkoutId
+      INNER JOIN training_plans ON training_plans.id = training_plan_workouts.planId
+      INNER JOIN training_goals ON training_goals.id = training_plans.goalId
+      WHERE training_plans.status = 'ACTIVE' AND training_goals.status = 'ACTIVE'"""
+  )
+  fun observeActivePlanExecutionRevision(): Flow<Int>
+
+  @Query(
     """SELECT training_plans.* FROM training_plans
       INNER JOIN training_goals ON training_goals.id = training_plans.goalId
       WHERE training_plans.status = 'ACTIVE' AND training_goals.status = 'ACTIVE'

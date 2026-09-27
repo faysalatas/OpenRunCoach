@@ -91,6 +91,10 @@ class HomeViewModel(
 
   private fun HomeRunState.toUiState(feedback: RunFeedback?): HomeUiState {
     val run = selectedRun
+    val execution = run?.let { selected ->
+      plan?.weeks.orEmpty().flatMap { it.workouts }.mapNotNull { it.executionResult }
+        .firstOrNull { it.actualRunId == selected.healthConnectRecordId }
+    }
     val sourceCount = when {
       run == null -> 0
       run.duplicateGroupId != null -> allRuns.count { it.duplicateGroupId == run.duplicateGroupId }
@@ -102,7 +106,9 @@ class HomeViewModel(
       week = buildWeekSelectorUiModel(selectedDate, canonicalRuns, zoneId),
       selectedRun = run,
       sourceCount = sourceCount,
-      coachingDecision = if (run != null && feedback != null) coachingEngine.analyze(run, canonicalRuns, feedback) else null,
+      coachingDecision = if (run != null && feedback != null) {
+        coachingEngine.analyze(run, canonicalRuns, feedback, execution)
+      } else null,
       planSummary = plan.toHomeSummary(LocalDate.now(zoneId)),
     )
   }
@@ -114,8 +120,8 @@ private fun TrainingPlan?.toHomeSummary(today: LocalDate): HomePlanSummary? {
     ?: weeks.firstOrNull { it.startDate.isAfter(today) }
     ?: weeks.lastOrNull()
     ?: return null
-  val next = week.workouts.map { it.workout }.filter { !it.date.isBefore(today) }.minByOrNull { it.date }
-    ?: week.workouts.firstOrNull()?.workout
+  val unattempted = weeks.flatMap { it.workouts }.filter { it.executionResult == null }
+  val next = unattempted.map { it.workout }.filter { !it.date.isBefore(today) }.minByOrNull { it.date }
   val estimate = next?.let(WorkoutEstimateCalculator::calculate)
   return HomePlanSummary(
     weekNumber = week.weekIndex + 1,

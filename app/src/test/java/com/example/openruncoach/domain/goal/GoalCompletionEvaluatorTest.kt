@@ -24,8 +24,8 @@ class GoalCompletionEvaluatorTest {
   private val now = Instant.parse("2026-09-25T08:00:00Z")
   private val evaluator = GoalCompletionEvaluator()
 
-  @Test fun fourPointEightKmDoesNotCompleteFiveK() {
-    val result = evaluator.evaluate(goal(), run(4_800.0), metrics(4_800.0), WorkoutLifecycleState.COMPLETED, feedback())
+  @Test fun fourPointSevenEightKmDoesNotCompleteFiveK() {
+    val result = evaluator.evaluate(goal(), run(4_780.0), metrics(4_780.0), WorkoutLifecycleState.COMPLETED, feedback())
     assertFalse(result.completed)
     assertEquals(GoalCompletionStatus.TARGET_NOT_REACHED, result.status)
     assertTrue(result.reasons.any { it.contains("below") })

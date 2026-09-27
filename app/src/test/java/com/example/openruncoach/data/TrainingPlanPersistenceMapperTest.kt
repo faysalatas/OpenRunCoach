@@ -18,6 +18,9 @@ import com.example.openruncoach.domain.profile.PaceTrend
 import com.example.openruncoach.domain.profile.ProfileConfidence
 import com.example.openruncoach.domain.profile.TrainingConsistency
 import com.example.openruncoach.domain.profile.ValueTrend
+import com.example.openruncoach.domain.workout.WorkoutComparisonBasis
+import com.example.openruncoach.domain.workout.WorkoutExecutionResult
+import com.example.openruncoach.domain.workout.WorkoutExecutionStatus
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
@@ -48,6 +51,30 @@ class TrainingPlanPersistenceMapperTest {
       plan.weeks.flatMap { it.workouts }.map { it.workout.id },
       roundTrip.weeks.flatMap { it.workouts }.map { it.workout.id },
     )
+  }
+
+  @Test fun planMappingAttachesPersistedExecutionToItsWorkout() {
+    val plan = TrainingPlanGenerator(Clock.fixed(now, ZoneOffset.UTC), ZoneOffset.UTC).generate(goal(), profile())
+    val workoutId = plan.weeks.first().workouts.first().workout.id
+    val execution = WorkoutExecutionResult(
+      plannedWorkoutId = workoutId,
+      actualRunId = "actual-run",
+      status = WorkoutExecutionStatus.COMPLETED_WITH_MINOR_DEVIATION,
+      comparisonBasis = WorkoutComparisonBasis.ORIGINAL_PRESCRIPTION,
+      intendedDistanceMeters = 4_000.0,
+      intendedDurationSeconds = null,
+      actualDistanceMeters = 3_780.0,
+      actualDurationSeconds = 1_800,
+      qualityWorkCompletionFraction = null,
+      explanation = "Easy aerobic stimulus completed with a small deviation.",
+      evaluatedAt = now,
+    )
+    val snapshot = TrainingPlanPersistenceMapper.toSnapshot(plan)
+    val workouts = plan.weeks.flatMap { it.workouts }.associate { it.workout.id to it.workout }
+
+    val restored = TrainingPlanPersistenceMapper.toDomain(snapshot, workouts, mapOf(workoutId to execution))
+
+    assertEquals(execution, restored.weeks.first().workouts.first().executionResult)
   }
 
   private fun goal() = TrainingGoal(

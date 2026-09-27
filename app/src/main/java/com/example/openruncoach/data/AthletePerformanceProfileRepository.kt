@@ -48,6 +48,7 @@ class AthletePerformanceProfileRepository(
       runs = database.runDao().getCanonicalRuns().map { it.toRunSummary() },
       metrics = database.runMetricsDao().getAllRunMetrics().mapNotNull { it.toDomain() },
       feedback = database.runFeedbackDao().getAllFeedback().map { it.toDomain() },
+      executionResults = database.coachingWorkflowDao().getAllExecutions().map { it.toDomain() },
     )
     dao.replace(profile.toSnapshot())
     profile

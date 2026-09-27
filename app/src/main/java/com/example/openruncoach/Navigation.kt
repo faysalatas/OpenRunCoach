@@ -70,13 +70,20 @@ fun MainNavigation() {
       if (showBottomBar) {
         NavigationBar {
           bottomDestinations.forEach { destination ->
+            val selected = currentDestination?.hierarchy?.any { it.route == destination.route } == true
             NavigationBarItem(
-              selected = currentDestination?.hierarchy?.any { it.route == destination.route } == true,
+              selected = selected,
               onClick = {
-                navController.navigate(destination.route) {
-                  popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                  launchSingleTop = true
-                  restoreState = true
+                if (!selected) {
+                  if (destination.route == Routes.HOME) {
+                    navController.popBackStack(Routes.HOME, inclusive = false, saveState = true)
+                  } else {
+                    navController.navigate(destination.route) {
+                      popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                      launchSingleTop = true
+                      restoreState = true
+                    }
+                  }
                 }
               },
               icon = { Text(destination.symbol) },

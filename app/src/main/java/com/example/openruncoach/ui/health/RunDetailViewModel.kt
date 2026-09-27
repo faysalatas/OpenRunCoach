@@ -8,6 +8,7 @@ import com.example.openruncoach.data.RunMetricsRepository
 import com.example.openruncoach.data.RunMetricsRefresher
 import com.example.openruncoach.data.GoalCompletionRepository
 import com.example.openruncoach.data.TrainingGoalRepository
+import com.example.openruncoach.data.WorkoutExecutionRepository
 import com.example.openruncoach.domain.CardioEffort
 import com.example.openruncoach.domain.CompletionStatus
 import com.example.openruncoach.domain.MuscleFatigue
@@ -21,6 +22,7 @@ import com.example.openruncoach.domain.coaching.CoachingEngine
 import com.example.openruncoach.domain.metrics.RunMetrics
 import com.example.openruncoach.domain.metrics.RunChartData
 import com.example.openruncoach.domain.metrics.RunChartPreparer
+import com.example.openruncoach.domain.workout.WorkoutExecutionResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -59,6 +61,7 @@ data class RunDetailUiState(
   val charts: RunChartData? = null,
   val isUpdatingMetrics: Boolean = false,
   val metricsUpdateError: Boolean = false,
+  val workoutExecution: WorkoutExecutionResult? = null,
 )
 
 class RunDetailViewModel(
@@ -69,6 +72,7 @@ class RunDetailViewModel(
   private val runMetricsRefresher: RunMetricsRefresher,
   private val goalRepository: TrainingGoalRepository? = null,
   private val goalCompletionRepository: GoalCompletionRepository? = null,
+  private val workoutExecutionRepository: WorkoutExecutionRepository? = null,
   private val coachingEngine: CoachingEngine = CoachingEngine(),
 ) : ViewModel() {
   private val _uiState = MutableStateFlow(RunDetailUiState())
@@ -135,6 +139,13 @@ class RunDetailViewModel(
             ).withDerivedState()
           }
         }
+    }
+    workoutExecutionRepository?.let { repository ->
+      viewModelScope.launch {
+        repository.observeForRun(runId)
+          .catch { _uiState.update { it.copy(error = "Could not load workout completion.") } }
+          .collect { execution -> _uiState.update { it.copy(workoutExecution = execution).withDerivedState() } }
+      }
     }
   }
 
@@ -224,6 +235,7 @@ class RunDetailViewModel(
       _uiState.update { it.copy(isSaving = true, error = null, saved = false) }
       try {
         val saved = feedbackRepository.saveFeedback(draft)
+        val execution = workoutExecutionRepository?.recordForAssociatedWorkout(state.run, saved)
         val activeGoal = goalRepository?.getActiveGoal()
         if (activeGoal != null && state.run.isCanonical) {
           goalCompletionRepository?.evaluateObservedRun(activeGoal, state.run, state.metrics, saved)
@@ -235,6 +247,7 @@ class RunDetailViewModel(
           isSaving = false,
           saved = true,
           isEditingFeedback = false,
+          workoutExecution = execution ?: it.workoutExecution,
         ).withDerivedState() }
       } catch (exception: CancellationException) {
         throw exception
@@ -252,7 +265,7 @@ class RunDetailViewModel(
     return copy(
       duplicateRecords = duplicateRecords,
       coachingDecision = if (selectedRun != null && feedback != null) {
-        coachingEngine.analyze(selectedRun, canonicalHistory, feedback)
+        coachingEngine.analyze(selectedRun, canonicalHistory, feedback, workoutExecution)
       } else null,
     )
   }
