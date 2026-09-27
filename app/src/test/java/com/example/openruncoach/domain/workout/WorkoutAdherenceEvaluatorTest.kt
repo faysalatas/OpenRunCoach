@@ -139,16 +139,29 @@ class WorkoutAdherenceEvaluatorTest {
         )
       })
     })
+    // Keep total-session completion matched so this test isolates the scope of the pace target.
+    val totalDuration = requireNotNull(WorkoutEstimateCalculator.calculate(workout).estimatedTotalDurationSeconds)
+    val wholeRunPace = 380.0
+    val actual = run(totalDuration * 1_000.0 / wholeRunPace).copy(
+      endTime = now.plusSeconds(totalDuration),
+      durationSeconds = totalDuration,
+      averagePaceSecondsPerKm = wholeRunPace,
+    )
+    val runFeedback = feedback(rpe = 7)
 
     val result = evaluator.evaluate(
       workout,
       null,
-      run(WorkoutEstimateCalculator.calculate(workout).knownDistanceMeters),
-      feedback(),
+      actual,
+      runFeedback,
     )
+    val response = WorkoutResponseEvaluator().evaluate(workout, null, result, actual, runFeedback)
 
     assertEquals(WorkoutExecutionStatus.COMPLETED_WITH_MINOR_DEVIATION, result.status)
     assertTrue(result.explanation.contains("could not be fully verified"))
+    assertEquals(wholeRunPace, response.actualPaceSecondsPerKm!!, 0.01)
+    assertEquals(PaceResponse.UNKNOWN, response.paceResponse)
+    assertEquals(PrescriptionAdherence.INSUFFICIENT_EVIDENCE, response.adherence)
   }
 
   @Test fun userReportedAbortIsNotHiddenByMatchingDistance() {

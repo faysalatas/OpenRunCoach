@@ -68,6 +68,15 @@ class AthleteStateBuilder {
       !run.startTime.isBefore(profile.calculatedAt.minus(Duration.ofDays(28))) &&
         !run.startTime.isAfter(profile.calculatedAt)
     }
+    val recentCanonicalRunCount = runsById.values.count { run ->
+      !run.startTime.isBefore(profile.calculatedAt.minus(Duration.ofDays(28))) &&
+        !run.startTime.isAfter(profile.calculatedAt)
+    }
+    val recentContinuity = continuitySummary(
+      recentCapabilityResponses,
+      recentCanonicalRunCount,
+      profile.recentContinuity,
+    )
     val completedDistances = responses.mapNotNull { (response, _) ->
       response.actualDistanceMeters?.takeIf { response.completion == WorkoutCompletionOutcome.COMPLETED }
     }
@@ -92,7 +101,7 @@ class AthleteStateBuilder {
     )
     val longestContinuous = maxNullable(
       continuousDistances.maxOrNull(),
-      profile.recentContinuity.longestContinuousDistanceMeters,
+      recentContinuity.longestContinuousDistanceMeters,
     )
 
     return AthleteState(
@@ -103,7 +112,7 @@ class AthleteStateBuilder {
       longestDemonstratedContinuousDistanceMeters = longestContinuous,
       longestToleratedDistanceMeters = toleratedDistances.maxOrNull(),
       toleratedSessionCount = tolerated.size,
-      recentContinuity = profile.recentContinuity,
+      recentContinuity = recentContinuity,
       recentResponseCount = recentResponses.size,
       recentElevatedCostCount = elevatedCount,
       recentHighCostCount = highCount,
@@ -130,6 +139,26 @@ class AthleteStateBuilder {
       sessionCost in setOf(SessionCost.LOW, SessionCost.NORMAL) &&
       pain == PainLevel.NONE &&
       continuity != RunContinuityEvidence.INTERRUPTED
+
+  private fun continuitySummary(
+    recentResponses: List<Pair<WorkoutResponse, RunSummary>>,
+    recentCanonicalRunCount: Int,
+    profileSummary: RecentContinuitySummary,
+  ): RecentContinuitySummary {
+    val responsesByRun = recentResponses.distinctBy { it.first.runId }
+    if (responsesByRun.size != recentCanonicalRunCount) return profileSummary
+    return RecentContinuitySummary(
+      continuousRuns = responsesByRun.count { it.first.continuity == RunContinuityEvidence.CONTINUOUS },
+      interruptedRuns = responsesByRun.count { it.first.continuity == RunContinuityEvidence.INTERRUPTED },
+      unknownRuns = responsesByRun.count { it.first.continuity == RunContinuityEvidence.UNKNOWN },
+      longestContinuousDistanceMeters = responsesByRun.mapNotNull { (response, _) ->
+        response.actualDistanceMeters?.takeIf {
+          response.completion == WorkoutCompletionOutcome.COMPLETED &&
+            response.continuity == RunContinuityEvidence.CONTINUOUS
+        }
+      }.maxOrNull(),
+    )
+  }
 
   private fun capabilityConfidence(
     profileConfidence: ProfileConfidence,

@@ -1,5 +1,7 @@
 package com.example.openruncoach.domain.workout
 
+import com.example.openruncoach.data.toSampleEntities
+import com.example.openruncoach.data.toTimeSeries
 import com.example.openruncoach.domain.CardioEffort
 import com.example.openruncoach.domain.CompletionStatus
 import com.example.openruncoach.domain.MuscleFatigue
@@ -76,7 +78,8 @@ class WorkoutResponseEvaluatorTest {
     val run = run(5_000.0, 1_800, 360.0)
     val feedback = feedback(rpe = 9)
     val execution = adherenceEvaluator.evaluate(workout, null, run, feedback)
-    val metrics = metrics(run, List(31) { index -> speedSample(index * 60L, 2.78) })
+    val rawMetrics = metrics(run, List(31) { index -> speedSample(index * 60L, 2.78) })
+    val metrics = rawMetrics.copy(series = rawMetrics.toSampleEntities().toTimeSeries())
 
     val response = responseEvaluator.evaluate(workout, null, execution, run, feedback, metrics)
 
@@ -92,7 +95,8 @@ class WorkoutResponseEvaluatorTest {
     val feedback = feedback(rpe = 9, pain = PainLevel.MILD)
     val execution = adherenceEvaluator.evaluate(workout, null, run, feedback)
     val samples = List(181) { index -> speedSample(index * 10L, if (index < 90) 3.2 else 1.0) }
-    val metrics = metrics(run, samples)
+    val rawMetrics = metrics(run, samples)
+    val metrics = rawMetrics.copy(series = rawMetrics.toSampleEntities().toTimeSeries())
 
     val response = responseEvaluator.evaluate(workout, null, execution, run, feedback, metrics)
 

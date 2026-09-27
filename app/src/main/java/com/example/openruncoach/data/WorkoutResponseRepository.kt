@@ -25,8 +25,9 @@ class WorkoutResponseRepository(
   suspend fun getAll(): List<WorkoutResponse> {
     val runsById = runDao.getCanonicalRuns().associateBy { it.healthConnectRecordId }
     val feedbackByRun = feedbackDao.getAllFeedback().associateBy { it.runId }
-    val metricsByRun = metricsDao.getAllRunMetrics().associateBy { it.snapshot.runId }
-    return workflowDao.getAllExecutions().mapNotNull { executionEntity ->
+    val executions = workflowDao.getAllExecutions()
+    val metricsByRun = RunMetricsRepository(metricsDao).getAllRunMetrics().associateBy { it.runId }
+    return executions.mapNotNull { executionEntity ->
       val run = runsById[executionEntity.actualRunId] ?: return@mapNotNull null
       val feedback = feedbackByRun[executionEntity.actualRunId] ?: return@mapNotNull null
       val workout = workflowDao.getWorkout(executionEntity.plannedWorkoutId) ?: return@mapNotNull null
@@ -36,7 +37,7 @@ class WorkoutResponseRepository(
         execution = executionEntity.toDomain(),
         actualRun = run.toRunSummary(),
         feedback = feedback.toDomain(),
-        metrics = metricsByRun[executionEntity.actualRunId]?.toDomain(),
+        metrics = metricsByRun[executionEntity.actualRunId],
       )
     }.sortedBy(WorkoutResponse::runId)
   }

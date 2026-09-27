@@ -44,9 +44,10 @@ class AthletePerformanceProfileRepository(
   suspend fun getProfile(): AthletePerformanceProfile? = dao.getProfile()?.toDomain()
 
   suspend fun recalculate(): AthletePerformanceProfile = recalculationMutex.withLock {
+    val runs = database.runDao().getCanonicalRuns().map { it.toRunSummary() }
     val profile = calculator.calculate(
-      runs = database.runDao().getCanonicalRuns().map { it.toRunSummary() },
-      metrics = database.runMetricsDao().getAllRunMetrics().mapNotNull { it.toDomain() },
+      runs = runs,
+      metrics = RunMetricsRepository(database.runMetricsDao()).getCanonicalRunMetrics(),
       feedback = database.runFeedbackDao().getAllFeedback().map { it.toDomain() },
       executionResults = database.coachingWorkflowDao().getAllExecutions().map { it.toDomain() },
     )

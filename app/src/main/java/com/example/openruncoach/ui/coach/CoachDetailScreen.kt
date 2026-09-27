@@ -12,6 +12,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -23,6 +24,7 @@ import com.example.openruncoach.data.RunRepository
 import com.example.openruncoach.data.RunSettingsRepository
 import com.example.openruncoach.data.WorkoutResponseRepository
 import com.example.openruncoach.LocalOpenRunCoachEnvironment
+import com.example.openruncoach.SimulationRuntimeTrace
 import com.example.openruncoach.domain.PainLevel
 import com.example.openruncoach.domain.metrics.RunContinuityEvidence
 import com.example.openruncoach.domain.workout.EffortResponse
@@ -46,9 +48,19 @@ import com.example.openruncoach.ui.components.SectionSpacing
 fun CoachDetailScreen(runId: String, onBack: () -> Unit, modifier: Modifier = Modifier) {
   val context = LocalContext.current
   val environment = LocalOpenRunCoachEnvironment.current
-  val viewModel: CoachDetailViewModel = viewModel(key = "coach-$runId") {
+  val viewModel: CoachDetailViewModel = viewModel(key = "${environment.key}:coach-$runId") {
     val database = environment.database
     val settingsRepository = RunSettingsRepository(context)
+    val metricsDao = database.runMetricsDao()
+    val workoutResponseRepository = WorkoutResponseRepository(database)
+    if (SimulationRuntimeTrace.enabled) {
+      SimulationRuntimeTrace.recordCoachAnalysis(
+        environmentKey = environment.key,
+        database = database,
+        metricsDao = metricsDao,
+        workoutResponseRepository = workoutResponseRepository,
+      )
+    }
     CoachDetailViewModel(
       runId,
       RunRepository(
@@ -58,11 +70,21 @@ fun CoachDetailScreen(runId: String, onBack: () -> Unit, modifier: Modifier = Mo
         clock = environment.clock,
       ),
       RunFeedbackRepository(database, environment.clock),
-      WorkoutResponseRepository(database),
+      workoutResponseRepository,
       CoachingEngine(environment.clock),
     )
   }
   val state by viewModel.uiState.collectAsStateWithLifecycle()
+  if (SimulationRuntimeTrace.enabled) {
+    LaunchedEffect(environment.key, state.response) {
+      SimulationRuntimeTrace.recordCoachResponse(
+        environmentKey = environment.key,
+        response = state.response,
+        runId = state.response?.runId,
+        continuity = state.response?.continuity?.name,
+      )
+    }
+  }
 
   Column(
     modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(ScreenPadding),

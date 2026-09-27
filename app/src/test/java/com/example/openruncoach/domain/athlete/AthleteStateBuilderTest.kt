@@ -34,6 +34,9 @@ class AthleteStateBuilderTest {
 
     assertEquals(5_000.0, state.longestCompletedDistanceMeters!!, 0.01)
     assertEquals(5_000.0, state.longestDemonstratedContinuousDistanceMeters!!, 0.01)
+    assertEquals(1, state.recentContinuity.continuousRuns)
+    assertEquals(0, state.recentContinuity.interruptedRuns)
+    assertEquals(0, state.recentContinuity.unknownRuns)
     assertNull(state.longestToleratedDistanceMeters)
     assertEquals(ProfileConfidence.LOW, state.capabilityConfidence)
     assertEquals(CurrentReadiness.CONSERVATIVE, state.currentReadiness)
@@ -49,6 +52,9 @@ class AthleteStateBuilderTest {
 
     assertEquals(8_000.0, state.longestToleratedDistanceMeters!!, 0.01)
     assertEquals(8_000.0, state.longestCompletedDistanceMeters!!, 0.01)
+    assertEquals(8_000.0, state.longestDemonstratedContinuousDistanceMeters!!, 0.01)
+    assertEquals(4, state.recentContinuity.continuousRuns)
+    assertEquals(0, state.recentContinuity.unknownRuns)
     assertEquals(CurrentReadiness.CONSERVATIVE, state.currentReadiness)
   }
 
@@ -97,6 +103,45 @@ class AthleteStateBuilderTest {
     assertNull(state.longestToleratedDistanceMeters)
   }
 
+  @Test fun interruptedResponseDoesNotBecomeContinuousDistance() {
+    val run = run("walking-5", 5_000.0, 0)
+    val state = state(listOf(run), listOf(response(
+      run,
+      WorkoutPurpose.GOAL_COMPLETION,
+      9,
+      SessionCost.HIGH,
+      continuity = RunContinuityEvidence.INTERRUPTED,
+    )))
+
+    assertNull(state.longestDemonstratedContinuousDistanceMeters)
+    assertEquals(0, state.recentContinuity.continuousRuns)
+    assertEquals(1, state.recentContinuity.interruptedRuns)
+  }
+
+  @Test fun structuredUnknownResponseIsCountedAsUnknown() {
+    val run = run("unknown-5", 5_000.0, 0)
+    val state = state(listOf(run), listOf(response(
+      run,
+      WorkoutPurpose.GOAL_COMPLETION,
+      9,
+      SessionCost.HIGH,
+      continuity = RunContinuityEvidence.UNKNOWN,
+    )))
+
+    assertNull(state.longestDemonstratedContinuousDistanceMeters)
+    assertEquals(0, state.recentContinuity.continuousRuns)
+    assertEquals(0, state.recentContinuity.interruptedRuns)
+    assertEquals(1, state.recentContinuity.unknownRuns)
+  }
+
+  @Test fun unassessedRunRetainsProfileUnknownContinuity() {
+    val run = run("unassessed", 1_200.0, 0)
+    val state = state(listOf(run), emptyList())
+
+    assertNull(state.longestDemonstratedContinuousDistanceMeters)
+    assertEquals(1, state.recentContinuity.unknownRuns)
+  }
+
   @Test fun rebuildIsIdempotentAndDuplicateEvidenceDoesNotAccumulate() {
     val run = run("stable", 6_000.0, 2)
     val response = response(run, WorkoutPurpose.AEROBIC_BASE, 3, SessionCost.NORMAL)
@@ -143,6 +188,7 @@ class AthleteStateBuilderTest {
     cost: SessionCost,
     pain: PainLevel = PainLevel.NONE,
     plannedDistance: Double = requireNotNull(run.distanceMeters),
+    continuity: RunContinuityEvidence = RunContinuityEvidence.CONTINUOUS,
   ) = WorkoutResponse(
     runId = run.healthConnectRecordId,
     plannedWorkoutId = "workout:${run.healthConnectRecordId}",
@@ -152,7 +198,7 @@ class AthleteStateBuilderTest {
     volumeCompletion = VolumeCompletion.MET,
     effortResponse = if (rpe <= 5) EffortResponse.ON_TARGET else EffortResponse.ABOVE_TARGET,
     paceResponse = PaceResponse.UNKNOWN,
-    continuity = RunContinuityEvidence.CONTINUOUS,
+    continuity = continuity,
     paceStability = PaceStability.STABLE,
     sessionCost = cost,
     pain = pain,

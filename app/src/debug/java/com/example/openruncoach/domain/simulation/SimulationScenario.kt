@@ -151,7 +151,7 @@ object SimulationScenarios {
     )
     SimulationScenarioKey.HARD_FIRST_5K -> hard5k(
       key,
-      run("hard-first-5k", 5_000.0, 1_800, 360.0, 174.0, 188, SimulatedMovement.CONTINUOUS),
+      run("hard-first-5k", 5_000.0, 2_100, 420.0, 174.0, 188, SimulatedMovement.CONTINUOUS),
       SimulatedCheckoutInput("hard-first-5k", 9, readiness = 4),
     )
     SimulationScenarioKey.ENDURANCE_THEN_HARD_5K -> longitudinal(

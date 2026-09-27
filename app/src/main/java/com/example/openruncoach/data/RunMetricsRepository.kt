@@ -25,10 +25,13 @@ class RunMetricsRepository(private val dao: RunMetricsDao) {
 
   suspend fun getRunMetrics(runId: String): RunMetrics? = dao.getRunMetrics(runId)?.toDomain()
 
-  suspend fun getAllRunMetrics(): List<RunMetrics> = dao.getAllRunMetrics().mapNotNull(RunMetricsWithValues::toDomain)
+  suspend fun getAllRunMetrics(): List<RunMetrics> = dao.getAllRunMetricIds().mapNotNull { runId ->
+    getRunMetrics(runId)
+  }
 
-  suspend fun getCanonicalRunMetrics(): List<RunMetrics> =
-    dao.getCanonicalRunMetrics().mapNotNull(RunMetricsWithValues::toDomain)
+  suspend fun getCanonicalRunMetrics(): List<RunMetrics> = dao.getCanonicalRunMetricIds().mapNotNull { runId ->
+    getRunMetrics(runId)
+  }
 
   suspend fun save(metrics: RunMetrics) {
     dao.replace(

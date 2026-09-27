@@ -3,6 +3,7 @@ package com.example.openruncoach
 import android.content.Context
 import com.example.openruncoach.data.local.OpenRunCoachDatabase
 import com.example.openruncoach.data.simulation.SimulationScenarioLoader
+import com.example.openruncoach.data.simulation.SimulationPersistenceTrace
 import com.example.openruncoach.domain.simulation.SimulationScenarioKey
 import java.time.Clock
 import java.time.Instant
@@ -27,6 +28,7 @@ object AppEnvironmentController {
 
   suspend fun loadScenario(context: Context, scenario: SimulationScenarioKey) {
     val database = simulationDatabase(context)
+    SimulationRuntimeTrace.reset()
     withContext(Dispatchers.IO) {
       database.clearAllTables()
       SimulationScenarioLoader(database, simulationClock).load(scenario)
@@ -43,6 +45,8 @@ object AppEnvironmentController {
   suspend fun resetSimulation(context: Context) {
     val database = simulationDatabase(context)
     withContext(Dispatchers.IO) { database.clearAllTables() }
+    SimulationPersistenceTrace.reset()
+    SimulationRuntimeTrace.reset()
     generation += 1
     mutableEnvironment(context).value = OpenRunCoachEnvironment(
       key = "simulation:empty:$generation",

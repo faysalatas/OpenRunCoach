@@ -5,6 +5,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.openruncoach.AppEnvironmentController
 import com.example.openruncoach.OpenRunCoachEnvironment
+import com.example.openruncoach.CoachAnalysisRuntimeTrace
+import com.example.openruncoach.SimulationRuntimeTrace
+import com.example.openruncoach.data.AthleteStateContinuityTrace
+import com.example.openruncoach.data.AthleteStateRepositoryIdentityTrace
+import com.example.openruncoach.data.simulation.SimulationPersistenceTrace
+import com.example.openruncoach.data.simulation.SimulationRunPersistenceTrace
 import com.example.openruncoach.domain.athlete.AthleteState
 import com.example.openruncoach.domain.simulation.SimulationScenarioKey
 import kotlinx.coroutines.CancellationException
@@ -19,6 +25,11 @@ data class SimulationUiState(
   val isLoading: Boolean = false,
   val errorMessage: String? = null,
   val athleteState: AthleteState? = null,
+  val continuityTrace: List<AthleteStateContinuityTrace> = emptyList(),
+  val athleteStateRepositoryIdentity: AthleteStateRepositoryIdentityTrace? = null,
+  val activeEnvironmentDatabaseIdentity: String? = null,
+  val coachAnalysisRuntimeTrace: CoachAnalysisRuntimeTrace? = null,
+  val persistenceTrace: Map<String, SimulationRunPersistenceTrace> = emptyMap(),
 )
 
 class SimulationViewModel(
@@ -49,8 +60,19 @@ class SimulationViewModel(
     viewModelScope.launch {
       _uiState.update { it.copy(isLoading = true, errorMessage = null) }
       try {
-        val state = withContext(Dispatchers.IO) { environment.athleteStateRepository().rebuild() }
-        _uiState.update { it.copy(isLoading = false, athleteState = state, errorMessage = null) }
+        val result = withContext(Dispatchers.IO) { environment.athleteStateRepository().rebuildWithTrace() }
+        _uiState.update {
+          it.copy(
+            isLoading = false,
+            athleteState = result.state,
+            continuityTrace = result.continuityTrace,
+            athleteStateRepositoryIdentity = result.repositoryIdentity,
+            activeEnvironmentDatabaseIdentity = environment.database.identity(),
+            coachAnalysisRuntimeTrace = SimulationRuntimeTrace.coachAnalysisSnapshot(),
+            persistenceTrace = SimulationPersistenceTrace.snapshot(),
+            errorMessage = null,
+          )
+        }
       } catch (exception: CancellationException) {
         throw exception
       } catch (_: Exception) {
@@ -76,3 +98,5 @@ class SimulationViewModel(
     }
   }
 }
+
+private fun Any.identity() = "${javaClass.simpleName}@${System.identityHashCode(this)}"

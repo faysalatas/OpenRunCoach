@@ -30,6 +30,9 @@ interface RunMetricsDao {
   @Query("SELECT * FROM run_metrics ORDER BY startTimeEpochMillis ASC")
   suspend fun getAllRunMetrics(): List<RunMetricsWithValues>
 
+  @Query("SELECT runId FROM run_metrics ORDER BY startTimeEpochMillis ASC")
+  suspend fun getAllRunMetricIds(): List<String>
+
   @Transaction
   @Query(
     """SELECT run_metrics.* FROM run_metrics
@@ -38,6 +41,14 @@ interface RunMetricsDao {
       ORDER BY run_metrics.startTimeEpochMillis ASC"""
   )
   suspend fun getCanonicalRunMetrics(): List<RunMetricsWithValues>
+
+  @Query(
+    """SELECT run_metrics.runId FROM run_metrics
+      INNER JOIN runs ON runs.healthConnectRecordId = run_metrics.runId
+      WHERE runs.isCanonical = 1
+      ORDER BY run_metrics.startTimeEpochMillis ASC"""
+  )
+  suspend fun getCanonicalRunMetricIds(): List<String>
 
   @Upsert
   suspend fun upsertSnapshot(snapshot: RunMetricsEntity)
@@ -53,6 +64,12 @@ interface RunMetricsDao {
 
   @Query("DELETE FROM run_metric_samples WHERE runId = :runId")
   suspend fun deleteSamples(runId: String)
+
+  @Query(
+    """SELECT COUNT(*) FROM run_metric_samples
+      WHERE runId = :runId AND metricType = :metricType"""
+  )
+  suspend fun countSamples(runId: String, metricType: String): Int
 
   @Transaction
   suspend fun replace(

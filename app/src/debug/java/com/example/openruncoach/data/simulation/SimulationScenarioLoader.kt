@@ -6,6 +6,7 @@ import com.example.openruncoach.data.RunMetricsRepository
 import com.example.openruncoach.data.TrainingGoalRepository
 import com.example.openruncoach.data.TrainingPlanRepository
 import com.example.openruncoach.data.WorkoutExecutionRepository
+import com.example.openruncoach.data.toSampleEntities
 import com.example.openruncoach.data.local.OpenRunCoachDatabase
 import com.example.openruncoach.data.local.RunEntity
 import com.example.openruncoach.domain.RunFeedbackDraft
@@ -18,8 +19,8 @@ import com.example.openruncoach.domain.metrics.MetricConfidence
 import com.example.openruncoach.domain.metrics.MetricSource
 import com.example.openruncoach.domain.metrics.MetricValue
 import com.example.openruncoach.domain.metrics.RunMetrics
+import com.example.openruncoach.domain.metrics.RunSampleMetricType
 import com.example.openruncoach.domain.metrics.RunTimeSeries
-import com.example.openruncoach.domain.metrics.TimedMetricSample
 import com.example.openruncoach.domain.plan.PlannedWorkoutEntry
 import com.example.openruncoach.domain.plan.TrainingBlock
 import com.example.openruncoach.domain.plan.TrainingBlockType
@@ -55,6 +56,7 @@ class SimulationScenarioLoader(
   private val clock: Clock,
 ) {
   suspend fun load(key: SimulationScenarioKey) {
+    SimulationPersistenceTrace.reset()
     val scenario = SimulationScenarios.preset(key)
     val profileRepository = com.example.openruncoach.data.AthletePerformanceProfileRepository(
       database,
@@ -83,7 +85,7 @@ class SimulationScenarioLoader(
     val runDataSource = SimulationRunDataSource(database)
     val sessionRuns = runDataSource.persist(scenario.sessions.map { it.run }, clock)
     val metricsRepository = RunMetricsRepository(database.runMetricsDao())
-    scenario.sessions.forEach { session -> metricsRepository.save(session.run.toMetrics(clock)) }
+    scenario.sessions.forEach { session -> persistMetrics(session.run, metricsRepository) }
 
     scenario.sessions.forEachIndexed { index, session ->
       val isPrimary = index == scenario.sessions.lastIndex
@@ -125,11 +127,52 @@ class SimulationScenarioLoader(
     // cannot replace the stable execution identity that already links the planned workout to A.
     if (scenario.unrelatedRuns.isNotEmpty()) {
       runDataSource.persist(scenario.unrelatedRuns, clock)
-      scenario.unrelatedRuns.forEach { metricsRepository.save(it.toMetrics(clock)) }
+      scenario.unrelatedRuns.forEach { persistMetrics(it, metricsRepository) }
     }
     profileRepository.recalculate()
+    scenario.allRuns.forEach { run ->
+      SimulationPersistenceTrace.updateAfterLoad(
+        run.id,
+        database.runMetricsDao().countSamples(run.id, RunSampleMetricType.SPEED.name),
+      )
+    }
+  }
+
+  private suspend fun persistMetrics(
+    run: SimulatedRunInput,
+    metricsRepository: RunMetricsRepository,
+  ) {
+    val generatedSeries = run.toMovementSeries()
+    val metrics = run.toMetrics(clock, generatedSeries)
+    val speedEntities = metrics.toSampleEntities()
+      .count { it.metricType == RunSampleMetricType.SPEED.name }
+    metricsRepository.save(metrics)
+    val persistedSpeedSamples = database.runMetricsDao()
+      .countSamples(run.id, RunSampleMetricType.SPEED.name)
+    val loaderRepositorySpeedSamples = metricsRepository.getRunMetrics(run.id)
+      ?.series?.speed?.size ?: 0
+    check(persistedSpeedSamples == speedEntities) {
+      "Simulation movement persistence mismatch for ${run.id}: " +
+        "$speedEntities speed samples prepared, $persistedSpeedSamples stored."
+    }
+    SimulationPersistenceTrace.record(
+      SimulationRunPersistenceTrace(
+        runId = run.id,
+        databaseIdentity = database.identity(),
+        daoIdentity = database.runMetricsDao().identity(),
+        repositoryIdentity = metricsRepository.identity(),
+        generatedSpeedSampleCount = generatedSeries.speed.size,
+        metricsSpeedSampleCount = metrics.series.speed.size,
+        speedSampleEntityCount = speedEntities,
+        persistedSpeedSampleCount = persistedSpeedSamples,
+        speedSampleCountAfterLoad = persistedSpeedSamples,
+        loaderRepositorySpeedSampleCount = loaderRepositorySpeedSamples,
+      )
+    )
   }
 }
+
+private fun Any.identity() = "${javaClass.simpleName}@${System.identityHashCode(this)}"
 
 private class SimulationRunDataSource(private val database: OpenRunCoachDatabase) {
   suspend fun persist(inputs: List<SimulatedRunInput>, clock: Clock): List<RunSummary> {
@@ -187,12 +230,24 @@ private fun SimulatedRunInput.toRunSummary(clock: Clock) = RunSummary(
   sourceRecordLastModifiedTime = clock.instant(),
 )
 
-private fun SimulatedRunInput.toMetrics(clock: Clock): RunMetrics {
-  val speedSamples = when (movement) {
-    SimulatedMovement.NONE -> emptyList()
-    SimulatedMovement.CONTINUOUS -> sampledSpeeds { 1_000.0 / averagePaceSecondsPerKm }
-    SimulatedMovement.WALKING_AND_STRONG_FADE -> sampledSpeeds { fraction -> if (fraction < 0.5) 3.2 else 1.0 }
-  }
+private fun SimulatedRunInput.toMovementSeries(): RunTimeSeries = when (movement) {
+  SimulatedMovement.NONE -> SyntheticMovementSeries.missing()
+  SimulatedMovement.CONTINUOUS -> SyntheticMovementSeries.steadyRunning(
+    startTime = startTime,
+    durationSeconds = durationSeconds,
+    distanceMeters = distanceMeters,
+  )
+  SimulatedMovement.WALKING_AND_STRONG_FADE -> SyntheticMovementSeries.runWalkRun(
+    startTime = startTime,
+    durationSeconds = durationSeconds,
+    distanceMeters = distanceMeters,
+  )
+}
+
+internal fun SimulatedRunInput.toMetrics(
+  clock: Clock,
+  movementSeries: RunTimeSeries = toMovementSeries(),
+): RunMetrics {
   return RunMetrics(
     runId = id,
     startTime = startTime,
@@ -205,23 +260,9 @@ private fun SimulatedRunInput.toMetrics(clock: Clock): RunMetrics {
     maxHeartRate = maxHeartRate?.toDouble()?.let { metric(it) },
     recordingSource = "OpenRunCoach Simulation",
     recordingDeviceName = "Deterministic simulator",
-    series = RunTimeSeries(speed = speedSamples),
+    series = movementSeries,
     generatedAt = clock.instant(),
   )
-}
-
-private fun SimulatedRunInput.sampledSpeeds(value: (Double) -> Double): List<TimedMetricSample<Double>> {
-  val step = 10L
-  return (0L..durationSeconds).step(step).map { second ->
-    TimedMetricSample(
-      timestamp = startTime.plusSeconds(second),
-      value = value(second.toDouble() / durationSeconds),
-      source = MetricSource.DERIVED,
-      confidence = MetricConfidence.HIGH,
-      sourceAppName = "OpenRunCoach Simulation",
-      sourceDeviceName = "Deterministic simulator",
-    )
-  }
 }
 
 private fun <T> metric(value: T, source: MetricSource = MetricSource.DERIVED) =
