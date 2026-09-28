@@ -7,7 +7,7 @@ The long-term goal is a transparent, explainable running coach inspired by feedb
 ## Current features
 
 - Native Android app written in Kotlin and Jetpack Compose
-- Material 3 UI with an anthracite and teal dark palette plus system light-theme support
+- Dark-first Material 3 UI with a near-black blue-green and mint palette
 - Bottom navigation with Home, History, Plan, and Settings
 - Week and day selector with run indicators
 - Read-only Health Connect integration
@@ -178,7 +178,23 @@ Normal training prescriptions allow purpose-aware real-world variation. Workout 
 
 `AthletePerformanceProfile` owns descriptive historical evidence and aggregates such as recent actual volume, frequency, consistency, benchmarks, continuity, and supported pace/heart-rate baselines. `AthleteState` is a deterministic, rebuildable coaching interpretation composed from that profile, canonical history, and `WorkoutResponse`s. It keeps longer-term demonstrated and comfortable/tolerated capability separate from acute readiness and recovery signals. Missing evidence lowers confidence rather than becoming inability or a hard distance ceiling; a hard performance does not automatically establish comfortable training tolerance, and one bad workout can make current readiness conservative without erasing accumulated endurance evidence.
 
-`GoalStrategy` decides which goal-independent capabilities matter for the active Goal. A later Adaptation layer will decide what should change, and `NextWorkoutPlanner` will eventually turn that decision into a concrete structured workout. Neither full adaptation decisions nor next-workout generation are part of the current Athlete State foundation.
+`GoalStrategyResolver` now derives `GoalStrategy` from the active `TrainingGoal` and accumulated `AthleteState` capabilities. It is pure Kotlin, deterministic, and provider-independent. `GoalStrategyRepository` exposes the same derived result in production and simulation environments; nothing new is persisted and no migration is required.
+
+```text
+TrainingGoal + AthleteState → GoalStrategy
+GoalStrategy + WorkoutResponse + readiness → later TrainingAdaptationDecision
+TrainingAdaptationDecision → later NextWorkoutPlanner → structured workout
+```
+
+GoalStrategy describes **WHAT needs development**. WorkoutResponse describes **HOW training was tolerated**, while readiness describes current recovery/safety constraints. The later AdaptationDecision will decide **HOW aggressively training may change**; the later NextWorkoutPlanner will select **WHAT concrete stimulus comes next**. The existing basic next-workout workflow and base-plan generator are unchanged and do not yet consume GoalStrategy.
+
+The strategy exposes ordered primary, secondary, and supporting capability lists, interpretation confidence using the existing `ProfileConfidence` type, and reasons connecting goal demands to observed evidence. The dimensions are aerobic base, distance tolerance, continuous running, weekly volume, threshold, speed, running economy, race-specific endurance, and recovery tolerance. Unlisted capabilities have no assigned priority; there are no weights, fitness scores, predicted results, or success probabilities.
+
+Short completion goals (up to 5 km) initially emphasize continuity and distance tolerance. When at least three tolerated sessions and both continuous and tolerated distance reach a broad 90% consolidation band, distance tolerance and aerobic consistency become primary and continuity remains secondary. This band is not a goal-completion tolerance or readiness test. Intermediate completion distances emphasize distance tolerance and aerobic base. Half-marathon-length goals add volume/recovery tolerance and aerobic durability; marathon-length or longer goals make weekly volume primary. Custom distances use these distance-demand bands, not a multiplied 5K plan.
+
+Improve Performance and Target Time goals gain performance direction when continuous distance and comfortable aerobic tolerance both cover the target and at least three tolerated sessions exist. Short/intermediate performance goals prioritize threshold and race-specific endurance, retain aerobic base/economy, and include speed only as supporting for short distances. Long performance goals keep aerobic base and race-specific endurance primary, supported by distance, weekly volume, threshold, recovery tolerance, and economy. When distance evidence is not established, foundations retain priority. AthleteState does not contain measured current threshold/speed capability: these priorities identify relevant demands, not diagnosed pace deficits. Target time remains context and never supplies easy/threshold pace.
+
+Completed distance never substitutes for continuous distance. Missing continuity or tolerance is explicitly uncertain, not inability. Confidence is LOW when either is missing, fewer than three tolerated or recent continuous observations exist, or AthleteState confidence is low/very low; it is HIGH only with high AthleteState confidence and at least five tolerated and five recent continuous observations, otherwise MEDIUM. Recent volume/frequency explain consistency needs without prescribing load. Current readiness, pain, latest session cost, calendar time, and plan milestones never redefine strategy. Recovery tolerance for longer distances describes sustained training capacity, not a next-session recovery decision. Inactive goals return no strategy; only the existing goal-completion pipeline changes goal status.
 
 ## Pre-run check-in
 
@@ -395,6 +411,10 @@ Presets create deterministic prescriptions, canonical-run inputs, optional metri
 
 The environment is a manual development tool, not a production user feature. Scenario loading never injects final response, coaching-action, or goal-completion results.
 
+The debug-only Goal Strategy section shows the active goal/status, target-time context when applicable, capability priorities, confidence, and the exact shared resolver reasons. **Rebuild Athlete State** also recalculates strategy from the same rebuilt state. Presets GS1–GS8 add beginner 5K completion, near-continuous 4.8 km, established 5K performance, 5K target 30:00, 10K from a 5–6 km base, half-marathon completion, missing evidence, and a high-cost latest run with retained 10K direction. A–M remain available unchanged. Goal strategy and simulation do not assign any goal date; Completion Run dates continue to belong only to plan milestones.
+
+See the [Goal Strategy verification checklist](docs/goal-strategy-verification.md) for the exact GS1–GS8 outputs and reasons, determinism check, and existing continuity/navigation regression checks.
+
 ## Roadmap
 
 - [x] Workout lifecycle and state machine
@@ -405,6 +425,7 @@ The environment is a manual development tool, not a production user feature. Sce
 - [x] Anthracite and teal application theme
 - [x] Athlete Performance Profile
 - [x] Longitudinal Athlete State and current-readiness interpretation
+- [x] Pure goal-specific capability strategy with debug GS1–GS8 verification
 - [x] Goal System
 - [x] Structured Workout Model
 - [x] Training Block / Weekly Plan Generation

@@ -12,7 +12,6 @@ import com.example.openruncoach.data.local.RunEntity
 import com.example.openruncoach.domain.RunFeedbackDraft
 import com.example.openruncoach.domain.RunSummary
 import com.example.openruncoach.domain.SourceDeviceType
-import com.example.openruncoach.domain.goal.GoalType
 import com.example.openruncoach.domain.goal.TrainingGoalDraft
 import com.example.openruncoach.domain.goal.TrainingGoalFactory
 import com.example.openruncoach.domain.metrics.MetricConfidence
@@ -71,7 +70,7 @@ class SimulationScenarioLoader(
       ),
     )
     val goal = goalRepository.createGoal(
-      TrainingGoalDraft(scenario.goalDistance, goalType = GoalType.COMPLETE_DISTANCE)
+      TrainingGoalDraft(scenario.goalDistance, goalType = scenario.goalType, targetTimeSeconds = scenario.targetTimeSeconds)
     )
     val sessionWorkouts = scenario.sessions.map { session ->
       session.workout.toWorkout(

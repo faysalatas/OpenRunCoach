@@ -31,11 +31,12 @@ import com.example.openruncoach.ui.common.formatDistance
 import com.example.openruncoach.ui.common.formatDuration
 import com.example.openruncoach.ui.common.formatHistoryDate
 import com.example.openruncoach.ui.common.formatPace
+import com.example.openruncoach.theme.OpenRunSpacing
 import java.time.LocalDate
 
-val ScreenPadding = 16.dp
-val SectionSpacing = 24.dp
-val ItemSpacing = 8.dp
+val ScreenPadding = OpenRunSpacing.ScreenHorizontal
+val SectionSpacing = OpenRunSpacing.Section
+val ItemSpacing = OpenRunSpacing.Small
 
 @Composable
 fun WeekDaySelector(

@@ -1,6 +1,5 @@
 package com.example.openruncoach.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -14,40 +13,62 @@ data class RunChartColors(
   val heartRate: Color,
   val cadence: Color,
   val power: Color,
+  val grid: Color,
+  val fill: Color,
+  val axis: Color,
+  val reference: Color,
 )
 
-val LocalRunChartColors = staticCompositionLocalOf {
-  RunChartColors(TealAccent, WarmChart, CoolChart, AnthraciteTextSecondary)
-}
+private val DarkRunChartColors = RunChartColors(
+  pace = OpenRunColors.Accent,
+  heartRate = OpenRunColors.TextSecondary,
+  cadence = OpenRunColors.Accent,
+  power = OpenRunColors.TextMuted,
+  grid = OpenRunColors.ChartGrid,
+  fill = OpenRunColors.ChartFill,
+  axis = OpenRunColors.ChartAxis,
+  reference = OpenRunColors.ChartReference,
+)
+
+val LocalRunChartColors = staticCompositionLocalOf { DarkRunChartColors }
 
 private val DarkColorScheme = darkColorScheme(
-  primary = TealAccent,
-  onPrimary = TealOnAccent,
-  primaryContainer = Color(0xFF164D45),
-  onPrimaryContainer = Color(0xFFC2FFF5),
-  secondary = CoolChart,
-  onSecondary = Color(0xFF071A32),
-  tertiary = WarmChart,
-  onTertiary = Color(0xFF330805),
-  background = AnthraciteBackground,
-  onBackground = AnthraciteText,
-  surface = AnthraciteSurface,
-  onSurface = AnthraciteText,
-  surfaceVariant = AnthraciteVariant,
-  onSurfaceVariant = AnthraciteTextSecondary,
-  surfaceContainer = AnthraciteSurface,
-  surfaceContainerHigh = AnthraciteElevated,
-  outline = AnthraciteOutline,
-  outlineVariant = AnthraciteOutline,
+  primary = OpenRunColors.Accent,
+  onPrimary = OpenRunColors.OnAccent,
+  primaryContainer = OpenRunColors.AccentContainer,
+  onPrimaryContainer = OpenRunColors.TextPrimary,
+  secondary = OpenRunColors.TextSecondary,
+  onSecondary = OpenRunColors.BackgroundDeep,
+  secondaryContainer = OpenRunColors.SurfaceHighlight,
+  onSecondaryContainer = OpenRunColors.TextPrimary,
+  tertiary = OpenRunColors.Warning,
+  onTertiary = OpenRunColors.BackgroundDeep,
+  tertiaryContainer = OpenRunColors.Warning.copy(alpha = 0.18f),
+  onTertiaryContainer = OpenRunColors.Warning,
+  error = OpenRunColors.Error,
+  onError = OpenRunColors.BackgroundDeep,
+  background = OpenRunColors.Background,
+  onBackground = OpenRunColors.TextPrimary,
+  surface = OpenRunColors.Surface,
+  onSurface = OpenRunColors.TextPrimary,
+  surfaceVariant = OpenRunColors.SurfaceHighlight,
+  onSurfaceVariant = OpenRunColors.TextSecondary,
+  surfaceContainerLowest = OpenRunColors.BackgroundDeep,
+  surfaceContainerLow = OpenRunColors.Background,
+  surfaceContainer = OpenRunColors.Surface,
+  surfaceContainerHigh = OpenRunColors.SurfaceElevated,
+  surfaceContainerHighest = OpenRunColors.SurfaceHighlight,
+  outline = OpenRunColors.BorderSubtle,
+  outlineVariant = OpenRunColors.BorderSubtle.copy(alpha = 0.58f),
 )
 
 private val LightColorScheme = lightColorScheme(
   primary = LightTeal,
   onPrimary = LightOnTeal,
-  primaryContainer = Color(0xFF9EF2E3),
+  primaryContainer = Color(0xFFBCECE4),
   onPrimaryContainer = Color(0xFF00201C),
-  secondary = LightCoolChart,
-  tertiary = LightWarmChart,
+  secondary = LightTextSecondary,
+  tertiary = LightWarning,
   background = LightSurface,
   surface = Color.White,
   surfaceVariant = LightSurfaceVariant,
@@ -56,16 +77,30 @@ private val LightColorScheme = lightColorScheme(
 
 @Composable
 fun OpenRunCoachTheme(
-  darkTheme: Boolean = isSystemInDarkTheme(),
+  darkTheme: Boolean = true,
   content: @Composable () -> Unit,
 ) {
   val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
   val chartColors = if (darkTheme) {
-    RunChartColors(TealAccent, WarmChart, CoolChart, AnthraciteTextSecondary)
+    DarkRunChartColors
   } else {
-    RunChartColors(LightTeal, LightWarmChart, LightCoolChart, LightOutline)
+    RunChartColors(
+      pace = LightTeal,
+      heartRate = LightTextSecondary,
+      cadence = LightTeal,
+      power = LightOutline,
+      grid = LightOutline.copy(alpha = 0.35f),
+      fill = LightTeal.copy(alpha = 0.12f),
+      axis = LightOutline,
+      reference = LightOutline,
+    )
   }
   CompositionLocalProvider(LocalRunChartColors provides chartColors) {
-    MaterialTheme(colorScheme = colorScheme, typography = Typography, content = content)
+    MaterialTheme(
+      colorScheme = colorScheme,
+      typography = Typography,
+      shapes = OpenRunShapes,
+      content = content,
+    )
   }
 }

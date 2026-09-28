@@ -22,6 +22,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.openruncoach.LocalOpenRunCoachEnvironment
 import com.example.openruncoach.data.AthleteStateContinuityTrace
+import com.example.openruncoach.data.GoalStrategySnapshot
+import com.example.openruncoach.domain.goal.GoalDistance
+import com.example.openruncoach.domain.goal.targetPaceSecondsPerKm
 import com.example.openruncoach.data.simulation.SimulationRunPersistenceTrace
 import com.example.openruncoach.domain.athlete.AthleteState
 import com.example.openruncoach.domain.simulation.SimulationScenarioKey
@@ -49,6 +52,7 @@ fun SimulationScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     Text("Simulation", style = MaterialTheme.typography.headlineMedium)
     Text("DEBUG ONLY · SIMULATION MODE", color = MaterialTheme.colorScheme.tertiary)
     Text("Each preset clears only the isolated simulation database, writes deterministic raw inputs, and opens the normal app pipeline.")
+    GoalStrategyCard(state.goalStrategy)
     AthleteStateCard(state.athleteState, viewModel::refreshAthleteState)
     ContinuityTraceCard(
       trace = state.continuityTrace,
@@ -79,6 +83,36 @@ fun SimulationScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
       }
     }
     state.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+  }
+}
+
+@Composable
+private fun GoalStrategyCard(snapshot: GoalStrategySnapshot?) {
+  Card(Modifier.fillMaxWidth()) {
+    Column(Modifier.padding(ScreenPadding), verticalArrangement = Arrangement.spacedBy(ItemSpacing)) {
+      Text("Goal Strategy", style = MaterialTheme.typography.titleLarge)
+      Text("What needs development · independent of today's readiness")
+      val goal = snapshot?.goal
+      val strategy = snapshot?.strategy
+      if (snapshot == null) Text("Rebuilding goal direction…")
+      else if (goal == null || strategy == null) Text("No active goal · no actionable strategy")
+      else {
+        val distanceLabel = if (goal.distance == GoalDistance.CUSTOM) goal.distanceMeters.distance() else goal.distance.displayName
+        StateValue("Active Goal", "$distanceLabel · ${goal.goalType.name.displayName()}")
+        StateValue("Goal status", goal.status.name.displayName())
+        goal.targetTimeSeconds?.let { seconds ->
+          StateValue("Target time", "%d:%02d".format(Locale.ROOT, seconds / 60, seconds % 60))
+          val pace = targetPaceSecondsPerKm(seconds, goal.distanceMeters).toLong()
+          StateValue("Target pace · goal context only", "%d:%02d min/km".format(Locale.ROOT, pace / 60, pace % 60))
+        }
+        StateValue("Strategy confidence", strategy.confidence.name.displayName())
+        StateValue("Primary", strategy.primaryCapabilities.joinToString(" · ") { it.name.displayName() })
+        StateValue("Secondary", strategy.secondaryCapabilities.joinToString(" · ") { it.name.displayName() }.ifEmpty { "None" })
+        StateValue("Supporting", strategy.supportingCapabilities.joinToString(" · ") { it.name.displayName() }.ifEmpty { "None" })
+        Text("Reasons", style = MaterialTheme.typography.titleMedium)
+        strategy.reasons.forEach { Text("• $it") }
+      }
+    }
   }
 }
 

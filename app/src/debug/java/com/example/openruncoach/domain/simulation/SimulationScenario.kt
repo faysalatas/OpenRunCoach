@@ -5,6 +5,7 @@ import com.example.openruncoach.domain.CompletionStatus
 import com.example.openruncoach.domain.MuscleFatigue
 import com.example.openruncoach.domain.PainLevel
 import com.example.openruncoach.domain.goal.GoalDistance
+import com.example.openruncoach.domain.goal.GoalType
 import com.example.openruncoach.domain.workout.WorkoutPurpose
 import com.example.openruncoach.domain.workout.WorkoutType
 import java.time.Instant
@@ -23,6 +24,14 @@ enum class SimulationScenarioKey(val displayName: String, val summary: String) {
   ONE_BAD_RUN("K · One bad run after good history", "A painful high-effort Easy run after successful aerobic training"),
   POSITIVE_EASY_TRAINING("L · Repeated positive Easy training", "Repeated well-tolerated Easy sessions with useful volume"),
   LITTLE_EVIDENCE("M · Little evidence", "One unassessed run with no invented capability or readiness"),
+  GS1_BEGINNER_5K("GS1 · Beginner 5K Complete", "2.5 km completed; continuity is insufficiently observed"),
+  GS2_NEARLY_5K("GS2 · Nearly Complete 5K", "Repeated aerobic runs; continuous 4.8 km without a qualifying 5K"),
+  GS3_PERFORMANCE_5K("GS3 · 5K Performance Athlete", "Comfortable continuous 8 km and repeated aerobic evidence"),
+  GS4_TARGET_30("GS4 · 5K Target 30:00", "Established distance; 6:00/km is target context only"),
+  GS5_COMPLETE_10K("GS5 · 10K Complete from 5K Base", "Comfortable continuous 5–6 km; develop endurance"),
+  GS6_HALF_MARATHON("GS6 · Half Marathon Complete", "Shorter aerobic history; develop durability and volume tolerance"),
+  GS7_LIMITED("GS7 · Limited Evidence", "5K completion goal with unassessed, sparse evidence"),
+  GS8_HIGH_COST("GS8 · High-Cost Latest Run", "10K direction persists after a high-cost latest session"),
 }
 
 enum class SimulatedMovement { NONE, CONTINUOUS, WALKING_AND_STRONG_FADE }
@@ -69,6 +78,8 @@ data class SimulationScenarioPreset(
   val historicalSessions: List<SimulatedSessionInput> = emptyList(),
   val unrelatedRuns: List<SimulatedRunInput> = emptyList(),
   val persistPrimaryCheckout: Boolean = true,
+  val goalType: GoalType = GoalType.COMPLETE_DISTANCE,
+  val targetTimeSeconds: Long? = null,
 ) {
   val sessions: List<SimulatedSessionInput>
     get() = historicalSessions + SimulatedSessionInput(workout, runs.first(), checkout)
@@ -196,6 +207,48 @@ object SimulationScenarios {
       listOf(run("m-unassessed-run", 1_200.0, 720, 600.0, null, null, SimulatedMovement.NONE)),
       SimulatedCheckoutInput("m-unassessed-run", 4),
       persistPrimaryCheckout = false,
+    )
+    SimulationScenarioKey.GS1_BEGINNER_5K -> {
+      val session = easySession("gs1-short", 2_500.0, 1_200, 3, 0)
+      longitudinal(key, emptyList(), session.copy(run = session.run.copy(movement = SimulatedMovement.NONE)))
+        .copy(goalDistance = GoalDistance.FIVE_K, evaluateGoalCompletion = true)
+    }
+    SimulationScenarioKey.GS2_NEARLY_5K -> longitudinal(
+      key,
+      listOf(
+        easySession("gs2-1", 3_500.0, 1_680, 3, -18),
+        easySession("gs2-2", 4_000.0, 1_920, 3, -12),
+        easySession("gs2-3", 4_500.0, 2_160, 3, -6),
+      ),
+      easySession("gs2-4", 4_800.0, 2_304, 3, 0),
+    ).copy(goalDistance = GoalDistance.FIVE_K, evaluateGoalCompletion = true)
+    SimulationScenarioKey.GS3_PERFORMANCE_5K -> strategyBase(key)
+      .copy(goalDistance = GoalDistance.FIVE_K, goalType = GoalType.IMPROVE_PERFORMANCE)
+    SimulationScenarioKey.GS4_TARGET_30 -> strategyBase(key)
+      .copy(goalDistance = GoalDistance.FIVE_K, goalType = GoalType.TARGET_TIME, targetTimeSeconds = 1_800L)
+    SimulationScenarioKey.GS5_COMPLETE_10K -> strategyBase(key, longest = 6_000.0)
+    SimulationScenarioKey.GS6_HALF_MARATHON -> strategyBase(key)
+      .copy(goalDistance = GoalDistance.HALF_MARATHON)
+    SimulationScenarioKey.GS7_LIMITED -> preset(SimulationScenarioKey.LITTLE_EVIDENCE)
+      .copy(key = key, goalDistance = GoalDistance.FIVE_K)
+    SimulationScenarioKey.GS8_HIGH_COST -> {
+      val base = strategyBase(key, longest = 6_000.0)
+      val final = hardSession("gs8-hard", 0)
+      base.copy(workout = final.workout, runs = listOf(final.run), checkout = final.checkout)
+    }
+  }
+
+  private fun strategyBase(key: SimulationScenarioKey, longest: Double = 8_000.0): SimulationScenarioPreset {
+    val prefix = key.name.lowercase()
+    return longitudinal(
+      key,
+      listOf(
+        easySession("$prefix-1", 5_000.0, 2_400, 3, -24),
+        easySession("$prefix-2", 5_500.0, 2_640, 3, -18),
+        easySession("$prefix-3", 6_000.0, 2_880, 3, -12),
+        easySession("$prefix-4", longest, (longest * 0.48).toLong(), 3, -6),
+      ),
+      easySession("$prefix-5", 5_000.0, 2_400, 3, 0),
     )
   }
 

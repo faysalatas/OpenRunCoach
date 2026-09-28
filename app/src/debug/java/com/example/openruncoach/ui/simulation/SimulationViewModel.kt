@@ -9,6 +9,7 @@ import com.example.openruncoach.CoachAnalysisRuntimeTrace
 import com.example.openruncoach.SimulationRuntimeTrace
 import com.example.openruncoach.data.AthleteStateContinuityTrace
 import com.example.openruncoach.data.AthleteStateRepositoryIdentityTrace
+import com.example.openruncoach.data.GoalStrategySnapshot
 import com.example.openruncoach.data.simulation.SimulationPersistenceTrace
 import com.example.openruncoach.data.simulation.SimulationRunPersistenceTrace
 import com.example.openruncoach.domain.athlete.AthleteState
@@ -25,6 +26,7 @@ data class SimulationUiState(
   val isLoading: Boolean = false,
   val errorMessage: String? = null,
   val athleteState: AthleteState? = null,
+  val goalStrategy: GoalStrategySnapshot? = null,
   val continuityTrace: List<AthleteStateContinuityTrace> = emptyList(),
   val athleteStateRepositoryIdentity: AthleteStateRepositoryIdentityTrace? = null,
   val activeEnvironmentDatabaseIdentity: String? = null,
@@ -60,11 +62,15 @@ class SimulationViewModel(
     viewModelScope.launch {
       _uiState.update { it.copy(isLoading = true, errorMessage = null) }
       try {
-        val result = withContext(Dispatchers.IO) { environment.athleteStateRepository().rebuildWithTrace() }
+        val (result, strategy) = withContext(Dispatchers.IO) {
+          val rebuilt = environment.athleteStateRepository().rebuildWithTrace()
+          rebuilt to environment.goalStrategyRepository().forState(rebuilt.state)
+        }
         _uiState.update {
           it.copy(
             isLoading = false,
             athleteState = result.state,
+            goalStrategy = strategy,
             continuityTrace = result.continuityTrace,
             athleteStateRepositoryIdentity = result.repositoryIdentity,
             activeEnvironmentDatabaseIdentity = environment.database.identity(),

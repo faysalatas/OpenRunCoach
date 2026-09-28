@@ -1,10 +1,17 @@
 package com.example.openruncoach
 
 import android.net.Uri
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.Surface
@@ -12,6 +19,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -87,27 +96,46 @@ fun MainNavigation() {
     },
     bottomBar = {
       if (showBottomBar) {
-        NavigationBar {
-          bottomDestinations.forEach { destination ->
-            val selected = currentDestination?.hierarchy?.any { it.route == destination.route } == true
-            NavigationBarItem(
-              selected = selected,
-              onClick = {
-                if (!selected) {
-                  if (destination.route == Routes.HOME) {
-                    navController.popBackStack(Routes.HOME, inclusive = false, saveState = true)
-                  } else {
-                    navController.navigate(destination.route) {
-                      popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                      launchSingleTop = true
-                      restoreState = true
+        Column {
+          HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+          NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
+            bottomDestinations.forEach { destination ->
+              val selected = currentDestination?.hierarchy?.any { it.route == destination.route } == true
+              NavigationBarItem(
+                selected = selected,
+                colors = NavigationBarItemDefaults.colors(
+                  selectedIconColor = MaterialTheme.colorScheme.primary,
+                  selectedTextColor = MaterialTheme.colorScheme.primary,
+                  indicatorColor = Color.Transparent,
+                  unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                  unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
+                onClick = {
+                  if (!selected) {
+                    if (destination.route == Routes.HOME) {
+                      navController.popBackStack(Routes.HOME, inclusive = false, saveState = true)
+                    } else {
+                      navController.navigate(destination.route) {
+                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                      }
                     }
                   }
-                }
-              },
-              icon = { Text(destination.symbol) },
-              label = { Text(destination.label) },
-            )
+                },
+                icon = {
+                  Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(destination.symbol)
+                    Box(
+                      Modifier.padding(top = 3.dp).width(18.dp).height(2.dp).background(
+                        if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                      ),
+                    )
+                  }
+                },
+                label = { Text(destination.label, style = MaterialTheme.typography.labelSmall) },
+              )
+            }
           }
         }
       }
@@ -123,6 +151,7 @@ fun MainNavigation() {
           onRunClick = { runId -> navController.navigate(runDetailRoute(runId)) },
           onViewAnalysis = { runId -> navController.navigate(coachDetailRoute(runId)) },
           onViewPlan = { navController.navigate(Routes.PLAN) },
+          onViewGoal = { navController.navigate(Routes.GOAL) },
         )
       }
       composable(Routes.HISTORY) {
