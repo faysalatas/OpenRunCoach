@@ -14,6 +14,9 @@ import com.example.openruncoach.domain.RunSummary
 import com.example.openruncoach.domain.SourceDeviceType
 import com.example.openruncoach.domain.metrics.CURRENT_RUN_METRICS_DATA_VERSION
 import com.example.openruncoach.domain.metrics.RunMetrics
+import com.example.openruncoach.domain.route.RouteSplitDeriver
+import com.example.openruncoach.domain.route.RunRoute
+import com.example.openruncoach.domain.samsunghealth.preferredRoute
 import com.example.openruncoach.domain.samsunghealth.SamsungWorkoutTarget
 import java.time.Clock
 import java.time.Duration
@@ -79,6 +82,8 @@ class RunMetricsAutoRefreshCoordinator(
   private val healthConnectMetricsProvider: HealthConnectRunMetricsProvider,
   private val samsungMetricsEnricher: SamsungHealthRunMetricsEnricher,
   private val metricsRepository: RunMetricsRepository,
+  private val routeRepository: RunRouteRepository? = null,
+  private val routeSplitDeriver: RouteSplitDeriver = RouteSplitDeriver(),
   private val athleteProfileRepository: AthletePerformanceProfileRepository? = null,
   private val freshnessPolicy: RunMetricsFreshnessPolicy = RunMetricsFreshnessPolicy(),
 ) : RunMetricsRefresher {
@@ -88,6 +93,7 @@ class RunMetricsAutoRefreshCoordinator(
   override suspend fun refresh(run: RunSummary, force: Boolean): RunMetricsRefreshOutcome = mutex.withLock {
     val existing = metricsRepository.getRunMetrics(run.healthConnectRecordId)
     var healthConnect: com.example.openruncoach.domain.inspection.RunDataInspection? = null
+    var selectedRoute: RunRoute? = null
     engine.refresh(
       run = run,
       existing = existing,
@@ -123,15 +129,21 @@ class RunMetricsAutoRefreshCoordinator(
                 run.sourceDeviceType == SourceDeviceType.WATCH,
               averageHeartRate = run.averageHeartRate,
               maxHeartRate = run.maxHeartRate?.toDouble(),
+              runId = run.healthConnectRecordId,
             ),
             healthConnectInspection = healthConnect,
             manualSelectionCandidateId = samsungSelectionRepository.selectedCandidateId(run.healthConnectRecordId),
           ).inspection
+          selectedRoute = samsung?.preferredRoute(run.healthConnectRecordId)
           samsungMetricsEnricher.enrich(base, samsung)
         }
       },
       persist = { metrics ->
         metricsRepository.save(metrics)
+        selectedRoute?.let { route ->
+          val result = routeSplitDeriver.derive(route, run.distanceMeters, metrics)
+          routeRepository?.save(result.route, result.splits)
+        }
         athleteProfileRepository?.recalculate()
       },
     )
@@ -157,6 +169,7 @@ class RunMetricsAutoRefreshCoordinator(
         healthConnectMetricsProvider = HealthConnectRunMetricsProvider(),
         samsungMetricsEnricher = SamsungHealthRunMetricsEnricher(),
         metricsRepository = metricsRepository,
+        routeRepository = RunRouteRepository(database.runRouteDao()),
         athleteProfileRepository = athleteProfileRepository,
       )
     }

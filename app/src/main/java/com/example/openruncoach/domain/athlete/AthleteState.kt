@@ -51,7 +51,7 @@ class AthleteStateBuilder {
     workoutResponses: List<WorkoutResponse>,
   ): AthleteState {
     val runsById = canonicalRuns.asSequence()
-      .filter(RunSummary::isCanonical)
+      .filter { it.isCanonical && it.relevance == com.example.openruncoach.domain.RunRelevance.ACTIVE }
       .filter { !it.startTime.isAfter(profile.calculatedAt) }
       .distinctBy(RunSummary::healthConnectRecordId)
       .associateBy(RunSummary::healthConnectRecordId)

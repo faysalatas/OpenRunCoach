@@ -3,6 +3,7 @@ package com.example.openruncoach.domain.goal
 import com.example.openruncoach.domain.CompletionStatus
 import com.example.openruncoach.domain.RunFeedback
 import com.example.openruncoach.domain.RunSummary
+import com.example.openruncoach.domain.RunRelevance
 import com.example.openruncoach.domain.metrics.RunMetrics
 import com.example.openruncoach.domain.metrics.RunContinuityEvaluator
 import com.example.openruncoach.domain.metrics.RunContinuityEvidence
@@ -39,7 +40,8 @@ class GoalCompletionEvaluator {
     if (goal.goalType != GoalType.COMPLETE_DISTANCE) {
       return result(GoalCompletionStatus.NOT_APPLICABLE, target, null, "Goal completion evaluation applies to Complete Distance goals.")
     }
-    if (!canonicalRun.isCanonical || metrics?.runId?.let { it != canonicalRun.healthConnectRecordId } == true ||
+    if (!canonicalRun.isCanonical || canonicalRun.relevance != RunRelevance.ACTIVE ||
+      metrics?.runId?.let { it != canonicalRun.healthConnectRecordId } == true ||
       feedback?.runId?.let { it != canonicalRun.healthConnectRecordId } == true
     ) {
       return result(GoalCompletionStatus.INVALID_RUN, target, null, "The result must use the matching canonical run and metrics.")

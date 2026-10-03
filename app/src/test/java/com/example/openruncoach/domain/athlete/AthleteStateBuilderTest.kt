@@ -2,6 +2,7 @@ package com.example.openruncoach.domain.athlete
 
 import com.example.openruncoach.domain.PainLevel
 import com.example.openruncoach.domain.RunSummary
+import com.example.openruncoach.domain.RunRelevance
 import com.example.openruncoach.domain.metrics.RunContinuityEvidence
 import com.example.openruncoach.domain.profile.AthletePerformanceProfileCalculator
 import com.example.openruncoach.domain.profile.ProfileConfidence
@@ -101,6 +102,15 @@ class AthleteStateBuilderTest {
     assertNull(state.longestCompletedDistanceMeters)
     assertNull(state.longestDemonstratedContinuousDistanceMeters)
     assertNull(state.longestToleratedDistanceMeters)
+  }
+
+  @Test fun ignoredRunDoesNotBecomeAthleteStateEvidence() {
+    val ignored = run("ignored", 10_000.0, 0).copy(relevance = RunRelevance.IGNORED)
+
+    val state = state(listOf(ignored), listOf(response(ignored, WorkoutPurpose.ENDURANCE, 3, SessionCost.NORMAL)))
+
+    assertNull(state.longestCompletedDistanceMeters)
+    assertEquals(0.0, state.recentActualVolume7DaysMeters, 0.01)
   }
 
   @Test fun interruptedResponseDoesNotBecomeContinuousDistance() {

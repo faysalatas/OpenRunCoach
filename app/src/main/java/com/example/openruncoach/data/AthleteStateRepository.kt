@@ -2,6 +2,7 @@ package com.example.openruncoach.data
 
 import com.example.openruncoach.data.local.OpenRunCoachDatabase
 import com.example.openruncoach.domain.RunSummary
+import com.example.openruncoach.domain.RunRelevance
 import com.example.openruncoach.domain.athlete.AthleteState
 import com.example.openruncoach.domain.athlete.AthleteStateBuilder
 import com.example.openruncoach.domain.metrics.RunContinuityEvidence
@@ -56,7 +57,7 @@ class AthleteStateRepository(
       .associateBy { it.runId }
     val trace = mutableListOf<AthleteStateContinuityTrace>()
     runs
-      .filter(RunSummary::isCanonical)
+      .filter { it.isCanonical && it.relevance == RunRelevance.ACTIVE }
       .filter { !it.startTime.isAfter(profile.calculatedAt) }
       .distinctBy(RunSummary::healthConnectRecordId)
       .sortedBy(RunSummary::startTime)

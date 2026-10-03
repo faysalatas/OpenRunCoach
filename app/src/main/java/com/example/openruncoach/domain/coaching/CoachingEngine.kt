@@ -6,6 +6,7 @@ import com.example.openruncoach.domain.MuscleFatigue
 import com.example.openruncoach.domain.PainLevel
 import com.example.openruncoach.domain.RunFeedback
 import com.example.openruncoach.domain.RunSummary
+import com.example.openruncoach.domain.RunRelevance
 import com.example.openruncoach.domain.workout.WorkoutExecutionResult
 import com.example.openruncoach.domain.workout.WorkoutExecutionStatus
 import com.example.openruncoach.domain.workout.PaceStability
@@ -37,11 +38,11 @@ class CoachingEngine(private val clock: Clock = Clock.systemUTC()) {
     executionResult: WorkoutExecutionResult? = null,
     workoutResponse: WorkoutResponse? = null,
   ): CoachingDecision? {
-    val canonicalHistory = recentRunHistory.filter(RunSummary::isCanonical)
+    val canonicalHistory = recentRunHistory.filter { it.isCanonical && it.relevance == RunRelevance.ACTIVE }
     val newestCanonicalRun = canonicalHistory.maxWithOrNull(
       compareBy<RunSummary>({ it.startTime }, { it.healthConnectRecordId })
     )
-    if (!latestRun.isCanonical ||
+    if (!latestRun.isCanonical || latestRun.relevance != RunRelevance.ACTIVE ||
       feedback.runId != latestRun.healthConnectRecordId ||
       newestCanonicalRun?.healthConnectRecordId != latestRun.healthConnectRecordId
     ) return null

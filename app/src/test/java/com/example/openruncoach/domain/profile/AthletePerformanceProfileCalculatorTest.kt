@@ -6,6 +6,7 @@ import com.example.openruncoach.domain.MuscleFatigue
 import com.example.openruncoach.domain.PainLevel
 import com.example.openruncoach.domain.RunFeedback
 import com.example.openruncoach.domain.RunSummary
+import com.example.openruncoach.domain.RunRelevance
 import com.example.openruncoach.domain.metrics.MetricConfidence
 import com.example.openruncoach.domain.metrics.MetricSource
 import com.example.openruncoach.domain.metrics.MetricValue
@@ -53,6 +54,20 @@ class AthletePerformanceProfileCalculatorTest {
     val profile = calculate(listOf(canonical, duplicate))
     assertEquals(1, profile.totalCanonicalRuns)
     assertEquals(5_000.0, profile.distanceLast7DaysMeters, 0.01)
+  }
+
+  @Test
+  fun ignoredRunIsExcludedAndRestoringIncludesItAgain() {
+    val active = run("active", 1, distance = 4_000.0)
+    val ignored = run("ignored", 1, distance = 2_000.0).copy(relevance = RunRelevance.IGNORED)
+
+    val withoutIgnored = calculate(listOf(active, ignored))
+    val restored = calculate(listOf(active, ignored.copy(relevance = RunRelevance.ACTIVE)))
+
+    assertEquals(1, withoutIgnored.runsLast7Days)
+    assertEquals(4_000.0, withoutIgnored.distanceLast7DaysMeters, 0.01)
+    assertEquals(2, restored.runsLast7Days)
+    assertEquals(6_000.0, restored.distanceLast7DaysMeters, 0.01)
   }
 
   @Test

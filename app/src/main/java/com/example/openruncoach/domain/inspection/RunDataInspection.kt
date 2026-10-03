@@ -45,6 +45,8 @@ data class SessionMetricSummary(
   val healthConnectRecordId: String,
   val deviceManufacturer: String?,
   val deviceModel: String?,
+  val lapCount: Int? = null,
+  val segmentCount: Int? = null,
 ) : MetricSummary
 
 data class TotalMetricSummary(

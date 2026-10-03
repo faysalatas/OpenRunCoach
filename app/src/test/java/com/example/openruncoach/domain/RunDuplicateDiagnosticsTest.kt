@@ -25,21 +25,18 @@ class RunDuplicateDiagnosticsTest {
   }
 
   @Test
-  fun allThreeThresholdsMustMatchAndDistanceMustExist() {
+  fun insufficientOverlapOrMissingEvidenceIsNeverSilentlyHighConfidence() {
     val base = run("base", 0, 2400, 5000.0)
     val outsideStart = run("late", 121, 2400, 5000.0)
     val outsideDuration = run("long", 0, 2520, 5000.0)
-    val outsideDistance = run("far", 0, 2400, 5260.0)
+    val outsideDistance = run("far", 0, 2400, 6000.0)
     val missingDistance = run("missing", 0, 2400, null)
     val zeroDistance = run("zero", 0, 2400, 0.0)
 
-    listOf(outsideStart, outsideDuration, outsideDistance, missingDistance, zeroDistance).forEach {
-      assertTrue(findPossibleDuplicates(listOf(base, it)).isEmpty())
+    listOf(outsideStart, outsideDistance, missingDistance, zeroDistance).forEach {
+      assertTrue(assessPhysicalRunMatch(base, it).decision != PhysicalRunMatchDecision.HIGH)
     }
-    assertTrue(findPossibleDuplicates(listOf(
-      base,
-      run("just-outside", 120, 2400, 5000.0).copy(startTime = Instant.ofEpochSecond(120, 1)),
-    )).isEmpty())
+    assertEquals(PhysicalRunMatchDecision.HIGH, assessPhysicalRunMatch(base, outsideDuration).decision)
   }
 
   @Test
@@ -49,6 +46,22 @@ class RunDuplicateDiagnosticsTest {
 
     assertFalse(findPossibleDuplicates(listOf(first, second)).getValue("first").single().differentSourceApplications)
     assertTrue(findPossibleDuplicates(listOf(first, first.copy(startTime = first.startTime.plusSeconds(30)))).isEmpty())
+  }
+
+  @Test
+  fun separateSameDayRunsDoNotMatch() {
+    val first = run("first", 0, 1_080, 3_600.0, "strava", "Strava")
+    val second = run("second", 1_740, 120, 300.0, "samsung", "Samsung Health")
+
+    assertEquals(PhysicalRunMatchDecision.SEPARATE, assessPhysicalRunMatch(first, second).decision)
+  }
+
+  @Test
+  fun partialOverlapWithoutDistanceEvidenceIsAmbiguous() {
+    val first = run("first", 0, 1_200, null, "strava", "Strava")
+    val second = run("second", 60, 1_200, null, "samsung", "Samsung Health")
+
+    assertEquals(PhysicalRunMatchDecision.AMBIGUOUS, assessPhysicalRunMatch(first, second).decision)
   }
 
   private fun run(

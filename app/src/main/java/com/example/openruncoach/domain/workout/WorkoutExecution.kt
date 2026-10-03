@@ -37,9 +37,10 @@ data class WorkoutExecutionResult(
   val qualityWorkCompletionFraction: Double?,
   val explanation: String,
   val evaluatedAt: Instant,
+  val physicalRunId: String = actualRunId,
 ) {
   init {
-    require(plannedWorkoutId.isNotBlank() && actualRunId.isNotBlank())
+    require(plannedWorkoutId.isNotBlank() && actualRunId.isNotBlank() && physicalRunId.isNotBlank())
     require(intendedDistanceMeters == null || intendedDistanceMeters.isFinite() && intendedDistanceMeters > 0.0)
     require(intendedDurationSeconds == null || intendedDurationSeconds > 0L)
     require(actualDistanceMeters == null || actualDistanceMeters.isFinite() && actualDistanceMeters >= 0.0)
@@ -141,6 +142,7 @@ class WorkoutAdherenceEvaluator(private val clock: Clock = Clock.systemUTC()) {
       qualityWorkCompletionFraction = qualityFraction,
       explanation = explanation(plannedWorkout, status, completionFraction, qualityFraction, comparisonUnavailable),
       evaluatedAt = clock.instant(),
+      physicalRunId = actualRun.physicalRunId,
     )
   }
 

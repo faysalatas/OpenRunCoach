@@ -140,6 +140,8 @@ class HealthConnectRunDataReader(
           healthConnectRecordId = session.metadata.id,
           deviceManufacturer = session.metadata.device?.manufacturer,
           deviceModel = session.metadata.device?.model,
+          lapCount = session.laps.size,
+          segmentCount = session.segments.size,
         ),
         notes = sourceNote,
         recordIds = listOf(session.metadata.id),

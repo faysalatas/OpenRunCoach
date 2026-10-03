@@ -3,11 +3,9 @@ package com.example.openruncoach.ui.coach
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -39,10 +37,13 @@ import com.example.openruncoach.ui.common.formatDistance
 import com.example.openruncoach.ui.common.formatDuration
 import com.example.openruncoach.ui.common.formatPace
 import com.example.openruncoach.ui.common.coachingActionLabel
-import com.example.openruncoach.ui.components.EmptyState
-import com.example.openruncoach.ui.components.ItemSpacing
 import com.example.openruncoach.ui.components.ScreenPadding
-import com.example.openruncoach.ui.components.SectionSpacing
+import com.example.openruncoach.ui.components.OpenRunCard
+import com.example.openruncoach.ui.components.OpenRunSection
+import com.example.openruncoach.ui.components.OpenRunEvidenceRow
+import com.example.openruncoach.ui.components.OpenRunCompactMetrics
+import com.example.openruncoach.ui.components.OpenRunMetricItem
+import com.example.openruncoach.theme.OpenRunSpacing
 
 @Composable
 fun CoachDetailScreen(runId: String, onBack: () -> Unit, modifier: Modifier = Modifier) {
@@ -88,26 +89,23 @@ fun CoachDetailScreen(runId: String, onBack: () -> Unit, modifier: Modifier = Mo
 
   Column(
     modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(ScreenPadding),
-    verticalArrangement = Arrangement.spacedBy(SectionSpacing),
+    verticalArrangement = Arrangement.spacedBy(OpenRunSpacing.Comfortable),
   ) {
     TextButton(onClick = onBack) { Text("‹ Back") }
     Text("Coach Analysis", style = MaterialTheme.typography.headlineMedium)
     when {
-      state.isLoading -> EmptyState("Loading", "Loading coach analysis…")
-      state.errorMessage != null -> EmptyState("Analysis unavailable", state.errorMessage!!)
-      state.decision == null -> EmptyState("No analysis", "Analysis is available after feedback on the latest canonical run.")
+      state.isLoading -> Text("Loading coach analysis…")
+      state.errorMessage != null -> Text(state.errorMessage!!, color = MaterialTheme.colorScheme.error)
+      state.decision == null -> Text("Analysis is available after feedback on the latest canonical run.",
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
       else -> {
-        Card(Modifier.fillMaxWidth()) {
-          Column(Modifier.padding(ScreenPadding), verticalArrangement = Arrangement.spacedBy(ItemSpacing)) {
-            Text("Coaching response", style = MaterialTheme.typography.titleLarge)
-            Text(coachingActionLabel(state.decision!!.action), style = MaterialTheme.typography.headlineSmall)
-          }
+        OpenRunCard {
+          Text("Coaching response", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          Text(coachingActionLabel(state.decision!!.action), style = MaterialTheme.typography.headlineSmall)
+          state.decision!!.reasons.firstOrNull()?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
         }
-        state.response?.let { ResponseAnalysis(it) } ?: Card(Modifier.fillMaxWidth()) {
-          Column(Modifier.padding(ScreenPadding), verticalArrangement = Arrangement.spacedBy(ItemSpacing)) {
-            Text("Available evidence", style = MaterialTheme.typography.titleLarge)
-            state.decision!!.reasons.forEach { reason -> Text("• $reason") }
-          }
+        state.response?.let { ResponseAnalysis(it) } ?: OpenRunSection("Available evidence") {
+          state.decision!!.reasons.forEach { reason -> Text("• $reason") }
         }
       }
     }
@@ -119,13 +117,15 @@ private fun ResponseAnalysis(response: WorkoutResponse) {
   AnalysisCard("Outcome") {
     AnalysisValue("Completion", response.completion.displayName())
     AnalysisValue("Prescription adherence", response.adherence.displayName())
-    AnalysisValue("Session cost", response.sessionCost.displayName())
-    AnalysisValue("Interpretation confidence", response.confidence.name.displayName())
   }
   AnalysisCard("Actual") {
-    response.actualDistanceMeters?.let { AnalysisValue("Distance", formatDistance(it)) }
-    AnalysisValue("Duration", formatDuration(response.actualDurationSeconds))
-    response.actualPaceSecondsPerKm?.let { AnalysisValue("Average pace", formatPace(it)) }
+    OpenRunCompactMetrics(listOf(
+      OpenRunMetricItem(formatDistance(response.actualDistanceMeters), "Distance"),
+      OpenRunMetricItem(formatDuration(response.actualDurationSeconds), "Duration"),
+      OpenRunMetricItem(formatPace(response.actualPaceSecondsPerKm), "Avg. pace"),
+    ))
+  }
+  AnalysisCard("Execution evidence") {
     AnalysisValue("Volume", response.volumeCompletion.displayName())
     AnalysisValue("Effort", response.effortResponse.displayName())
     if (response.paceResponse != PaceResponse.UNKNOWN) AnalysisValue("Pace", response.paceResponse.displayName())
@@ -140,6 +140,8 @@ private fun ResponseAnalysis(response: WorkoutResponse) {
     }
   }
   AnalysisCard("Checkout") {
+    AnalysisValue("Session cost", response.sessionCost.displayName())
+    AnalysisValue("Interpretation confidence", response.confidence.name.displayName())
     AnalysisValue("RPE", "${response.reportedRpe}/10")
     AnalysisValue("Pain", response.pain.displayName())
   }
@@ -150,23 +152,12 @@ private fun ResponseAnalysis(response: WorkoutResponse) {
 
 @Composable
 private fun AnalysisCard(title: String, content: @Composable () -> Unit) {
-  Card(Modifier.fillMaxWidth()) {
-    Column(Modifier.padding(ScreenPadding), verticalArrangement = Arrangement.spacedBy(ItemSpacing)) {
-      Text(title, style = MaterialTheme.typography.titleLarge)
-      content()
-    }
-  }
+  OpenRunSection(title) { content() }
 }
 
 @Composable
 private fun AnalysisValue(label: String, value: String) {
-  androidx.compose.foundation.layout.Row(
-    Modifier.fillMaxWidth(),
-    horizontalArrangement = Arrangement.SpaceBetween,
-  ) {
-    Text(label)
-    Text(value)
-  }
+  OpenRunEvidenceRow(label, value)
 }
 
 private fun plannedPace(response: WorkoutResponse): String? {

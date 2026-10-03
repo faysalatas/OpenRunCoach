@@ -7,6 +7,7 @@ import com.example.openruncoach.data.RunRepository
 import com.example.openruncoach.data.TrainingGoalRepository
 import com.example.openruncoach.data.TrainingPlanRepository
 import com.example.openruncoach.data.WorkoutResponseRepository
+import com.example.openruncoach.data.WorkoutExecutionRepository
 import com.example.openruncoach.domain.RunFeedback
 import com.example.openruncoach.domain.RunSummary
 import com.example.openruncoach.domain.coaching.CoachingDecision
@@ -22,6 +23,7 @@ import com.example.openruncoach.domain.workout.WorkoutDescriptionFormatter
 import com.example.openruncoach.domain.workout.WorkoutEstimateCalculator
 import com.example.openruncoach.domain.workout.WorkoutResponse
 import com.example.openruncoach.domain.workout.WorkoutType
+import com.example.openruncoach.domain.workout.displayName
 import java.time.Clock
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -46,8 +48,10 @@ data class HomeUiState(
   val latestRun: RunSummary? = null,
   val coachingDecision: CoachingDecision? = null,
   val nextWorkout: HomeWorkoutSummary? = null,
+  val upcomingWorkouts: List<HomeWorkoutSummary> = emptyList(),
   val week: HomeWeekSummary? = null,
   val weeklyMetrics: HomeWeeklyMetrics? = null,
+  val progress: HomeProgressSummary? = null,
   val hasActivePlan: Boolean = false,
   val activeGoal: HomeGoalSummary? = null,
   val errorMessage: String? = null,
@@ -55,10 +59,21 @@ data class HomeUiState(
 
 data class HomeWorkoutSummary(
   val name: String,
+  val type: WorkoutType,
   val date: LocalDate,
   val isToday: Boolean,
   val details: List<String>,
+  val distanceLabel: String?,
+  val paceLabel: String?,
+  val intensity: HomeWorkoutIntensity?,
 )
+
+enum class HomeWorkoutIntensity(val label: String, val activeBars: Int) {
+  EASY("Easy", 1),
+  MODERATE("Moderate", 2),
+  HARD("Hard", 3),
+  VERY_HARD("Very hard", 4),
+}
 
 data class HomeWeekDay(
   val date: LocalDate,
@@ -66,6 +81,7 @@ data class HomeWeekDay(
   val isToday: Boolean,
   val hasRun: Boolean,
   val hasPlannedWorkout: Boolean,
+  val workoutTypeLabel: String?,
 )
 
 data class HomeWeekSummary(
@@ -79,6 +95,16 @@ data class HomeWeeklyMetrics(
   val runCount: Int,
   val totalDistanceMeters: Double?,
   val averagePaceSecondsPerKm: Double?,
+  val days: List<HomeDailyMetric>,
+  val distanceIsPlanned: Boolean,
+  val paceDifferenceSecondsPerKm: Double?,
+  val distanceDifferenceMeters: Double?,
+)
+
+data class HomeDailyMetric(
+  val date: LocalDate,
+  val distanceMeters: Double?,
+  val averagePaceSecondsPerKm: Double?,
 )
 
 data class HomeGoalSummary(val label: String)
@@ -89,6 +115,7 @@ private data class HomeRunState(
   val plan: TrainingPlan?,
   val goal: TrainingGoal?,
   val selectedWeekStart: LocalDate,
+  val completedWorkoutTypesByRunId: Map<String, WorkoutType>,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -98,6 +125,7 @@ class HomeViewModel(
   trainingPlanRepository: TrainingPlanRepository,
   goalRepository: TrainingGoalRepository,
   private val workoutResponseRepository: WorkoutResponseRepository,
+  private val workoutExecutionRepository: WorkoutExecutionRepository,
   private val coachingEngine: CoachingEngine = CoachingEngine(),
   private val clock: Clock = Clock.systemDefaultZone(),
   private val zoneId: ZoneId = clock.zone,
@@ -116,6 +144,7 @@ class HomeViewModel(
       plan = plan,
       goal = goal,
       selectedWeekStart = weekStart,
+      completedWorkoutTypesByRunId = workoutExecutionRepository.getCompletedWorkoutTypesByRunId(),
     )
   }.flatMapLatest { runState ->
     val run = runState.latestRun
@@ -129,6 +158,7 @@ class HomeViewModel(
   private fun HomeRunState.toUiState(feedback: RunFeedback?, response: WorkoutResponse?): HomeUiState {
     val today = LocalDate.now(clock)
     val run = latestRun
+    val upcoming = plan.upcomingWorkoutSummaries(today)
     val execution = run?.let { selected ->
       plan?.weeks.orEmpty().flatMap { it.workouts }.mapNotNull { it.executionResult }
         .firstOrNull { it.actualRunId == selected.healthConnectRecordId }
@@ -140,9 +170,23 @@ class HomeViewModel(
       coachingDecision = if (run != null && feedback != null) {
         coachingEngine.analyze(run, canonicalRuns, feedback, execution, response)
       } else null,
-      nextWorkout = plan.nextWorkoutSummary(today),
-      week = buildWeekSummary(today, selectedWeekStart, canonicalRuns, plan, zoneId),
-      weeklyMetrics = buildWeeklyMetrics(selectedWeekStart, canonicalRuns, zoneId),
+      nextWorkout = upcoming.firstOrNull(),
+      upcomingWorkouts = upcoming,
+      week = buildWeekSummary(
+        today,
+        selectedWeekStart,
+        canonicalRuns,
+        plan,
+        completedWorkoutTypesByRunId,
+        zoneId,
+      ),
+      weeklyMetrics = buildWeeklyMetrics(selectedWeekStart, canonicalRuns, plan, zoneId),
+      progress = HomeProgressTrendCalculator.calculate(
+        referenceDate = today,
+        canonicalRuns = canonicalRuns,
+        completedWorkoutTypesByRunId = completedWorkoutTypesByRunId,
+        zoneId = zoneId,
+      ),
       hasActivePlan = plan != null,
       activeGoal = goal?.toHomeSummary(),
     )
@@ -163,19 +207,50 @@ class HomeViewModel(
   }
 }
 
-private fun TrainingPlan?.nextWorkoutSummary(today: LocalDate): HomeWorkoutSummary? {
-  this ?: return null
-  val next = weeks.flatMap { it.workouts }
+private fun TrainingPlan?.upcomingWorkoutSummaries(today: LocalDate): List<HomeWorkoutSummary> {
+  this ?: return emptyList()
+  return weeks.flatMap { it.workouts }
     .filter { it.workout.type != WorkoutType.REST && it.executionResult == null && !it.workout.date.isBefore(today) }
-    .minByOrNull { it.workout.date }
-    ?.workout
-    ?: return null
-  return HomeWorkoutSummary(
-    name = next.name,
-    date = next.date,
-    isToday = next.date == today,
-    details = next.homeDetails(),
-  )
+    .sortedWith(compareBy({ it.workout.date }, { it.workout.name }))
+    .take(5)
+    .map { entry ->
+      HomeWorkoutSummary(
+        name = entry.workout.name,
+        type = entry.workout.type,
+        date = entry.workout.date,
+        isToday = entry.workout.date == today,
+        details = entry.workout.homeDetails(),
+        distanceLabel = entry.workout.homeDistanceLabel(),
+        paceLabel = entry.workout.homePaceLabel(),
+        intensity = entry.workout.homeIntensity(),
+      )
+    }
+}
+
+private fun StructuredWorkout.homeDistanceLabel(): String? =
+  WorkoutEstimateCalculator.calculate(this).estimatedTotalDistanceMeters?.let(::formatMetricDistance)
+
+private fun StructuredWorkout.homePaceLabel(): String? {
+  val paceTargets = blocks.flatMap { it.segments }
+    .flatMap { listOf(it.primaryIntensity) + it.secondaryIntensities }
+    .filterIsInstance<PaceTarget>()
+    .distinct()
+  return paceTargets.singleOrNull()?.let {
+    WorkoutDescriptionFormatter.paceRange(it).replace(" min/km", " /km")
+  }
+}
+
+private fun StructuredWorkout.homeIntensity(): HomeWorkoutIntensity? {
+  val rpeTargets = blocks.flatMap { it.segments }
+    .flatMap { listOf(it.primaryIntensity) + it.secondaryIntensities }
+    .filterIsInstance<RpeTarget>()
+  val maximum = rpeTargets.maxOfOrNull(RpeTarget::maximum) ?: return null
+  return when (maximum) {
+    in 1..4 -> HomeWorkoutIntensity.EASY
+    in 5..6 -> HomeWorkoutIntensity.MODERATE
+    in 7..8 -> HomeWorkoutIntensity.HARD
+    else -> HomeWorkoutIntensity.VERY_HARD
+  }
 }
 
 private fun StructuredWorkout.homeDetails(): List<String> {
@@ -186,12 +261,16 @@ private fun StructuredWorkout.homeDetails(): List<String> {
   val rpeTargets = targets.filterIsInstance<RpeTarget>().distinct()
   return buildList {
     estimate.estimatedTotalDistanceMeters?.let { add(formatMetricDistance(it)) }
-    estimate.estimatedMinimumDurationSeconds?.let { minimum ->
-      val maximum = estimate.estimatedMaximumDurationSeconds ?: minimum
-      add(WorkoutDescriptionFormatter.durationRange(minimum, maximum))
+    paceTargets.singleOrNull()?.let {
+      add(WorkoutDescriptionFormatter.paceRange(it).replace(" min/km", " /km"))
     }
-    paceTargets.singleOrNull()?.let { add(WorkoutDescriptionFormatter.paceRange(it)) }
     rpeTargets.singleOrNull()?.let { add("RPE ${it.minimum}–${it.maximum}") }
+    if (size < 3) {
+      estimate.estimatedMinimumDurationSeconds?.let { minimum ->
+        val maximum = estimate.estimatedMaximumDurationSeconds ?: minimum
+        add(WorkoutDescriptionFormatter.durationRange(minimum, maximum))
+      }
+    }
   }.distinct().take(3)
 }
 
@@ -200,11 +279,13 @@ private fun buildWeekSummary(
   monday: LocalDate,
   runs: List<RunSummary>,
   plan: TrainingPlan?,
+  completedWorkoutTypesByRunId: Map<String, WorkoutType>,
   zoneId: ZoneId = ZoneId.systemDefault(),
   locale: Locale = Locale.getDefault(),
 ): HomeWeekSummary {
   val sunday = monday.plusDays(6)
-  val runDates = runs.asSequence()
+  val weekRuns = runs.filter { it.startTime.atZone(zoneId).toLocalDate() in monday..sunday }
+  val runDates = weekRuns.asSequence()
     .map { it.startTime.atZone(zoneId).toLocalDate() }
     .filter { it in monday..sunday }
     .toSet()
@@ -226,6 +307,24 @@ private fun buildWeekSummary(
         isToday = date == today,
         hasRun = date in runDates,
         hasPlannedWorkout = date in plannedDates,
+        workoutTypeLabel = weekRuns
+          .filter { it.startTime.atZone(zoneId).toLocalDate() == date }
+          .mapNotNull { completedWorkoutTypesByRunId[it.healthConnectRecordId] }
+          .distinct()
+          .let { actualTypes ->
+            when {
+              actualTypes.size == 1 -> actualTypes.single().displayName()
+              actualTypes.size > 1 -> "Multiple run types"
+              date in runDates -> "Run recorded"
+              else -> currentEntries.filter { it.workout.date == date }.map { it.workout.type }.distinct().let { plannedTypes ->
+                when (plannedTypes.size) {
+                  0 -> null
+                  1 -> plannedTypes.single().displayName()
+                  else -> "Multiple workouts"
+                }
+              }
+            }
+          },
       )
     },
     progressLabel = progressLabel,
@@ -237,19 +336,95 @@ private fun buildWeekSummary(
 private fun buildWeeklyMetrics(
   monday: LocalDate,
   runs: List<RunSummary>,
+  plan: TrainingPlan?,
   zoneId: ZoneId = ZoneId.systemDefault(),
 ): HomeWeeklyMetrics {
   val sunday = monday.plusDays(6)
   val weekRuns = runs.filter { it.startTime.atZone(zoneId).toLocalDate() in monday..sunday }
+  val plannedEntries = plan?.weeks.orEmpty().flatMap { it.workouts }
+    .filter { it.workout.date in monday..sunday && it.workout.type != WorkoutType.REST }
+  val usePlannedDistance = weekRuns.isEmpty() && plannedEntries.isNotEmpty()
   val distances = weekRuns.map { it.distanceMeters }
-  val totalDistance = distances.takeIf { it.isNotEmpty() && it.all { distance -> distance != null } }
+  val actualDistance = distances.takeIf { it.isNotEmpty() && it.all { distance -> distance != null } }
     ?.sumOf { requireNotNull(it) }
-  val averagePace = totalDistance?.takeIf { it > 0.0 }
+  val plannedDistances = plannedEntries.map {
+    WorkoutEstimateCalculator.calculate(it.workout).estimatedTotalDistanceMeters
+  }
+  val plannedDistance = plannedDistances.takeIf { it.isNotEmpty() && it.all { distance -> distance != null } }
+    ?.sumOf { requireNotNull(it) }
+  val totalDistance = if (usePlannedDistance) plannedDistance else actualDistance
+  val averagePace = actualDistance?.takeIf { it > 0.0 }
     ?.let { distance -> weekRuns.sumOf(RunSummary::durationSeconds) * 1_000.0 / distance }
+  val comparisons = calculateFourWeekComparisons(monday, runs, actualDistance, averagePace, zoneId)
+  val dailyMetrics = (0L..6L).map { offset ->
+    val date = monday.plusDays(offset)
+    val dayRuns = weekRuns.filter { it.startTime.atZone(zoneId).toLocalDate() == date }
+    val dayDistance = dayRuns.map { it.distanceMeters }
+      .takeIf { it.isNotEmpty() && it.all { distance -> distance != null } }
+      ?.sumOf { requireNotNull(it) }
+    val plannedDayDistances = plannedEntries.filter { it.workout.date == date }
+      .map { WorkoutEstimateCalculator.calculate(it.workout).estimatedTotalDistanceMeters }
+    val plannedDayDistance = plannedDayDistances
+      .takeIf { it.isNotEmpty() && it.all { distance -> distance != null } }
+      ?.sumOf { requireNotNull(it) }
+    HomeDailyMetric(
+      date = date,
+      distanceMeters = if (usePlannedDistance) plannedDayDistance else dayDistance,
+      averagePaceSecondsPerKm = dayDistance?.takeIf { it > 0.0 }
+        ?.let { distance -> dayRuns.sumOf(RunSummary::durationSeconds) * 1_000.0 / distance },
+    )
+  }
   return HomeWeeklyMetrics(
     runCount = weekRuns.size,
     totalDistanceMeters = totalDistance,
     averagePaceSecondsPerKm = averagePace,
+    days = dailyMetrics,
+    distanceIsPlanned = usePlannedDistance,
+    paceDifferenceSecondsPerKm = comparisons.paceDifferenceSecondsPerKm,
+    distanceDifferenceMeters = comparisons.distanceDifferenceMeters,
+  )
+}
+
+internal data class HomeFourWeekComparisons(
+  val paceDifferenceSecondsPerKm: Double?,
+  val distanceDifferenceMeters: Double?,
+)
+
+internal fun calculateFourWeekComparisons(
+  currentWeekStart: LocalDate,
+  runs: List<RunSummary>,
+  currentDistanceMeters: Double?,
+  currentPaceSecondsPerKm: Double?,
+  zoneId: ZoneId = ZoneId.systemDefault(),
+): HomeFourWeekComparisons {
+  val historicalWeeks = (1L..4L).map { weeksAgo ->
+    val start = currentWeekStart.minusWeeks(weeksAgo)
+    val end = start.plusDays(6)
+    runs.filter { it.startTime.atZone(zoneId).toLocalDate() in start..end }
+  }
+  val hasCompleteDistanceHistory = historicalWeeks.all { weekRuns ->
+    weekRuns.isNotEmpty() && weekRuns.all { run ->
+      run.distanceMeters?.let { it.isFinite() && it > 0.0 } == true
+    }
+  }
+  if (!hasCompleteDistanceHistory) return HomeFourWeekComparisons(null, null)
+
+  val historicalWeeklyDistances = historicalWeeks.map { weekRuns ->
+    weekRuns.sumOf { requireNotNull(it.distanceMeters) }
+  }
+  val historicalDistanceAverage = historicalWeeklyDistances.average()
+  val distanceDifference = currentDistanceMeters?.let { it - historicalDistanceAverage }
+
+  val hasCompletePaceHistory = historicalWeeks.flatten().all { it.durationSeconds > 0 }
+  val historicalPace = if (hasCompletePaceHistory) {
+    historicalWeeks.flatten().sumOf(RunSummary::durationSeconds) * 1_000.0 /
+      historicalWeeklyDistances.sum()
+  } else null
+  return HomeFourWeekComparisons(
+    paceDifferenceSecondsPerKm = if (currentPaceSecondsPerKm != null && historicalPace != null) {
+      historicalPace - currentPaceSecondsPerKm
+    } else null,
+    distanceDifferenceMeters = distanceDifference,
   )
 }
 

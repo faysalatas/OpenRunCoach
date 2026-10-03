@@ -1,12 +1,11 @@
 package com.example.openruncoach.domain
 
-import java.nio.charset.StandardCharsets
-import java.util.UUID
-
 data class CanonicalRunSelection(
   val runId: String,
+  val physicalRunId: String,
   val duplicateGroupId: String?,
   val isCanonical: Boolean,
+  val matchDecision: PhysicalRunMatchDecision,
   val reason: String,
 )
 
@@ -15,47 +14,60 @@ fun selectCanonicalRuns(
   preferredSourcePackage: String?,
 ): List<CanonicalRunSelection> {
   if (runs.isEmpty()) return emptyList()
-  val runsById = runs.associateBy(RunSummary::healthConnectRecordId)
-  val duplicateLinks = findPossibleDuplicates(runs).mapValues { (_, matches) ->
-    matches.map(PossibleDuplicate::otherRunId).toSet()
-  }
-  val visited = mutableSetOf<String>()
-  val selections = mutableListOf<CanonicalRunSelection>()
-
-  for (run in runs.sortedBy(RunSummary::healthConnectRecordId)) {
-    if (!visited.add(run.healthConnectRecordId)) continue
-    val groupIds = mutableSetOf(run.healthConnectRecordId)
-    val pending = ArrayDeque<String>().apply { add(run.healthConnectRecordId) }
-    while (pending.isNotEmpty()) {
-      duplicateLinks[pending.removeFirst()].orEmpty().forEach { linkedId ->
-        if (groupIds.add(linkedId)) {
-          visited.add(linkedId)
-          pending.add(linkedId)
-        }
+  val sortedRuns = runs.sortedBy(RunSummary::healthConnectRecordId)
+  val assessments = buildMap<Pair<String, String>, PhysicalRunMatch> {
+    sortedRuns.forEachIndexed { index, first ->
+      sortedRuns.drop(index + 1).forEach { second ->
+        put(orderedPair(first.healthConnectRecordId, second.healthConnectRecordId), assessPhysicalRunMatch(first, second))
       }
     }
-    val group = groupIds.mapNotNull(runsById::get)
+  }
+  // Requiring HIGH evidence against every member prevents transitive A↔B↔C over-merges.
+  val groups = mutableListOf<MutableList<RunSummary>>()
+  sortedRuns.forEach { run ->
+    val group = groups.firstOrNull { members -> members.all { member ->
+      assessments[orderedPair(run.healthConnectRecordId, member.healthConnectRecordId)]?.decision ==
+        PhysicalRunMatchDecision.HIGH
+    } }
+    if (group == null) groups.add(mutableListOf(run)) else group.add(run)
+  }
+  val selections = mutableListOf<CanonicalRunSelection>()
+  for (group in groups) {
+    val run = group.singleOrNull()
     if (group.size == 1) {
+      val ambiguous = assessments.entries.firstOrNull { (pair, match) ->
+        (pair.first == run!!.healthConnectRecordId || pair.second == run.healthConnectRecordId) &&
+          match.decision == PhysicalRunMatchDecision.AMBIGUOUS
+      }?.value
       selections += CanonicalRunSelection(
-        runId = run.healthConnectRecordId,
+        runId = run!!.healthConnectRecordId,
+        physicalRunId = run.physicalRunId,
         duplicateGroupId = null,
         isCanonical = true,
-        reason = "No duplicate detected",
+        matchDecision = ambiguous?.decision ?: PhysicalRunMatchDecision.SEPARATE,
+        reason = ambiguous?.reasons?.joinToString("; ") ?: "No matching provider representation detected",
       )
       continue
     }
 
-    val groupId = stableGroupId(groupIds)
     val (canonical, reason) = chooseCanonical(group, preferredSourcePackage)
+    val physicalRunId = stablePhysicalRunId(group, canonical)
+    val matchReasons = group.flatMapIndexed { index, first ->
+      group.drop(index + 1).flatMap { second ->
+        assessments.getValue(orderedPair(first.healthConnectRecordId, second.healthConnectRecordId)).reasons
+      }
+    }.distinct().joinToString("; ")
     group.forEach { candidate ->
       selections += CanonicalRunSelection(
         runId = candidate.healthConnectRecordId,
-        duplicateGroupId = groupId,
+        physicalRunId = physicalRunId,
+        duplicateGroupId = physicalRunId,
         isCanonical = candidate.healthConnectRecordId == canonical.healthConnectRecordId,
+        matchDecision = PhysicalRunMatchDecision.HIGH,
         reason = if (candidate.healthConnectRecordId == canonical.healthConnectRecordId) {
-          reason
+          "$reason; $matchReasons"
         } else {
-          "Duplicate of ${canonical.healthConnectRecordId}; $reason"
+          "Provider representation of $physicalRunId; $matchReasons"
         },
       )
     }
@@ -75,6 +87,17 @@ private fun chooseCanonical(
     if (preferred.isNotEmpty()) {
       candidates = preferred
       reason = "Preferred workout source"
+    }
+  }
+
+  if (group.map(RunSummary::sourcePackageName).distinct().size == 1 &&
+    candidates.size > 1 && candidates.all { it.sourceRecordLastModifiedTime != null }
+  ) {
+    val latest = candidates.maxOf { requireNotNull(it.sourceRecordLastModifiedTime) }
+    val editedRecords = candidates.filter { it.sourceRecordLastModifiedTime == latest }
+    if (editedRecords.size < candidates.size) {
+      candidates = editedRecords
+      reason = "Latest provider edit"
     }
   }
 
@@ -111,5 +134,13 @@ private fun completenessScore(run: RunSummary): Int =
     (if (run.averageHeartRate != null || run.maxHeartRate != null) 1 else 0) +
     (if (run.sourceDeviceType != null || run.sourceDeviceManufacturer != null || run.sourceDeviceModel != null) 1 else 0)
 
-private fun stableGroupId(ids: Set<String>): String =
-  UUID.nameUUIDFromBytes(ids.sorted().joinToString("\u0000").toByteArray(StandardCharsets.UTF_8)).toString()
+private fun stablePhysicalRunId(group: List<RunSummary>, canonical: RunSummary): String {
+  val persisted = group.groupingBy(RunSummary::physicalRunId).eachCount()
+    .filterValues { it > 1 }.keys.sorted().firstOrNull()
+  val establishedAlias = group.filter { it.physicalRunId != it.healthConnectRecordId }
+    .map(RunSummary::physicalRunId).sorted().firstOrNull()
+  return persisted ?: establishedAlias ?: canonical.physicalRunId
+}
+
+private fun orderedPair(first: String, second: String): Pair<String, String> =
+  if (first <= second) first to second else second to first

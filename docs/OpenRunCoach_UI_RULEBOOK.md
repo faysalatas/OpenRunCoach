@@ -3,7 +3,7 @@
 **Status:** Design source of truth  
 **Version:** 1.0  
 **Applies to:** Android app UI built with Jetpack Compose  
-**Visual target:** `docs/ui/openruncoach-ui-target.png`
+**Visual targets:** `docs/UI/openruncoach-ui-target.png` and, for History and workout details, `docs/UI/history-workout-detail-target.png`
 
 ## 1. Purpose
 
@@ -375,6 +375,12 @@ for primary summary sections.
 
 A summary row of 3–4 metrics is acceptable when each value is genuinely important.
 
+Compact dashboard and list metrics may use 18–20 sp values with smaller, muted labels;
+reserve hero sizing for the primary action or result. Abbreviate pace units to `/km`.
+Reflow metric groups into fewer columns on narrow screens or at larger font scales
+rather than truncating recorded values. Four metrics should use a balanced 2×2 grid
+when a readable single row is not possible.
+
 Examples:
 
 - Distance
@@ -454,6 +460,11 @@ A vertical timeline or restrained list is preferred over a dense card grid.
 ---
 
 ## 18. Run Detail rules
+
+The approved History and planned/completed workout-detail reference is
+`docs/UI/history-workout-detail-target.png`. Completed and planned workouts share the same
+visual family, while completed screens show actual evidence and planned screens show only
+the prescription until execution exists.
 
 Run Detail should follow this hierarchy:
 
@@ -717,4 +728,3 @@ Suggested changelog convention:
 ```text
 UI Rulebook v1.0 — Minimal dark/mint design system established
 ```
-

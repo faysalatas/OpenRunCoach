@@ -32,9 +32,16 @@ enum class SimulationScenarioKey(val displayName: String, val summary: String) {
   GS6_HALF_MARATHON("GS6 · Half Marathon Complete", "Shorter aerobic history; develop durability and volume tolerance"),
   GS7_LIMITED("GS7 · Limited Evidence", "5K completion goal with unassessed, sparse evidence"),
   GS8_HIGH_COST("GS8 · High-Cost Latest Run", "10K direction persists after a high-cost latest session"),
+  ROUTE_STEADY_4K("R1 · Steady 4 km route", "Deterministic GPS route with near-equal kilometre splits"),
+  ROUTE_PROGRESSIVE_4K("R2 · Progressive 4 km route", "Deterministic GPS route with faster later splits"),
+  ROUTE_WALKING_4K("R3 · Walking interruption route", "One kilometre is slowed by a walking interruption"),
+  ROUTE_PARTIAL_378("R4 · 3.78 km partial split", "Three full kilometres and one final partial split"),
+  ROUTE_GPS_OUTLIER("R5 · GPS outlier", "One impossible coordinate must not inflate route distance"),
+  ROUTE_LARGE_GAP("R6 · Large route gap", "A long sampling gap rejects route-derived splits"),
 }
 
 enum class SimulatedMovement { NONE, CONTINUOUS, WALKING_AND_STRONG_FADE }
+enum class SimulatedRouteProfile { NONE, STEADY, PROGRESSIVE, WALKING_INTERRUPTION, GPS_OUTLIER, LARGE_GAP }
 
 data class SimulatedWorkoutInput(
   val name: String,
@@ -56,6 +63,7 @@ data class SimulatedRunInput(
   val averageHeartRate: Double?,
   val maxHeartRate: Long?,
   val movement: SimulatedMovement,
+  val routeProfile: SimulatedRouteProfile = SimulatedRouteProfile.NONE,
 )
 
 data class SimulatedCheckoutInput(
@@ -236,6 +244,43 @@ object SimulationScenarios {
       val final = hardSession("gs8-hard", 0)
       base.copy(workout = final.workout, runs = listOf(final.run), checkout = final.checkout)
     }
+    SimulationScenarioKey.ROUTE_STEADY_4K -> routeScenario(
+      key, "route-steady-4k", 4_000.0, 1_920, SimulatedRouteProfile.STEADY,
+    )
+    SimulationScenarioKey.ROUTE_PROGRESSIVE_4K -> routeScenario(
+      key, "route-progressive-4k", 4_000.0, 1_920, SimulatedRouteProfile.PROGRESSIVE,
+    )
+    SimulationScenarioKey.ROUTE_WALKING_4K -> routeScenario(
+      key, "route-walking-4k", 4_000.0, 2_100, SimulatedRouteProfile.WALKING_INTERRUPTION,
+    )
+    SimulationScenarioKey.ROUTE_PARTIAL_378 -> routeScenario(
+      key, "route-partial-378", 3_780.0, 1_571, SimulatedRouteProfile.STEADY,
+    )
+    SimulationScenarioKey.ROUTE_GPS_OUTLIER -> routeScenario(
+      key, "route-gps-outlier", 4_000.0, 1_920, SimulatedRouteProfile.GPS_OUTLIER,
+    )
+    SimulationScenarioKey.ROUTE_LARGE_GAP -> routeScenario(
+      key, "route-large-gap", 4_000.0, 1_920, SimulatedRouteProfile.LARGE_GAP,
+    )
+  }
+
+  private fun routeScenario(
+    key: SimulationScenarioKey,
+    id: String,
+    distance: Double,
+    duration: Long,
+    routeProfile: SimulatedRouteProfile,
+  ): SimulationScenarioPreset {
+    val pace = duration * 1_000.0 / distance
+    return easy(
+      key = key,
+      actual = run(
+        id, distance, duration, pace, 146.0, 164, SimulatedMovement.CONTINUOUS,
+        routeProfile = routeProfile,
+      ),
+      checkout = SimulatedCheckoutInput(id, 4),
+      pace = 420.0 to 560.0,
+    )
   }
 
   private fun strategyBase(key: SimulationScenarioKey, longest: Double = 8_000.0): SimulationScenarioPreset {
@@ -334,7 +379,20 @@ object SimulationScenarios {
     maxHeartRate: Long?,
     movement: SimulatedMovement,
     startOffsetSeconds: Long = 0,
+    routeProfile: SimulatedRouteProfile? = null,
   ) = SimulatedRunInput(
-    id, runDate.plusSeconds(startOffsetSeconds), duration, distance, pace, averageHeartRate, maxHeartRate, movement,
+    id = id,
+    startTime = runDate.plusSeconds(startOffsetSeconds),
+    durationSeconds = duration,
+    distanceMeters = distance,
+    averagePaceSecondsPerKm = pace,
+    averageHeartRate = averageHeartRate,
+    maxHeartRate = maxHeartRate,
+    movement = movement,
+    routeProfile = routeProfile ?: when (movement) {
+      SimulatedMovement.NONE -> SimulatedRouteProfile.NONE
+      SimulatedMovement.CONTINUOUS -> SimulatedRouteProfile.STEADY
+      SimulatedMovement.WALKING_AND_STRONG_FADE -> SimulatedRouteProfile.WALKING_INTERRUPTION
+    },
   )
 }

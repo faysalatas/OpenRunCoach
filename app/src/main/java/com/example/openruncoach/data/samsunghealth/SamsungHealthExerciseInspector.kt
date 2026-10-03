@@ -25,6 +25,10 @@ import com.example.openruncoach.domain.samsunghealth.investigateCadence
 import com.example.openruncoach.domain.samsunghealth.matchSamsungEnrichment
 import com.example.openruncoach.domain.samsunghealth.matchSamsungIdentity
 import com.example.openruncoach.domain.samsunghealth.summarizeExerciseLogMetric
+import com.example.openruncoach.domain.metrics.MetricConfidence
+import com.example.openruncoach.domain.metrics.MetricSource
+import com.example.openruncoach.domain.route.RunRoute
+import com.example.openruncoach.domain.route.RunRoutePoint
 import com.samsung.android.sdk.health.data.data.HealthDataPoint
 import com.samsung.android.sdk.health.data.data.entries.ExerciseSession
 import com.samsung.android.sdk.health.data.device.AccessoryType
@@ -33,6 +37,7 @@ import com.samsung.android.sdk.health.data.device.DeviceGroup
 import com.samsung.android.sdk.health.data.device.DeviceType
 import com.samsung.android.sdk.health.data.request.DataType
 import java.time.Duration
+import java.time.Instant
 import kotlinx.coroutines.CancellationException
 
 data class SamsungHealthInspectionResult(
@@ -60,7 +65,11 @@ class SamsungHealthExerciseInspector(
       )
       val sdkCandidates = mutableListOf<SdkCandidate>()
       for (record in records) {
-        sdkCandidates += sessions(record)
+        sdkCandidates += sessions(
+          point = record,
+          target = target,
+          includeRoute = availability.exerciseLocationReadPermission == SamsungExercisePermissionState.GRANTED,
+        )
       }
       val matchTarget = target.withHealthConnectMetrics(healthConnectInspection)
       val candidates = sdkCandidates.map(SdkCandidate::candidate)
@@ -103,7 +112,11 @@ class SamsungHealthExerciseInspector(
     }
   }
 
-  private suspend fun sessions(point: HealthDataPoint): List<SdkCandidate> {
+  private suspend fun sessions(
+    point: HealthDataPoint,
+    target: SamsungWorkoutTarget,
+    includeRoute: Boolean,
+  ): List<SdkCandidate> {
     val sessions = point.getValue(DataType.ExerciseType.SESSIONS).orEmpty()
     val source = point.dataSource
     val device = dataSource.device(source?.deviceId)
@@ -113,10 +126,12 @@ class SamsungHealthExerciseInspector(
       val pointId = point.uid.takeIf(String::isNotBlank)
         ?: point.clientDataId?.takeIf(String::isNotBlank)
         ?: "${session.startTime.toEpochMilli()}-${session.endTime.toEpochMilli()}"
+      val candidateId = if (sessions.size == 1) pointId else "$pointId#$index"
       val logs = session.toLogSamples()
+      val routeDiagnostics = if (includeRoute) session.routeDiagnostics(target) else null
       val cadence = investigateCadence(session.meanCadence?.toDouble(), session.maxCadence?.toDouble(), logs)
       val candidate = SamsungExerciseCandidate(
-        id = if (sessions.size == 1) pointId else "$pointId#$index",
+        id = candidateId,
         startTime = session.startTime,
         endTime = session.endTime,
         durationSeconds = session.duration.seconds.coerceAtLeast(0),
@@ -141,6 +156,12 @@ class SamsungHealthExerciseInspector(
           vo2Max = session.vo2Max.validMetric(),
           meanCadence = session.meanCadence.validMetric(),
           maxCadence = session.maxCadence.validMetric(),
+          routePointCount = routeDiagnostics?.pointCount,
+          routeAltitudePointCount = routeDiagnostics?.altitudePointCount,
+          routeAccuracyPointCount = routeDiagnostics?.accuracyPointCount,
+          routeRejectedPointCount = routeDiagnostics?.rejectedPointCount,
+          routeFirstTimestamp = routeDiagnostics?.firstTimestamp,
+          routeLastTimestamp = routeDiagnostics?.lastTimestamp,
           exerciseLogExists = session.log != null,
           totalLogSamples = logs.orEmpty().size,
           heartRateSampleCount = logs.orEmpty().count { it.heartRate != null },
@@ -156,7 +177,17 @@ class SamsungHealthExerciseInspector(
           ).any { it.validMetric() != null },
         ),
       )
-      SdkCandidate(candidate, point, session, device)
+      val route = routeDiagnostics?.let { diagnostics ->
+        RunRoute(
+          runId = target.runId ?: candidateId,
+          source = MetricSource.SAMSUNG_HEALTH,
+          sourceAppName = "Samsung Health",
+          confidence = MetricConfidence.LOW,
+          points = diagnostics.points,
+          rejectedPointCount = diagnostics.rejectedPointCount,
+        )
+      }
+      SdkCandidate(candidate, point, session, device, route)
     }
   }
 
@@ -195,6 +226,7 @@ class SamsungHealthExerciseInspector(
       powerLogSummary = summarizeExerciseLogMetric(logs) { it.powerWatts },
       countLogSummary = summarizeExerciseLogMetric(logs) { it.count?.toDouble() },
       exerciseLogSamples = logs.orEmpty(),
+      route = route,
     )
   }
 
@@ -203,6 +235,7 @@ class SamsungHealthExerciseInspector(
     val point: HealthDataPoint,
     val session: ExerciseSession,
     val device: Device?,
+    val route: RunRoute?,
   )
 
   private companion object {
@@ -221,6 +254,77 @@ private fun ExerciseSession.toLogSamples(): List<SamsungExerciseLogSample>? = lo
     count = entry.count,
   )
 }
+
+private data class SamsungRouteDiagnostics(
+  val pointCount: Int,
+  val altitudePointCount: Int,
+  val accuracyPointCount: Int,
+  val rejectedPointCount: Int,
+  val firstTimestamp: Instant?,
+  val lastTimestamp: Instant?,
+  val points: List<RunRoutePoint>,
+)
+
+private fun ExerciseSession.routeDiagnostics(target: SamsungWorkoutTarget): SamsungRouteDiagnostics? {
+  val sourcePoints = route ?: return null
+  val earliestAccepted = target.startTime.minusSeconds(ROUTE_TIME_TOLERANCE_SECONDS)
+  val latestAccepted = target.endTime.plusSeconds(ROUTE_TIME_TOLERANCE_SECONDS)
+  val accepted = sourcePoints.mapIndexedNotNull { sourceSequence, point ->
+    val latitude = point.latitude.toDouble()
+    val longitude = point.longitude.toDouble()
+    val altitude = point.altitude?.toDouble()
+    val accuracy = point.accuracy?.toDouble()
+    val timestamp = point.timestamp
+    if (
+      !latitude.isFinite() || latitude !in -90.0..90.0 ||
+      !longitude.isFinite() || longitude !in -180.0..180.0 ||
+      (altitude != null && !altitude.isFinite()) ||
+      (accuracy != null && (!accuracy.isFinite() || accuracy < 0.0)) ||
+      timestamp.isBefore(earliestAccepted) || timestamp.isAfter(latestAccepted)
+    ) {
+      null
+    } else {
+      ValidSamsungRoutePoint(
+        sourceSequence = sourceSequence,
+        timestamp = timestamp,
+        latitude = latitude,
+        longitude = longitude,
+        altitudeMeters = altitude,
+        accuracyMeters = accuracy,
+      )
+    }
+  }.sortedWith(compareBy<ValidSamsungRoutePoint>(ValidSamsungRoutePoint::timestamp)
+    .thenBy(ValidSamsungRoutePoint::sourceSequence))
+  return SamsungRouteDiagnostics(
+    pointCount = accepted.size,
+    altitudePointCount = accepted.count { it.altitudeMeters != null },
+    accuracyPointCount = accepted.count { it.accuracyMeters != null },
+    rejectedPointCount = sourcePoints.size - accepted.size,
+    firstTimestamp = accepted.firstOrNull()?.timestamp,
+    lastTimestamp = accepted.lastOrNull()?.timestamp,
+    points = accepted.mapIndexed { index, point ->
+      RunRoutePoint(
+        sequence = index,
+        timestamp = point.timestamp,
+        latitude = point.latitude,
+        longitude = point.longitude,
+        altitudeMeters = point.altitudeMeters,
+        horizontalAccuracyMeters = point.accuracyMeters,
+      )
+    },
+  )
+}
+
+private data class ValidSamsungRoutePoint(
+  val sourceSequence: Int,
+  val timestamp: Instant,
+  val latitude: Double,
+  val longitude: Double,
+  val altitudeMeters: Double?,
+  val accuracyMeters: Double?,
+)
+
+private const val ROUTE_TIME_TOLERANCE_SECONDS = 120L
 
 private fun DeviceType?.toDomainType(): SamsungSourceDeviceType = when (this) {
   DeviceGroup.WATCH -> SamsungSourceDeviceType.WATCH

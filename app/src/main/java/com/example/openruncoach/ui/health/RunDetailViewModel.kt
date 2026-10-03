@@ -5,11 +5,14 @@ import androidx.lifecycle.viewModelScope
 import com.example.openruncoach.data.RunFeedbackRepository
 import com.example.openruncoach.data.RunRepository
 import com.example.openruncoach.data.RunMetricsRepository
+import com.example.openruncoach.data.RunRouteRepository
 import com.example.openruncoach.data.RunMetricsRefresher
 import com.example.openruncoach.data.GoalCompletionRepository
 import com.example.openruncoach.data.TrainingGoalRepository
 import com.example.openruncoach.data.WorkoutExecutionRepository
+import com.example.openruncoach.data.WorkoutAssignmentCandidate
 import com.example.openruncoach.data.WorkoutResponseRepository
+import com.example.openruncoach.data.StructuredWorkoutRepository
 import com.example.openruncoach.domain.CardioEffort
 import com.example.openruncoach.domain.CompletionStatus
 import com.example.openruncoach.domain.MuscleFatigue
@@ -23,8 +26,10 @@ import com.example.openruncoach.domain.coaching.CoachingEngine
 import com.example.openruncoach.domain.metrics.RunMetrics
 import com.example.openruncoach.domain.metrics.RunChartData
 import com.example.openruncoach.domain.metrics.RunChartPreparer
+import com.example.openruncoach.domain.route.RunRouteData
 import com.example.openruncoach.domain.workout.WorkoutExecutionResult
 import com.example.openruncoach.domain.workout.WorkoutResponse
+import com.example.openruncoach.domain.workout.StructuredWorkout
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -65,18 +70,26 @@ data class RunDetailUiState(
   val metricsUpdateError: Boolean = false,
   val workoutExecution: WorkoutExecutionResult? = null,
   val workoutResponse: WorkoutResponse? = null,
+  val plannedWorkout: StructuredWorkout? = null,
+  val routeData: RunRouteData? = null,
+  val assignmentCandidates: List<WorkoutAssignmentCandidate> = emptyList(),
+  val showAssignmentCandidates: Boolean = false,
+  val isUpdatingAssociation: Boolean = false,
+  val isUpdatingRelevance: Boolean = false,
 )
 
 class RunDetailViewModel(
   private val runId: String,
-  runRepository: RunRepository,
+  private val runRepository: RunRepository,
   private val feedbackRepository: RunFeedbackRepository,
   runMetricsRepository: RunMetricsRepository,
+  runRouteRepository: RunRouteRepository,
   private val runMetricsRefresher: RunMetricsRefresher?,
   private val goalRepository: TrainingGoalRepository? = null,
   private val goalCompletionRepository: GoalCompletionRepository? = null,
   private val workoutExecutionRepository: WorkoutExecutionRepository? = null,
   private val workoutResponseRepository: WorkoutResponseRepository? = null,
+  private val structuredWorkoutRepository: StructuredWorkoutRepository? = null,
   private val coachingEngine: CoachingEngine = CoachingEngine(),
 ) : ViewModel() {
   private val _uiState = MutableStateFlow(RunDetailUiState())
@@ -102,6 +115,7 @@ class RunDetailViewModel(
             autoRefreshRunId = run.healthConnectRecordId
             refreshMetrics(run, force = false)
           }
+          if (run != null) refreshAssociation(run)
         }
     }
     viewModelScope.launch {
@@ -110,6 +124,11 @@ class RunDetailViewModel(
         .collect { metrics -> if (metrics != null) _uiState.update {
           it.copy(metrics = metrics, charts = prepareCharts(metrics, it.run))
         } }
+    }
+    viewModelScope.launch {
+      runRouteRepository.observe(runId)
+        .catch { _uiState.update { it.copy(error = "Could not load route and splits.") } }
+        .collect { routeData -> _uiState.update { it.copy(routeData = routeData) } }
     }
     viewModelScope.launch {
       runRepository.allRuns.collect { runs ->
@@ -148,7 +167,12 @@ class RunDetailViewModel(
       viewModelScope.launch {
         repository.observeForRun(runId)
           .catch { _uiState.update { it.copy(error = "Could not load workout completion.") } }
-          .collect { execution -> _uiState.update { it.copy(workoutExecution = execution).withDerivedState() } }
+          .collect { execution ->
+            val workout = execution?.plannedWorkoutId?.let { structuredWorkoutRepository?.getWorkout(it) }
+            _uiState.update {
+              it.copy(workoutExecution = execution, plannedWorkout = workout ?: it.plannedWorkout).withDerivedState()
+            }
+          }
       }
     }
     workoutResponseRepository?.let { repository ->
@@ -190,6 +214,103 @@ class RunDetailViewModel(
   fun refreshMetrics() {
     val run = _uiState.value.run ?: return
     refreshMetrics(run, force = true)
+  }
+
+  private fun refreshAssociation(run: RunSummary) {
+    val repository = workoutExecutionRepository ?: return
+    viewModelScope.launch {
+      val assigned = repository.assignedWorkout(run)
+      _uiState.update { it.copy(plannedWorkout = assigned?.workout) }
+    }
+  }
+
+  fun toggleRunRelevance() {
+    val run = _uiState.value.run ?: return
+    if (_uiState.value.isUpdatingRelevance) return
+    viewModelScope.launch {
+      _uiState.update { it.copy(isUpdatingRelevance = true, error = null) }
+      try {
+        runRepository.setRunIgnored(run, run.relevance == com.example.openruncoach.domain.RunRelevance.ACTIVE)
+        _uiState.update { it.copy(isUpdatingRelevance = false) }
+      } catch (exception: CancellationException) {
+        throw exception
+      } catch (_: Exception) {
+        _uiState.update { it.copy(isUpdatingRelevance = false, error = "Could not update run visibility.") }
+      }
+    }
+  }
+
+  fun showAssignmentCandidates() {
+    val run = _uiState.value.run ?: return
+    val repository = workoutExecutionRepository ?: return
+    viewModelScope.launch {
+      _uiState.update { it.copy(isUpdatingAssociation = true, error = null) }
+      try {
+        val candidates = repository.assignmentCandidates(run)
+        _uiState.update {
+          it.copy(
+            assignmentCandidates = candidates,
+            showAssignmentCandidates = true,
+            isUpdatingAssociation = false,
+          )
+        }
+      } catch (exception: CancellationException) {
+        throw exception
+      } catch (_: Exception) {
+        _uiState.update { it.copy(isUpdatingAssociation = false, error = "Could not load planned workouts.") }
+      }
+    }
+  }
+
+  fun hideAssignmentCandidates() {
+    _uiState.update { it.copy(showAssignmentCandidates = false) }
+  }
+
+  fun assignToWorkout(workoutId: String) {
+    val run = _uiState.value.run ?: return
+    val repository = workoutExecutionRepository ?: return
+    viewModelScope.launch {
+      _uiState.update { it.copy(isUpdatingAssociation = true, error = null) }
+      try {
+        repository.assignManually(run, workoutId)
+        val assigned = repository.assignedWorkout(run)
+        _uiState.update {
+          it.copy(
+            plannedWorkout = assigned?.workout,
+            showAssignmentCandidates = false,
+            isUpdatingAssociation = false,
+          )
+        }
+      } catch (exception: CancellationException) {
+        throw exception
+      } catch (_: Exception) {
+        _uiState.update { it.copy(isUpdatingAssociation = false, error = "Could not assign this run.") }
+      }
+    }
+  }
+
+  fun unassignWorkout() {
+    val run = _uiState.value.run ?: return
+    val repository = workoutExecutionRepository ?: return
+    viewModelScope.launch {
+      _uiState.update { it.copy(isUpdatingAssociation = true, error = null) }
+      try {
+        repository.unassign(run)
+        _uiState.update {
+          it.copy(
+            plannedWorkout = null,
+            workoutExecution = null,
+            workoutResponse = null,
+            showAssignmentCandidates = false,
+            isUpdatingAssociation = false,
+          ).withDerivedState()
+        }
+      } catch (exception: CancellationException) {
+        throw exception
+      } catch (_: Exception) {
+        _uiState.update { it.copy(isUpdatingAssociation = false, error = "Could not remove the association.") }
+      }
+    }
   }
 
   private fun refreshMetrics(run: RunSummary, force: Boolean) {
@@ -271,9 +392,9 @@ class RunDetailViewModel(
 
   private fun RunDetailUiState.withDerivedState(): RunDetailUiState {
     val selectedRun = run
-    val duplicateRecords = if (selectedRun?.duplicateGroupId == null) emptyList() else {
-      allRuns.filter { it.duplicateGroupId == selectedRun.duplicateGroupId }
-    }
+    val duplicateRecords = selectedRun?.let { selected ->
+      allRuns.filter { it.physicalRunId == selected.physicalRunId }
+    }.orEmpty()
     return copy(
       duplicateRecords = duplicateRecords,
       coachingDecision = if (selectedRun != null && feedback != null) {

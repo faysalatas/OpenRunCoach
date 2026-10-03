@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -125,37 +126,55 @@ fun HealthDataInspectorScreen(runId: String, onBack: () -> Unit, modifier: Modif
       !state.run!!.isCanonical -> Text("This diagnostic is available only for the canonical run.")
       else -> {
         RunHeader(state.run!!)
+        DetailedRunDataSummary(state)
         if (state.isInspecting && state.inspection == null) Text("Inspecting available Health Connect data…")
-        state.inspection?.let { inspection ->
-          if (inspection.missingPermissions.isNotEmpty()) {
-            Column(verticalArrangement = Arrangement.spacedBy(ItemSpacing)) {
+        DiagnosticDisclosure("Permissions / SDK status") {
+          state.inspection?.let { inspection ->
+            if (inspection.missingPermissions.isEmpty()) {
+              DiagnosticValue("Health Connect permissions", "Available")
+            } else {
               Text("Some metric permissions are missing. Available metrics are still shown.")
               Button(onClick = { permissionLauncher.launch(inspection.missingPermissions) }) {
                 Text("Request additional read permissions")
               }
             }
           }
-          SamsungHealthSection(
+          SamsungSdkStatus(
             state = state,
             canRequestPermission = activity != null,
             onRequestPermission = { activity?.let(viewModel::requestSamsungHealthPermission) },
+            onRequestRoutePermission = { activity?.let(viewModel::requestSamsungHealthRoutePermission) },
             onResolveIssue = { activity?.let(viewModel::resolveSamsungHealthIssue) },
-            onSelectCandidate = viewModel::selectSamsungWorkout,
           )
+        }
+        DiagnosticDisclosure("Metric availability") {
           state.unifiedMetrics?.let { UnifiedMetricsResult(it, state.run!!, state.samsungHealthInspection) }
-          Text("Health Connect details", style = MaterialTheme.typography.titleLarge)
-          inspection.metrics.forEach { metric ->
-            MetricSection(
-              metric,
-              onInspectRoute = if (
-                metric.metric == RunMetricType.ROUTE &&
-                (metric.summary as? RouteMetricSummary)?.status == RouteInspectionStatus.CONSENT_REQUIRED
-              ) {
-                { routeLauncher.launch(runId) }
-              } else null,
-            )
+          state.samsungHealthInspection?.let { ProviderComparison(it) }
+        }
+        DiagnosticDisclosure("Provider details") {
+          state.inspection?.let { inspection ->
+            Text("Health Connect details", style = MaterialTheme.typography.titleLarge)
+            inspection.metrics.forEach { metric ->
+              MetricSection(
+                metric,
+                onInspectRoute = if (
+                  metric.metric == RunMetricType.ROUTE &&
+                  (metric.summary as? RouteMetricSummary)?.status == RouteInspectionStatus.CONSENT_REQUIRED
+                ) {
+                  { routeLauncher.launch(runId) }
+                } else null,
+              )
+            }
+            Button(onClick = viewModel::inspect, enabled = !state.isInspecting) { Text("Refresh inspection") }
           }
-          Button(onClick = viewModel::inspect, enabled = !state.isInspecting) { Text("Refresh inspection") }
+        }
+        DiagnosticDisclosure("Canonical matching / raw comparison") {
+          state.samsungHealthInspection?.let { inspection ->
+            state.run?.let { CanonicalWorkoutSummary(it) }
+            IdentityMatchSection(inspection)
+            EnrichmentMatchSection(inspection, state.run, viewModel::selectSamsungWorkout)
+            PlausibleSamsungCandidates(inspection, viewModel::selectSamsungWorkout)
+          }
         }
       }
     }
@@ -189,15 +208,113 @@ private fun UnifiedMetricsResult(
 }
 
 @Composable
-private fun SamsungHealthSection(
+private fun DetailedRunDataSummary(state: HealthDataInspectorUiState) {
+  val healthConnectMetrics = state.inspection?.metrics.orEmpty()
+  fun healthConnectMetric(type: RunMetricType) = healthConnectMetrics.firstOrNull { it.metric == type }
+  val session = healthConnectMetric(RunMetricType.EXERCISE_SESSION)?.summary as? SessionMetricSummary
+  val routeMetric = healthConnectMetric(RunMetricType.ROUTE)
+  val route = routeMetric?.summary as? RouteMetricSummary
+  val samsung = state.samsungHealthInspection?.enrichmentSession
+    ?: state.samsungHealthInspection?.identitySession
+
+  Text("Detailed Run Data", style = MaterialTheme.typography.titleLarge)
+  CompactDiagnosticGroup(
+    title = "Health Connect",
+    rows = listOf(
+      "Route" to routeSummaryValue(routeMetric, route),
+      "Route points" to route?.pointCount?.toString().orDash(),
+      "Laps" to session?.lapCount?.toString().orDash(),
+      "Segments" to session?.segmentCount?.toString().orDash(),
+      "Speed samples" to healthConnectSampleCount(healthConnectMetric(RunMetricType.SPEED)),
+      "Heart-rate samples" to healthConnectSampleCount(healthConnectMetric(RunMetricType.HEART_RATE)),
+      "Cadence samples" to healthConnectSampleCount(healthConnectMetric(RunMetricType.CADENCE)),
+    ),
+  )
+  CompactDiagnosticGroup(
+    title = "Samsung Health",
+    rows = listOf(
+      "Route permission" to state.samsungHealthAvailability
+        ?.exerciseLocationReadPermission?.displayName().orDash(),
+      "Route points" to samsung?.candidate?.metrics?.routePointCount?.toString().orDash(),
+      "Route altitude points" to samsung?.candidate?.metrics?.routeAltitudePointCount?.toString().orDash(),
+      "Route accuracy points" to samsung?.candidate?.metrics?.routeAccuracyPointCount?.toString().orDash(),
+      "First route timestamp" to samsung?.candidate?.metrics?.routeFirstTimestamp?.let(::formatInstant).orDash(),
+      "Last route timestamp" to samsung?.candidate?.metrics?.routeLastTimestamp?.let(::formatInstant).orDash(),
+      "Exercise logs" to samsungLogCount(samsung, samsung?.candidate?.metrics?.totalLogSamples),
+      "Logs with speed" to samsungLogCount(samsung, samsung?.candidate?.metrics?.speedSampleCount),
+      "Logs with heart rate" to samsungLogCount(samsung, samsung?.candidate?.metrics?.heartRateSampleCount),
+      "Logs with cadence" to samsungLogCount(samsung, samsung?.candidate?.metrics?.cadenceSampleCount),
+    ),
+  )
+}
+
+@Composable
+private fun CompactDiagnosticGroup(title: String, rows: List<Pair<String, String>>) {
+  Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+    rows.forEachIndexed { index, (label, value) ->
+      Row(
+        Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+      ) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.bodySmall)
+      }
+      if (index < rows.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+    }
+  }
+}
+
+@Composable
+private fun DiagnosticDisclosure(title: String, content: @Composable () -> Unit) {
+  var expanded by rememberSaveable { mutableStateOf(false) }
+  Column(Modifier.fillMaxWidth()) {
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+    TextButton(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth()) {
+      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(title)
+        Text(if (expanded) "−" else "+")
+      }
+    }
+    if (expanded) {
+      Column(
+        Modifier.fillMaxWidth().padding(horizontal = ItemSpacing),
+        verticalArrangement = Arrangement.spacedBy(ItemSpacing),
+      ) { content() }
+    }
+  }
+}
+
+private fun healthConnectSampleCount(metric: MetricInspection?): String =
+  ((metric?.summary as? SeriesMetricSummary)?.sampleCount)?.toString().orDash()
+
+private fun routeSummaryValue(metric: MetricInspection?, route: RouteMetricSummary?): String = when {
+  route != null -> route.status.sourceResultName()
+  metric?.availability == MetricAvailability.PERMISSION_REQUIRED -> "Not authorized"
+  metric?.availability == MetricAvailability.UNSUPPORTED -> "Unsupported"
+  metric?.availability == MetricAvailability.ERROR -> "Read error"
+  metric?.availability == MetricAvailability.NOT_AVAILABLE -> "No data"
+  else -> "—"
+}
+
+private fun samsungLogCount(session: SamsungExerciseSessionInspection?, count: Int?): String = when {
+  session == null -> "—"
+  !session.candidate.metrics.exerciseLogExists -> "—"
+  count != null -> count.toString()
+  else -> "—"
+}
+
+private fun String?.orDash(): String = this ?: "—"
+
+@Composable
+private fun SamsungSdkStatus(
   state: HealthDataInspectorUiState,
   canRequestPermission: Boolean,
   onRequestPermission: () -> Unit,
+  onRequestRoutePermission: () -> Unit,
   onResolveIssue: () -> Unit,
-  onSelectCandidate: (String) -> Unit,
 ) {
   Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ItemSpacing)) {
-    HorizontalDivider()
     Text("Samsung Health Data SDK", style = MaterialTheme.typography.titleLarge)
     if (state.isInspectingSamsungHealth) Text("Inspecting optional Samsung Health data…")
     val availability = state.samsungHealthAvailability
@@ -206,6 +323,7 @@ private fun SamsungHealthSection(
       DiagnosticValue("SDK library", if (availability.sdkLibraryLoaded) "Loaded" else "Not loaded")
       DiagnosticValue("Samsung Health", availability.samsungHealthDetection.displayName())
       DiagnosticValue("Exercise read permission", availability.exerciseReadPermission.displayName())
+      DiagnosticValue("Exercise location permission", availability.exerciseLocationReadPermission.displayName())
       DiagnosticValue("Developer authorization", availability.developerAuthorization.displayName())
       DiagnosticValue("Last SDK operation", availability.lastOperation)
       val exception = availability.lastException
@@ -222,20 +340,27 @@ private fun SamsungHealthSection(
           Text("Request Exercise Permission")
         }
       }
+      if (
+        availability.exerciseReadPermission == SamsungExercisePermissionState.GRANTED &&
+        availability.exerciseLocationReadPermission != SamsungExercisePermissionState.GRANTED
+      ) {
+        Text(
+          "Recorded exercise route access supports route display, route-based run analysis, and " +
+            "accurate distance splits. It does not request continuous background device location.",
+          style = MaterialTheme.typography.bodySmall,
+        )
+        Button(
+          onClick = onRequestRoutePermission,
+          enabled = canRequestPermission && !state.isInspectingSamsungHealth,
+        ) {
+          Text("Request recorded route access")
+        }
+      }
       if (exception?.hasResolution == true) {
         Button(onClick = onResolveIssue, enabled = canRequestPermission && !state.isInspectingSamsungHealth) {
           Text("Resolve Samsung Health issue")
         }
       }
-    }
-    state.samsungHealthInspection?.let { inspection ->
-      HorizontalDivider()
-      Text("Run Data Comparison", style = MaterialTheme.typography.titleLarge)
-      state.run?.let { CanonicalWorkoutSummary(it) }
-      ProviderComparison(inspection)
-      IdentityMatchSection(inspection)
-      EnrichmentMatchSection(inspection, state.run, onSelectCandidate)
-      PlausibleSamsungCandidates(inspection, onSelectCandidate)
     }
   }
 }
@@ -412,10 +537,16 @@ private fun SamsungCandidateCapabilitySummary(
   DiagnosticValue("Device", deviceDisplayName(candidate))
   DiagnosticValue("Distance", formatDistance(candidate.distanceMeters))
   DiagnosticValue("Duration", formatDuration(candidate.durationSeconds))
-  DiagnosticValue("ExerciseLog", if (candidate.metrics.exerciseLogExists) "${candidate.metrics.totalLogSamples} samples" else "Not available")
-  DiagnosticValue("Heart rate", capability(candidate.metrics.heartRateSampleCount, session.meanHeartRate != null || session.maxHeartRate != null))
-  DiagnosticValue("Speed", capability(candidate.metrics.speedSampleCount, session.meanSpeedMetersPerSecond != null))
-  DiagnosticValue("Cadence", capability(candidate.metrics.cadenceSampleCount, session.meanCadence != null))
+  DiagnosticValue("Route points", diagnosticCount(candidate.metrics.routePointCount))
+  DiagnosticValue("Route altitude", diagnosticCount(candidate.metrics.routeAltitudePointCount))
+  DiagnosticValue("Route accuracy", diagnosticCount(candidate.metrics.routeAccuracyPointCount))
+  DiagnosticValue("Rejected route points", diagnosticCount(candidate.metrics.routeRejectedPointCount))
+  DiagnosticValue("First route timestamp", candidate.metrics.routeFirstTimestamp?.let(::formatInstant) ?: "Not available")
+  DiagnosticValue("Last route timestamp", candidate.metrics.routeLastTimestamp?.let(::formatInstant) ?: "Not available")
+  DiagnosticValue("Exercise logs", logCount(candidate.metrics.exerciseLogExists, candidate.metrics.totalLogSamples))
+  DiagnosticValue("Logs with speed", logCount(candidate.metrics.exerciseLogExists, candidate.metrics.speedSampleCount))
+  DiagnosticValue("Logs with HR", logCount(candidate.metrics.exerciseLogExists, candidate.metrics.heartRateSampleCount))
+  DiagnosticValue("Logs with cadence", logCount(candidate.metrics.exerciseLogExists, candidate.metrics.cadenceSampleCount))
   DiagnosticValue("VO₂max", availabilityMark(session.vo2Max != null))
   DiagnosticValue("Elevation", availabilityMark(candidate.metrics.elevationAvailable))
   DiagnosticValue("Power", capability(candidate.metrics.powerSampleCount, session.meanPowerWatts != null))
@@ -432,6 +563,11 @@ private fun capability(sampleCount: Int, summaryAvailable: Boolean): String = wh
   summaryAvailable -> "Summary available"
   else -> "Not available"
 }
+
+private fun diagnosticCount(count: Int?): String = count?.toString() ?: "Not available"
+
+private fun logCount(logExists: Boolean, count: Int): String =
+  if (logExists) count.toString() else "Not available"
 
 private fun sourceDisplayName(applicationId: String?): String = when (applicationId) {
   "com.sec.android.app.shealth" -> "Samsung Health"
@@ -562,8 +698,6 @@ private fun RunHeader(run: RunSummary) {
     Text(formatRunDate(run.startTime), style = MaterialTheme.typography.titleLarge)
     Text(formatDistance(run.distanceMeters))
     Text(run.displaySourceName)
-    listOfNotNull(run.sourceDeviceManufacturer, run.sourceDeviceModel)
-      .joinToString(" ").takeIf(String::isNotBlank)?.let { Text(it) }
   }
 }
 
@@ -604,6 +738,8 @@ private fun Summary(metric: MetricInspection) {
       Text(summary.exerciseType)
       Text("${formatInstant(summary.startTime)} – ${formatInstant(summary.endTime)}")
       Text("Duration: ${formatDuration(summary.durationSeconds)}")
+      DiagnosticValue("Laps", diagnosticCount(summary.lapCount))
+      DiagnosticValue("Segments", diagnosticCount(summary.segmentCount))
       summary.title?.let { Text("Title: $it") }
       summary.notes?.let { Text("Notes: $it") }
       listOfNotNull(summary.deviceManufacturer, summary.deviceModel)
@@ -622,8 +758,8 @@ private fun Summary(metric: MetricInspection) {
       Text("${formatInstant(summary.timestamp)} · ${summary.measurementMethod}")
     }
     is RouteMetricSummary -> {
-      Text(summary.status.displayName())
-      summary.pointCount?.let { Text("$it route points available") }
+      DiagnosticValue("Route result", summary.status.sourceResultName())
+      DiagnosticValue("Route points", routePointCount(summary))
     }
     null -> if (metric.availability == MetricAvailability.NOT_AVAILABLE) Text("No data recorded for this workout")
   }
@@ -659,6 +795,18 @@ private fun MetricAvailability.displayName() = when (this) {
 }
 
 private fun RouteInspectionStatus.displayName() = name.lowercase().replace('_', ' ').replaceFirstChar { it.titlecase() }
+
+private fun RouteInspectionStatus.sourceResultName() = when (this) {
+  RouteInspectionStatus.AVAILABLE -> "Data"
+  RouteInspectionStatus.UNAVAILABLE -> "No data"
+  else -> displayName()
+}
+
+private fun routePointCount(summary: RouteMetricSummary): String = summary.pointCount?.toString() ?: when (summary.status) {
+  RouteInspectionStatus.CONSENT_REQUIRED,
+  RouteInspectionStatus.PERMISSION_REQUIRED -> "Not authorized"
+  else -> "Not available"
+}
 
 private fun formatNumber(value: Double): String = "%.1f".format(Locale.getDefault(), value)
 

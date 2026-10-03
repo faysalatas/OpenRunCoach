@@ -2,7 +2,6 @@ package com.example.openruncoach.ui.plan
 
 import android.app.DatePickerDialog
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,9 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Card
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -52,10 +49,15 @@ import com.example.openruncoach.domain.workout.WorkoutExecutionStatus
 import com.example.openruncoach.ui.common.formatDistance
 import com.example.openruncoach.ui.common.formatDuration
 import com.example.openruncoach.ui.common.formatUserDate
-import com.example.openruncoach.ui.components.EmptyState
 import com.example.openruncoach.ui.components.ItemSpacing
 import com.example.openruncoach.ui.components.ScreenPadding
-import com.example.openruncoach.ui.components.SectionSpacing
+import com.example.openruncoach.ui.components.OpenRunSection
+import com.example.openruncoach.ui.components.OpenRunCard
+import com.example.openruncoach.ui.components.OpenRunDisclosure
+import com.example.openruncoach.ui.components.OpenRunEvidenceRow
+import com.example.openruncoach.ui.components.OpenRunTabs
+import com.example.openruncoach.ui.components.OpenRunDivider
+import com.example.openruncoach.theme.OpenRunSpacing
 import java.time.format.TextStyle
 import java.time.LocalDate
 import java.time.ZoneId
@@ -91,7 +93,7 @@ fun PlanScreen(
 
   Column(
     modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(ScreenPadding),
-    verticalArrangement = Arrangement.spacedBy(SectionSpacing),
+    verticalArrangement = Arrangement.spacedBy(OpenRunSpacing.Comfortable),
   ) {
     Text("Training Plan", style = MaterialTheme.typography.headlineMedium)
     state.activeGoal?.let { goal ->
@@ -111,8 +113,8 @@ fun PlanScreen(
       }
     }
     when {
-      state.isLoading -> EmptyState("Loading", "Loading your training plan…")
-      state.activeGoal == null -> EmptyState(
+      state.isLoading -> Text("Loading your training plan…")
+      state.activeGoal == null -> PlanNotice(
         "Choose a training goal",
         "A goal is required before OpenRunCoach can generate a base plan.",
         "Choose Goal",
@@ -120,7 +122,7 @@ fun PlanScreen(
       )
       state.plan == null -> {
         GoalCard(state.activeGoal!!.distance.displayName, state.activeGoal!!.goalType)
-        EmptyState(
+        PlanNotice(
           "Create Training Plan",
           "Choose your planned ${state.activeGoal!!.distance.displayName} Completion Run. This will be the milestone for the current training plan, and OpenRunCoach will adapt training toward it.",
           "Choose planned Completion Run",
@@ -156,7 +158,8 @@ private fun GoalMilestoneCard(
   today: LocalDate,
 ) {
   val context = LocalContext.current
-  PlanCard("Goal Milestone") {
+  OpenRunCard {
+    Text("Goal Milestone", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
     when {
       milestone.scheduledDate != null -> {
         Text("Planned $distanceName Completion Run", style = MaterialTheme.typography.titleMedium)
@@ -232,11 +235,12 @@ private fun PlanContent(
   onRegenerate: () -> Unit,
   isGenerating: Boolean,
 ) {
-  PlanCard("Goal") {
-    Text(goalDistance, style = MaterialTheme.typography.headlineSmall)
-    Text(goalType.displayName())
-    Text(plan.explanation, style = MaterialTheme.typography.bodySmall)
-    Text("Plan confidence: ${plan.confidence.displayName()}", style = MaterialTheme.typography.labelLarge)
+  Column(verticalArrangement = Arrangement.spacedBy(ItemSpacing)) {
+    Text("$goalDistance · ${goalType.displayName()}", style = MaterialTheme.typography.titleMedium)
+    OpenRunDisclosure("Plan explanation") {
+      Text(plan.explanation, style = MaterialTheme.typography.bodyMedium)
+      Text("Plan confidence: ${plan.confidence.displayName()}", style = MaterialTheme.typography.labelLarge)
+    }
   }
   if (plan.isAssessmentPhase) {
     PlanCard("Assessment Phase") {
@@ -244,15 +248,7 @@ private fun PlanContent(
       Text("Complete the assessment at a comfortable effort, then add post-run feedback. OpenRunCoach will recalculate your profile before creating a normal plan.")
     }
   }
-  Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(ItemSpacing)) {
-    plan.weeks.forEach { week ->
-      FilterChip(
-        selected = week.weekIndex == selectedWeekIndex,
-        onClick = { onSelectWeek(week.weekIndex) },
-        label = { Text("Week ${week.weekIndex + 1}") },
-      )
-    }
-  }
+  OpenRunTabs(plan.weeks.map { "Week ${it.weekIndex + 1}" }, selectedWeekIndex, onSelectWeek)
   val week = plan.weeks[selectedWeekIndex.coerceIn(plan.weeks.indices)]
   val block = plan.blocks.firstOrNull { week.weekIndex in it.startWeek..it.endWeek }
   WeekContent(week, block, onOpenWorkout)
@@ -268,60 +264,61 @@ private fun WeekContent(week: TrainingWeek, block: TrainingBlock?, onOpenWorkout
     Text("Week ${week.weekIndex + 1}", style = MaterialTheme.typography.headlineSmall)
     Text(formatUserDate(week.startDate))
     block?.let { Text(it.type.displayName(), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleMedium) }
-    Text(week.explanation, style = MaterialTheme.typography.titleMedium)
+    OpenRunDisclosure("Week focus") {
+      Text(week.explanation, style = MaterialTheme.typography.bodyMedium)
+    }
     Text("${week.workouts.size} workouts · ${week.loadClassification.displayName()}")
     week.workouts.forEach { entry ->
       val workout = entry.workout
       val estimate = WorkoutEstimateCalculator.calculate(workout)
-      Card(Modifier.fillMaxWidth().clickable { onOpenWorkout(workout.id) }) {
-        Column(Modifier.padding(ScreenPadding), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+      Column(Modifier.fillMaxWidth().clickable(onClickLabel = "Open workout") { onOpenWorkout(workout.id) }) {
+        OpenRunDivider()
+        Column(Modifier.padding(vertical = OpenRunSpacing.Compact), verticalArrangement = Arrangement.spacedBy(4.dp)) {
           when (workout.purpose) {
             WorkoutPurpose.GOAL_COMPLETION -> Text("Goal Run", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
             WorkoutPurpose.ASSESSMENT -> Text("Assessment Run", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
             else -> Unit
           }
           Text(
-            "${workout.date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault())} · ${workout.name}",
+            "${workout.date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault())} · ${formatUserDate(workout.date)}",
+            style = MaterialTheme.typography.labelLarge,
+          )
+          Text(
+            workout.name,
             style = MaterialTheme.typography.titleMedium,
           )
           entry.executionResult?.let { execution ->
             Text(
               when (execution.status) {
-                WorkoutExecutionStatus.COMPLETED_AS_PLANNED,
-                WorkoutExecutionStatus.COMPLETED_WITH_MINOR_DEVIATION,
-                WorkoutExecutionStatus.COMPLETED_WITH_PRESCRIPTION_DEVIATION -> "✓ Completed"
+                WorkoutExecutionStatus.COMPLETED_AS_PLANNED -> "✓ Completed as planned"
+                WorkoutExecutionStatus.COMPLETED_WITH_MINOR_DEVIATION -> "✓ Completed with minor deviation"
+                WorkoutExecutionStatus.COMPLETED_WITH_PRESCRIPTION_DEVIATION -> "✓ Completed with prescription deviation"
                 WorkoutExecutionStatus.PARTIALLY_COMPLETED -> "Partially completed"
                 WorkoutExecutionStatus.ABORTED -> "Stopped"
               },
-              color = if (execution.isCompleted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+              color = if (execution.isCompleted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
               style = MaterialTheme.typography.titleSmall,
             )
-            Text(execution.actualPlannedSummary(), style = MaterialTheme.typography.bodySmall)
           }
           val segments = workout.blocks.flatMap { it.segments }
-          val simpleSegment = segments.singleOrNull()
-          val simpleDistance = simpleSegment?.completion as? DistanceCompletion
-          val simpleTargets = simpleSegment?.let { listOf(it.primaryIntensity) + it.secondaryIntensities }.orEmpty()
-          val simplePace = simpleTargets.filterIsInstance<PaceTarget>().firstOrNull()
-          val simpleRpe = simpleTargets.filterIsInstance<RpeTarget>().firstOrNull()
-          if (simpleDistance != null) Text(formatDistance(simpleDistance.meters), style = MaterialTheme.typography.titleLarge)
-          else if (estimate.knownDistanceMeters > 0.0) Text(formatDistance(estimate.knownDistanceMeters))
-          if (simplePace != null) {
-            Text("Target pace: ${WorkoutDescriptionFormatter.paceRange(simplePace)}")
-            if (simplePace.confidence == com.example.openruncoach.domain.workout.GuidanceConfidence.LOW) {
-              Text("Pace confidence: Low", style = MaterialTheme.typography.bodySmall)
-            }
-          } else if (simpleDistance != null) Text("Pace guidance: Not enough data yet")
-          expectedDurationText(estimate)?.let { Text("Expected: ~$it") }
-          if (simpleRpe != null) Text("RPE ${simpleRpe.minimum}–${simpleRpe.maximum}")
-          if (simpleSegment == null) MixedWorkoutSummary(workout.blocks)
-          if (workout.purpose == WorkoutPurpose.GOAL_COMPLETION) {
-            Text("This is the planned milestone your current plan is building toward. A qualifying observed run can complete the goal earlier.", style = MaterialTheme.typography.titleSmall)
+          val pace = segments.flatMap { listOf(it.primaryIntensity) + it.secondaryIntensities }
+            .filterIsInstance<PaceTarget>().distinct().singleOrNull()
+          val summary = listOfNotNull(
+            estimate.estimatedTotalDistanceMeters?.let(::formatDistance),
+            pace?.let { WorkoutDescriptionFormatter.paceRange(it).replace(" min/km", " /km") },
+          ).joinToString(" · ").ifBlank {
+            expectedDurationText(estimate)?.let { "~$it" }
+              ?: if (workout.type == com.example.openruncoach.domain.workout.WorkoutType.REST) "Rest" else "Scheduled"
           }
-          if (workout.purpose == WorkoutPurpose.ASSESSMENT) {
-            Text("Use a comfortable self-selected effort. No precise pace is required.", style = MaterialTheme.typography.titleSmall)
+          Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Text(
+              summary,
+              modifier = Modifier.weight(1f),
+              style = MaterialTheme.typography.bodyMedium,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text("›", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
           }
-          Text(entry.generationReason, style = MaterialTheme.typography.bodySmall)
         }
       }
     }
@@ -332,6 +329,15 @@ private fun WeekContent(week: TrainingWeek, block: TrainingBlock?, onOpenWorkout
     PlanCard("Why this week?") {
       week.reasons.forEach { Text("• $it") }
     }
+  }
+}
+
+@Composable
+private fun PlanNotice(title: String, message: String, actionLabel: String, onAction: () -> Unit) {
+  Column(verticalArrangement = Arrangement.spacedBy(OpenRunSpacing.Small)) {
+    Text(title, style = MaterialTheme.typography.titleMedium)
+    Text(message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    TextButton(onClick = onAction) { Text(actionLabel) }
   }
 }
 
@@ -364,20 +370,12 @@ private fun GoalCard(distance: String, type: GoalType) {
 
 @Composable
 private fun PlanCard(title: String, content: @Composable () -> Unit) {
-  Card(Modifier.fillMaxWidth()) {
-    Column(Modifier.padding(ScreenPadding), verticalArrangement = Arrangement.spacedBy(ItemSpacing)) {
-      Text(title, style = MaterialTheme.typography.titleLarge)
-      content()
-    }
-  }
+  OpenRunSection(title) { content() }
 }
 
 @Composable
 private fun PlanValue(label: String, value: String) {
-  Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-    Text(label)
-    Text(value)
-  }
+  OpenRunEvidenceRow(label, value)
 }
 
 private fun Enum<*>.displayName() = name.lowercase().replace('_', ' ').replaceFirstChar(Char::titlecase)

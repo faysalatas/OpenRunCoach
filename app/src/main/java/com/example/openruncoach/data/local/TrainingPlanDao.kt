@@ -20,7 +20,9 @@ interface TrainingPlanDao {
       INNER JOIN training_plan_workouts ON training_plan_workouts.workoutId = workout_executions.plannedWorkoutId
       INNER JOIN training_plans ON training_plans.id = training_plan_workouts.planId
       INNER JOIN training_goals ON training_goals.id = training_plans.goalId
-      WHERE training_plans.status = 'ACTIVE' AND training_goals.status = 'ACTIVE'"""
+      WHERE training_plans.status = 'ACTIVE' AND training_goals.status = 'ACTIVE'
+        AND EXISTS (SELECT 1 FROM workout_run_associations WHERE workout_run_associations.plannedWorkoutId = workout_executions.plannedWorkoutId AND workout_run_associations.physicalRunId = workout_executions.physicalRunId)
+        AND EXISTS (SELECT 1 FROM runs WHERE runs.physicalRunId = workout_executions.physicalRunId AND runs.isCanonical = 1 AND runs.relevance = 'ACTIVE')"""
   )
   fun observeActivePlanExecutionRevision(): Flow<Int>
 

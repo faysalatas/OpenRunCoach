@@ -3,6 +3,7 @@ package com.example.openruncoach.data.simulation
 import com.example.openruncoach.data.GoalCompletionRepository
 import com.example.openruncoach.data.RunFeedbackRepository
 import com.example.openruncoach.data.RunMetricsRepository
+import com.example.openruncoach.data.RunRouteRepository
 import com.example.openruncoach.data.TrainingGoalRepository
 import com.example.openruncoach.data.TrainingPlanRepository
 import com.example.openruncoach.data.WorkoutExecutionRepository
@@ -20,6 +21,7 @@ import com.example.openruncoach.domain.metrics.MetricValue
 import com.example.openruncoach.domain.metrics.RunMetrics
 import com.example.openruncoach.domain.metrics.RunSampleMetricType
 import com.example.openruncoach.domain.metrics.RunTimeSeries
+import com.example.openruncoach.domain.route.RouteSplitDeriver
 import com.example.openruncoach.domain.plan.PlannedWorkoutEntry
 import com.example.openruncoach.domain.plan.TrainingBlock
 import com.example.openruncoach.domain.plan.TrainingBlockType
@@ -84,7 +86,8 @@ class SimulationScenarioLoader(
     val runDataSource = SimulationRunDataSource(database)
     val sessionRuns = runDataSource.persist(scenario.sessions.map { it.run }, clock)
     val metricsRepository = RunMetricsRepository(database.runMetricsDao())
-    scenario.sessions.forEach { session -> persistMetrics(session.run, metricsRepository) }
+    val routeRepository = RunRouteRepository(database.runRouteDao())
+    scenario.sessions.forEach { session -> persistMetrics(session.run, metricsRepository, routeRepository) }
 
     scenario.sessions.forEachIndexed { index, session ->
       val isPrimary = index == scenario.sessions.lastIndex
@@ -126,7 +129,7 @@ class SimulationScenarioLoader(
     // cannot replace the stable execution identity that already links the planned workout to A.
     if (scenario.unrelatedRuns.isNotEmpty()) {
       runDataSource.persist(scenario.unrelatedRuns, clock)
-      scenario.unrelatedRuns.forEach { persistMetrics(it, metricsRepository) }
+      scenario.unrelatedRuns.forEach { persistMetrics(it, metricsRepository, routeRepository) }
     }
     profileRepository.recalculate()
     scenario.allRuns.forEach { run ->
@@ -140,12 +143,17 @@ class SimulationScenarioLoader(
   private suspend fun persistMetrics(
     run: SimulatedRunInput,
     metricsRepository: RunMetricsRepository,
+    routeRepository: RunRouteRepository,
   ) {
     val generatedSeries = run.toMovementSeries()
     val metrics = run.toMetrics(clock, generatedSeries)
     val speedEntities = metrics.toSampleEntities()
       .count { it.metricType == RunSampleMetricType.SPEED.name }
     metricsRepository.save(metrics)
+    SyntheticRunRoute.create(run)?.let { route ->
+      val result = RouteSplitDeriver().derive(route, run.distanceMeters, metrics)
+      routeRepository.save(result.route, result.splits)
+    }
     val persistedSpeedSamples = database.runMetricsDao()
       .countSamples(run.id, RunSampleMetricType.SPEED.name)
     val loaderRepositorySpeedSamples = metricsRepository.getRunMetrics(run.id)

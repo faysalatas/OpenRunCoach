@@ -29,6 +29,10 @@ class SamsungHealthDataSource(context: Context) {
     Permission.of(DataTypes.EXERCISE, AccessType.READ)
   }
 
+  val exerciseLocationReadPermission: Permission by lazy {
+    Permission.of(DataTypes.EXERCISE_LOCATION, AccessType.READ)
+  }
+
   fun platformPrecheck(): SamsungHealthAvailabilityState? {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
       return SamsungHealthAvailabilityState(
@@ -37,6 +41,7 @@ class SamsungHealthDataSource(context: Context) {
         sdkLibraryLoaded = true,
         samsungHealthDetection = samsungHealthDetection(),
         exerciseReadPermission = SamsungExercisePermissionState.UNABLE_TO_CHECK,
+        exerciseLocationReadPermission = SamsungExercisePermissionState.UNABLE_TO_CHECK,
         developerAuthorization = SamsungDeveloperAuthorization.UNKNOWN,
         lastOperation = SamsungHealthOperations.PLATFORM_PRECHECK,
       )
@@ -53,10 +58,17 @@ class SamsungHealthDataSource(context: Context) {
       SamsungHealthDetection.UNKNOWN
     }
 
-  suspend fun grantedExerciseReadPermission(): Boolean {
+  internal suspend fun grantedReadPermissions(): SamsungReadPermissionGrants {
     Log.d(LOG_TAG, "Permission check start: ${SamsungHealthOperations.GET_EXERCISE_PERMISSION}")
-    return store.getGrantedPermissions(setOf(exerciseReadPermission)).contains(exerciseReadPermission).also { granted ->
-      Log.d(LOG_TAG, "Permission check result: ${if (granted) "granted" else "not granted"}")
+    val granted = store.getGrantedPermissions(setOf(exerciseReadPermission, exerciseLocationReadPermission))
+    return SamsungReadPermissionGrants(
+      exercise = exerciseReadPermission in granted,
+      exerciseLocation = exerciseLocationReadPermission in granted,
+    ).also { result ->
+      Log.d(
+        LOG_TAG,
+        "Permission check result: exercise=${result.exercise}; exerciseLocation=${result.exerciseLocation}",
+      )
     }
   }
 
@@ -94,9 +106,23 @@ class SamsungHealthDataSource(context: Context) {
     }
   }
 
+  internal suspend fun requestExerciseLocationReadPermission(activity: android.app.Activity): Boolean {
+    Log.d(LOG_TAG, "Permission request: ${SamsungHealthOperations.REQUEST_EXERCISE_LOCATION_PERMISSION}")
+    return store.requestPermissions(setOf(exerciseLocationReadPermission), activity)
+      .contains(exerciseLocationReadPermission)
+      .also { granted ->
+        Log.d(LOG_TAG, "Exercise location permission result: ${if (granted) "granted" else "not granted"}")
+      }
+  }
+
   companion object {
     internal const val LOG_TAG = "OpenRunCoachSamsung"
     private const val SAMSUNG_HEALTH_PACKAGE = "com.sec.android.app.shealth"
     private const val PAGE_SIZE = 1_000
   }
 }
+
+internal data class SamsungReadPermissionGrants(
+  val exercise: Boolean,
+  val exerciseLocation: Boolean,
+)

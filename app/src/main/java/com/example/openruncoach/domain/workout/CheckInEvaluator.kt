@@ -4,6 +4,7 @@ import com.example.openruncoach.domain.CompletionStatus
 import com.example.openruncoach.domain.PainLevel
 import com.example.openruncoach.domain.RunFeedback
 import com.example.openruncoach.domain.RunSummary
+import com.example.openruncoach.domain.RunRelevance
 import java.time.Clock
 import kotlin.math.roundToInt
 
@@ -16,8 +17,10 @@ class CheckInEvaluator(private val clock: Clock = Clock.systemUTC()) {
     previousFeedback: RunFeedback? = null,
   ): WorkoutAdjustmentDecision {
     checkIn.validationError()?.let { throw IllegalArgumentException(it) }
-    val history = recentCanonicalRunHistory.filter(RunSummary::isCanonical)
-    require(history.size == recentCanonicalRunHistory.size) { "Check-in evaluation requires canonical run history." }
+    val history = recentCanonicalRunHistory.filter { it.isCanonical && it.relevance == RunRelevance.ACTIVE }
+    require(recentCanonicalRunHistory.filter { it.relevance == RunRelevance.ACTIVE }.all(RunSummary::isCanonical)) {
+      "Check-in evaluation requires canonical run history."
+    }
 
     safetyOverride(baseline, checkIn, previousFeedback)?.let { return it }
 

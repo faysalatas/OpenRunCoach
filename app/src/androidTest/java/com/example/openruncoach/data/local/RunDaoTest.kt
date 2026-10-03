@@ -88,6 +88,30 @@ class RunDaoTest {
       database.close()
     }
   }
+
+  @Test
+  fun ignoredPhysicalRunIsHiddenFromNormalHistoryAndCanBeRestored() = runBlocking {
+    val database = Room.inMemoryDatabaseBuilder(
+      ApplicationProvider.getApplicationContext(), OpenRunCoachDatabase::class.java,
+    ).build()
+    try {
+      val dao = database.runDao()
+      dao.upsertAll(listOf(
+        runEntity("canonical", 2_000).copy(physicalRunId = "physical"),
+        runEntity("provider-copy", 2_000).copy(physicalRunId = "physical", isCanonical = false),
+      ))
+
+      dao.ignorePhysicalRun("physical")
+      assertEquals(emptyList<RunEntity>(), dao.observeCanonicalRuns().first())
+      assertEquals(listOf("canonical"), dao.observeIgnoredCanonicalRuns().first().map(RunEntity::healthConnectRecordId))
+
+      dao.updateRelevance("physical", "ACTIVE")
+      assertEquals(listOf("canonical"), dao.observeCanonicalRuns().first().map(RunEntity::healthConnectRecordId))
+      assertEquals(2, dao.observeAllRuns().first().size)
+    } finally {
+      database.close()
+    }
+  }
 }
 
 private fun runEntity(id: String, startTimeEpochMillis: Long) =

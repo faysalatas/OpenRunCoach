@@ -20,9 +20,17 @@ data class RunSummary(
   val duplicateGroupId: String? = null,
   val isCanonical: Boolean = true,
   val canonicalSelectionReason: String? = null,
+  /** Stable identity for the physical activity represented by one or more provider records. */
+  val physicalRunId: String = healthConnectRecordId,
+  val relevance: RunRelevance = RunRelevance.ACTIVE,
+  val canonicalMatchDecision: PhysicalRunMatchDecision = PhysicalRunMatchDecision.SEPARATE,
 )
 
 enum class SourceDeviceType { WATCH, OTHER }
+
+enum class RunRelevance { ACTIVE, IGNORED }
+
+enum class PhysicalRunMatchDecision { HIGH, AMBIGUOUS, SEPARATE }
 
 val RunSummary.displaySourceName: String
   get() = sourceAppName?.takeIf(String::isNotBlank)

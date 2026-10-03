@@ -3,8 +3,11 @@ package com.example.openruncoach.data
 import com.example.openruncoach.data.local.RunDao
 import com.example.openruncoach.data.local.RunEntity
 import com.example.openruncoach.domain.RunSummary
+import com.example.openruncoach.domain.CanonicalRunSelection
 import com.example.openruncoach.domain.PossibleDuplicate
 import com.example.openruncoach.domain.SourceDeviceType
+import com.example.openruncoach.domain.PhysicalRunMatchDecision
+import com.example.openruncoach.domain.RunRelevance
 import com.example.openruncoach.domain.WorkoutSource
 import com.example.openruncoach.domain.findPossibleDuplicates
 import com.example.openruncoach.domain.selectCanonicalRuns
@@ -37,6 +40,9 @@ class RunRepository(
   val canonicalRuns: Flow<List<RunSummary>> =
     runDao.observeCanonicalRuns().map { runs -> runs.map(RunEntity::toRunSummary) }
 
+  val ignoredRuns: Flow<List<RunSummary>> =
+    runDao.observeIgnoredCanonicalRuns().map { runs -> runs.map(RunEntity::toRunSummary) }
+
   val allRuns: Flow<List<RunSummary>> =
     runDao.observeAllRuns().map { runs -> runs.map(RunEntity::toRunSummary) }
 
@@ -58,7 +64,20 @@ class RunRepository(
   suspend fun syncRuns(): Int {
     val runs = healthConnectRepository.runningWorkoutsLast90Days()
     val importedAt = clock.millis()
-    runDao.upsertAll(runs.map { it.toRunEntity(importedAt) })
+    val existingById = runDao.getAllRuns().associateBy(RunEntity::healthConnectRecordId)
+    runDao.upsertAll(runs.map { run ->
+      val incoming = run.toRunEntity(importedAt)
+      existingById[incoming.healthConnectRecordId]?.let { existing ->
+        incoming.copy(
+          physicalRunId = existing.physicalRunId,
+          relevance = existing.relevance,
+          duplicateGroupId = existing.duplicateGroupId,
+          isCanonical = existing.isCanonical,
+          canonicalSelectionReason = existing.canonicalSelectionReason,
+          canonicalMatchDecision = existing.canonicalMatchDecision,
+        )
+      } ?: incoming
+    })
     for (savedRun in runDao.getRunsMissingSourceMetadata()) {
       val source = try {
         healthConnectRepository.runningWorkoutSourceById(savedRun.healthConnectRecordId)
@@ -88,15 +107,25 @@ class RunRepository(
     val entities = runDao.getAllRuns()
     val selections = selectCanonicalRuns(entities.map(RunEntity::toRunSummary), preferredSourcePackage)
       .associateBy { it.runId }
+    val ignoredPhysicalRunIds = entities.filter { it.relevance == RunRelevance.IGNORED.name }
+      .mapTo(mutableSetOf(), RunEntity::physicalRunId)
     runDao.updateAll(entities.map { entity ->
       val selection = selections.getValue(entity.healthConnectRecordId)
       entity.copy(
         duplicateGroupId = selection.duplicateGroupId,
+        physicalRunId = selection.physicalRunId,
         isCanonical = selection.isCanonical,
         canonicalSelectionReason = selection.reason,
+        canonicalMatchDecision = selection.matchDecision.name,
+        relevance = if (selection.physicalRunId in ignoredPhysicalRunIds) {
+          RunRelevance.IGNORED.name
+        } else entity.relevance,
       )
     })
-    val canonicalEntities = runDao.getAllRuns().filter(RunEntity::isCanonical)
+    selections.values.filter(CanonicalRunSelection::isCanonical).forEach { selection ->
+      runDao.repointPhysicalRunReferences(selection.physicalRunId, selection.runId)
+    }
+    val canonicalEntities = runDao.getCanonicalRuns()
     if (runMetricsRefresher != null) {
       canonicalEntities.forEach { entity ->
         try {
@@ -118,6 +147,12 @@ class RunRepository(
         }
       }
     }
+    athleteProfileRepository?.recalculate()
+  }
+
+  suspend fun setRunIgnored(run: RunSummary, ignored: Boolean) {
+    if (ignored) runDao.ignorePhysicalRun(run.physicalRunId)
+    else runDao.updateRelevance(run.physicalRunId, RunRelevance.ACTIVE.name)
     athleteProfileRepository?.recalculate()
   }
 }
@@ -142,6 +177,9 @@ private fun RunSummary.toRunEntity(importedAt: Long) =
     duplicateGroupId = duplicateGroupId,
     isCanonical = isCanonical,
     canonicalSelectionReason = canonicalSelectionReason,
+    physicalRunId = physicalRunId,
+    relevance = relevance.name,
+    canonicalMatchDecision = canonicalMatchDecision.name,
   )
 
 internal fun RunEntity.toRunSummary() =
@@ -163,4 +201,7 @@ internal fun RunEntity.toRunSummary() =
     duplicateGroupId = duplicateGroupId,
     isCanonical = isCanonical,
     canonicalSelectionReason = canonicalSelectionReason,
+    physicalRunId = physicalRunId.ifBlank { healthConnectRecordId },
+    relevance = RunRelevance.valueOf(relevance),
+    canonicalMatchDecision = PhysicalRunMatchDecision.valueOf(canonicalMatchDecision),
   )

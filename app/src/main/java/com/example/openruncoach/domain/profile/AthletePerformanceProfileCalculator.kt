@@ -50,7 +50,7 @@ class AthletePerformanceProfileCalculator(
     executionResults: List<WorkoutExecutionResult> = emptyList(),
   ): AthletePerformanceProfile {
     val now = clock.instant()
-    val canonicalRuns = runs.filter(RunSummary::isCanonical)
+    val canonicalRuns = runs.filter { it.isCanonical && it.relevance == com.example.openruncoach.domain.RunRelevance.ACTIVE }
       .filter { !it.startTime.isAfter(now) }
       .distinctBy(RunSummary::healthConnectRecordId)
       .sortedBy(RunSummary::startTime)

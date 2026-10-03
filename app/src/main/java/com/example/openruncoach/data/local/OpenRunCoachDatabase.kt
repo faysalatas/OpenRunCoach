@@ -34,8 +34,12 @@ import androidx.sqlite.execSQL
     TrainingBlockEntity::class,
     TrainingPlanWorkoutEntity::class,
     WorkoutExecutionEntity::class,
+    WorkoutRunAssociationEntity::class,
+    RunRouteEntity::class,
+    RunRoutePointEntity::class,
+    RunSplitEntity::class,
   ],
-  version = 16,
+  version = 18,
   exportSchema = true,
 )
 abstract class OpenRunCoachDatabase : RoomDatabase() {
@@ -43,6 +47,7 @@ abstract class OpenRunCoachDatabase : RoomDatabase() {
   abstract fun runFeedbackDao(): RunFeedbackDao
   abstract fun coachingWorkflowDao(): CoachingWorkflowDao
   abstract fun runMetricsDao(): RunMetricsDao
+  abstract fun runRouteDao(): RunRouteDao
   abstract fun athletePerformanceProfileDao(): AthletePerformanceProfileDao
   abstract fun trainingGoalDao(): TrainingGoalDao
   abstract fun trainingPlanDao(): TrainingPlanDao
@@ -359,6 +364,47 @@ abstract class OpenRunCoachDatabase : RoomDatabase() {
       }
     }
 
+    val MIGRATION_16_17 = object : Migration(16, 17) {
+      override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL(
+          """CREATE TABLE IF NOT EXISTS `run_routes` (`runId` TEXT NOT NULL, `source` TEXT NOT NULL, `sourceAppName` TEXT, `confidence` TEXT NOT NULL, `rejectedPointCount` INTEGER NOT NULL, `derivedDistanceMeters` REAL, `canonicalDistanceMeters` REAL, `distanceDifferencePercent` REAL, `distanceScaleFactor` REAL NOT NULL, `hasLargeSamplingGap` INTEGER NOT NULL, PRIMARY KEY(`runId`), FOREIGN KEY(`runId`) REFERENCES `runs`(`healthConnectRecordId`) ON UPDATE NO ACTION ON DELETE CASCADE)"""
+        )
+        connection.execSQL("CREATE INDEX IF NOT EXISTS `index_run_routes_runId` ON `run_routes` (`runId`)")
+        connection.execSQL(
+          """CREATE TABLE IF NOT EXISTS `run_route_points` (`runId` TEXT NOT NULL, `sequence` INTEGER NOT NULL, `timestampEpochMillis` INTEGER NOT NULL, `latitude` REAL NOT NULL, `longitude` REAL NOT NULL, `altitudeMeters` REAL, `horizontalAccuracyMeters` REAL, `verticalAccuracyMeters` REAL, PRIMARY KEY(`runId`, `sequence`), FOREIGN KEY(`runId`) REFERENCES `run_routes`(`runId`) ON UPDATE NO ACTION ON DELETE CASCADE)"""
+        )
+        connection.execSQL("CREATE INDEX IF NOT EXISTS `index_run_route_points_runId` ON `run_route_points` (`runId`)")
+        connection.execSQL(
+          """CREATE TABLE IF NOT EXISTS `run_splits` (`runId` TEXT NOT NULL, `ordinal` INTEGER NOT NULL, `derivation` TEXT NOT NULL, `startTimeEpochMillis` INTEGER NOT NULL, `endTimeEpochMillis` INTEGER NOT NULL, `distanceMeters` REAL NOT NULL, `durationSeconds` REAL NOT NULL, `averagePaceSecondsPerKm` REAL NOT NULL, `averageHeartRate` REAL, `averageCadence` REAL, `partial` INTEGER NOT NULL, `confidence` TEXT NOT NULL, PRIMARY KEY(`runId`, `ordinal`), FOREIGN KEY(`runId`) REFERENCES `run_routes`(`runId`) ON UPDATE NO ACTION ON DELETE CASCADE)"""
+        )
+        connection.execSQL("CREATE INDEX IF NOT EXISTS `index_run_splits_runId` ON `run_splits` (`runId`)")
+      }
+    }
+
+    val MIGRATION_17_18 = object : Migration(17, 18) {
+      override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL("ALTER TABLE `runs` ADD COLUMN `physicalRunId` TEXT NOT NULL DEFAULT ''")
+        connection.execSQL("ALTER TABLE `runs` ADD COLUMN `relevance` TEXT NOT NULL DEFAULT 'ACTIVE'")
+        connection.execSQL("ALTER TABLE `runs` ADD COLUMN `canonicalMatchDecision` TEXT NOT NULL DEFAULT 'SEPARATE'")
+        connection.execSQL("UPDATE `runs` SET `physicalRunId` = CASE WHEN `duplicateGroupId` IS NOT NULL THEN `duplicateGroupId` ELSE `healthConnectRecordId` END")
+        connection.execSQL("DROP INDEX IF EXISTS `index_workout_executions_actualRunId`")
+        connection.execSQL("ALTER TABLE `workout_executions` ADD COLUMN `physicalRunId` TEXT NOT NULL DEFAULT ''")
+        connection.execSQL("UPDATE `workout_executions` SET `physicalRunId` = COALESCE((SELECT `physicalRunId` FROM `runs` WHERE `runs`.`healthConnectRecordId` = `workout_executions`.`actualRunId`), `actualRunId`)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS `index_workout_executions_actualRunId` ON `workout_executions` (`actualRunId`)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS `index_workout_executions_physicalRunId` ON `workout_executions` (`physicalRunId`)")
+        connection.execSQL(
+          """CREATE TABLE IF NOT EXISTS `workout_run_associations` (`plannedWorkoutId` TEXT NOT NULL, `physicalRunId` TEXT NOT NULL, `actualRunId` TEXT NOT NULL, `source` TEXT NOT NULL, `updatedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`plannedWorkoutId`), FOREIGN KEY(`plannedWorkoutId`) REFERENCES `planned_workouts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE, FOREIGN KEY(`actualRunId`) REFERENCES `runs`(`healthConnectRecordId`) ON UPDATE NO ACTION ON DELETE CASCADE)"""
+        )
+        connection.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_workout_run_associations_physicalRunId` ON `workout_run_associations` (`physicalRunId`)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS `index_workout_run_associations_actualRunId` ON `workout_run_associations` (`actualRunId`)")
+        connection.execSQL(
+          """INSERT OR IGNORE INTO `workout_run_associations` (`plannedWorkoutId`, `physicalRunId`, `actualRunId`, `source`, `updatedAtEpochMillis`)
+            SELECT `plannedWorkoutId`, `physicalRunId`, `actualRunId`, 'MIGRATED', `evaluatedAtEpochMillis`
+            FROM `workout_executions` ORDER BY `evaluatedAtEpochMillis`, `plannedWorkoutId`"""
+        )
+      }
+    }
+
     fun getInstance(context: Context): OpenRunCoachDatabase =
       instance ?: synchronized(this) {
         instance
@@ -391,6 +437,8 @@ abstract class OpenRunCoachDatabase : RoomDatabase() {
               MIGRATION_13_14,
               MIGRATION_14_15,
               MIGRATION_15_16,
+              MIGRATION_16_17,
+              MIGRATION_17_18,
             ).build()
   }
 }

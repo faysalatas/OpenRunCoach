@@ -3,6 +3,8 @@ package com.example.openruncoach.ui.profile
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.openruncoach.data.AthletePerformanceProfileRepository
+import com.example.openruncoach.data.AthleteStateRepository
+import com.example.openruncoach.domain.athlete.AthleteState
 import com.example.openruncoach.domain.profile.AthletePerformanceProfile
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,6 +15,7 @@ import kotlinx.coroutines.launch
 
 data class PerformanceProfileUiState(
   val profile: AthletePerformanceProfile? = null,
+  val athleteState: AthleteState? = null,
   val isLoading: Boolean = true,
   val showExplanations: Boolean = false,
   val errorMessage: String? = null,
@@ -20,6 +23,7 @@ data class PerformanceProfileUiState(
 
 class PerformanceProfileViewModel(
   private val repository: AthletePerformanceProfileRepository,
+  private val athleteStateRepository: AthleteStateRepository,
 ) : ViewModel() {
   private val _uiState = MutableStateFlow(PerformanceProfileUiState())
   val uiState = _uiState.asStateFlow()
@@ -32,7 +36,8 @@ class PerformanceProfileViewModel(
     }
     viewModelScope.launch {
       try {
-        repository.recalculate()
+        val athleteState = athleteStateRepository.rebuild()
+        _uiState.update { it.copy(athleteState = athleteState) }
       } catch (exception: CancellationException) {
         throw exception
       } catch (exception: Exception) {

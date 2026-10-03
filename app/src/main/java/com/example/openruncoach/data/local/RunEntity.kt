@@ -24,4 +24,7 @@ data class RunEntity(
   val duplicateGroupId: String? = null,
   @ColumnInfo(defaultValue = "1") val isCanonical: Boolean = true,
   val canonicalSelectionReason: String? = null,
+  @ColumnInfo(defaultValue = "''") val physicalRunId: String = healthConnectRecordId,
+  @ColumnInfo(defaultValue = "'ACTIVE'") val relevance: String = "ACTIVE",
+  @ColumnInfo(defaultValue = "'SEPARATE'") val canonicalMatchDecision: String = "SEPARATE",
 )

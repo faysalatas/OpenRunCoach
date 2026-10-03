@@ -1,6 +1,7 @@
 package com.example.openruncoach.data.local
 
 import androidx.room.Entity
+import androidx.room.ColumnInfo
 import androidx.room.ForeignKey
 import androidx.room.Index
 
@@ -21,11 +22,12 @@ import androidx.room.Index
       onDelete = ForeignKey.CASCADE,
     ),
   ],
-  indices = [Index("actualRunId", unique = true)],
+  indices = [Index("actualRunId"), Index("physicalRunId")],
 )
 data class WorkoutExecutionEntity(
   val plannedWorkoutId: String,
   val actualRunId: String,
+  @ColumnInfo(defaultValue = "''") val physicalRunId: String,
   val status: String,
   val comparisonBasis: String,
   val intendedDistanceMeters: Double?,

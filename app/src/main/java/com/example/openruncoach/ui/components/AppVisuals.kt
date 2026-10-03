@@ -2,8 +2,11 @@ package com.example.openruncoach.ui.components
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -12,6 +15,8 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -25,6 +30,12 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -166,17 +177,50 @@ fun OpenRunTabs(
   selectedIndex: Int,
   onSelected: (Int) -> Unit,
   modifier: Modifier = Modifier,
+  distributeEvenly: Boolean = false,
 ) {
-  Row(modifier.fillMaxWidth().selectableGroup()) {
+  if (distributeEvenly) {
+    Row(modifier.fillMaxWidth().selectableGroup()) {
+      tabs.forEachIndexed { index, label ->
+        val selected = selectedIndex == index
+        Column(
+          modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+            .selectable(selected = selected, onClick = { onSelected(index) }, role = Role.Tab),
+          horizontalAlignment = Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.Bottom,
+        ) {
+          Box(
+            Modifier.fillMaxWidth().padding(horizontal = OpenRunSpacing.Small, vertical = OpenRunSpacing.Compact),
+            contentAlignment = Alignment.Center,
+          ) {
+            Text(
+              label,
+              style = MaterialTheme.typography.labelLarge,
+              color = if (selected) MaterialTheme.colorScheme.primary else OpenRunColors.TextMuted,
+            )
+          }
+          Box(
+            Modifier.fillMaxWidth().height(2.dp).background(
+              if (selected) MaterialTheme.colorScheme.primary
+              else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+            ),
+          )
+        }
+      }
+    }
+    return
+  }
+
+  Row(modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).selectableGroup()) {
     tabs.forEachIndexed { index, label ->
       val selected = selectedIndex == index
       Column(
-        modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+        modifier = Modifier.width(IntrinsicSize.Min).heightIn(min = 48.dp)
           .selectable(selected = selected, onClick = { onSelected(index) }, role = Role.Tab),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Bottom,
       ) {
-        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+        Box(Modifier.padding(horizontal = OpenRunSpacing.Standard, vertical = OpenRunSpacing.Compact), contentAlignment = Alignment.Center) {
           Text(
             label,
             style = MaterialTheme.typography.labelLarge,
@@ -190,6 +234,64 @@ fun OpenRunTabs(
         )
       }
     }
+  }
+}
+
+/** Compact values reflow on narrow screens or large fonts; never hide recorded digits. */
+@Composable
+fun OpenRunCompactMetrics(
+  metrics: List<OpenRunMetricItem>,
+  modifier: Modifier = Modifier,
+  columns: Int = 3,
+) {
+  val fontScale = LocalDensity.current.fontScale
+  BoxWithConstraints(modifier.fillMaxWidth()) {
+    val capacity = (maxWidth.value / (96f * fontScale)).toInt().coerceIn(1, columns.coerceAtLeast(1))
+    val count = if (metrics.size == 4 && capacity == 3) 2 else capacity
+    Column(verticalArrangement = Arrangement.spacedBy(OpenRunSpacing.Compact)) {
+      metrics.chunked(count).forEach { row ->
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(OpenRunSpacing.Small)) {
+          row.forEach { metric ->
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(OpenRunSpacing.Micro)) {
+              Text(metric.value.replace(" min/km", " /km"),
+                style = MaterialTheme.typography.titleLarge.copy(fontSize = 19.sp, lineHeight = 24.sp, fontFeatureSettings = "tnum"))
+              Text(metric.label, style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+          }
+          repeat(count - row.size) { Box(Modifier.weight(1f)) }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+fun OpenRunSection(title: String, content: @Composable ColumnScope.() -> Unit) {
+  Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(OpenRunSpacing.Small)) {
+    OpenRunDivider()
+    Text(title, style = MaterialTheme.typography.titleMedium)
+    content()
+  }
+}
+
+@Composable
+fun OpenRunEvidenceRow(label: String, value: String) {
+  Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(OpenRunSpacing.Standard)) {
+    Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
+      color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text(value, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+  }
+}
+
+@Composable
+fun OpenRunDisclosure(title: String, content: @Composable ColumnScope.() -> Unit) {
+  var expanded by rememberSaveable { mutableStateOf(false) }
+  Column {
+    androidx.compose.material3.TextButton(onClick = { expanded = !expanded }) {
+      Text(if (expanded) "Hide $title" else title)
+    }
+    if (expanded) Column(verticalArrangement = Arrangement.spacedBy(OpenRunSpacing.Small), content = content)
   }
 }
 

@@ -72,7 +72,7 @@ data class RunMetrics(
   val dataVersion: Int = CURRENT_RUN_METRICS_DATA_VERSION,
 )
 
-const val CURRENT_RUN_METRICS_DATA_VERSION = 3
+const val CURRENT_RUN_METRICS_DATA_VERSION = 4
 
 enum class RunSampleMetricType { HEART_RATE, SPEED, CADENCE, POWER }
 

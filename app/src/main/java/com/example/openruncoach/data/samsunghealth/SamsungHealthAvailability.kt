@@ -52,6 +52,8 @@ data class SamsungHealthAvailabilityState(
   val developerAuthorization: SamsungDeveloperAuthorization,
   val lastOperation: String,
   val lastException: SamsungSdkExceptionInfo? = null,
+  val exerciseLocationReadPermission: SamsungExercisePermissionState =
+    SamsungExercisePermissionState.UNABLE_TO_CHECK,
 )
 
 object SamsungSdkErrorCodes {
@@ -151,8 +153,11 @@ fun SamsungHealthAvailability.message(): String = when (this) {
 }
 
 object SamsungHealthOperations {
-  const val GET_EXERCISE_PERMISSION = "getGrantedPermissions(DataTypes.EXERCISE)"
+  const val GET_EXERCISE_PERMISSION =
+    "getGrantedPermissions(DataTypes.EXERCISE, DataTypes.EXERCISE_LOCATION)"
   const val REQUEST_EXERCISE_PERMISSION = "requestPermissions(DataTypes.EXERCISE)"
+  const val REQUEST_EXERCISE_LOCATION_PERMISSION =
+    "requestPermissions(DataTypes.EXERCISE_LOCATION)"
   const val READ_EXERCISE = "readData(DataTypes.EXERCISE)"
   const val PLATFORM_PRECHECK = "Android platform compatibility check"
 }

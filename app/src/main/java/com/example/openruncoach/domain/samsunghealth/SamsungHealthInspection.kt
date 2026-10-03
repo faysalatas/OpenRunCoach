@@ -2,6 +2,7 @@ package com.example.openruncoach.domain.samsunghealth
 
 import com.example.openruncoach.domain.metrics.TimedMetricSample
 import com.example.openruncoach.domain.metrics.movingCadenceAverage
+import com.example.openruncoach.domain.route.RunRoute
 import java.time.Duration
 import java.time.Instant
 import kotlin.math.abs
@@ -19,6 +20,7 @@ data class SamsungWorkoutTarget(
   val maxHeartRate: Double? = null,
   val averageSpeedMetersPerSecond: Double? = null,
   val vo2Max: Double? = null,
+  val runId: String? = null,
 )
 
 enum class SamsungSourceDeviceType { WATCH, MOBILE, RING, BAND, ACCESSORY, OTHER, UNKNOWN }
@@ -43,6 +45,12 @@ data class SamsungCandidateMetrics(
   val vo2Max: Double? = null,
   val meanCadence: Double? = null,
   val maxCadence: Double? = null,
+  val routePointCount: Int? = null,
+  val routeAltitudePointCount: Int? = null,
+  val routeAccuracyPointCount: Int? = null,
+  val routeRejectedPointCount: Int? = null,
+  val routeFirstTimestamp: Instant? = null,
+  val routeLastTimestamp: Instant? = null,
   val exerciseLogExists: Boolean = false,
   val totalLogSamples: Int = 0,
   val heartRateSampleCount: Int = 0,
@@ -794,6 +802,7 @@ data class SamsungExerciseSessionInspection(
   val powerLogSummary: ExerciseLogMetricSummary?,
   val countLogSummary: ExerciseLogMetricSummary?,
   val exerciseLogSamples: List<SamsungExerciseLogSample> = emptyList(),
+  val route: RunRoute? = null,
 )
 
 enum class ProviderMetric { DISTANCE, DURATION, AVERAGE_HEART_RATE, MAX_HEART_RATE, SPEED, VO2_MAX, CADENCE, POWER, ELEVATION }

@@ -2,18 +2,26 @@ package com.example.openruncoach.ui.profile
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.example.openruncoach.domain.athlete.AthleteState
+import com.example.openruncoach.ui.components.OpenRunSection
+import com.example.openruncoach.ui.components.OpenRunEvidenceRow
+import com.example.openruncoach.ui.components.OpenRunCompactMetrics
+import com.example.openruncoach.ui.components.OpenRunDisclosure
+import com.example.openruncoach.ui.components.OpenRunTabs
+import com.example.openruncoach.ui.components.OpenRunMetricItem as MetricItem
+import com.example.openruncoach.theme.OpenRunSpacing
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -27,22 +35,20 @@ import com.example.openruncoach.ui.common.formatDistance
 import com.example.openruncoach.ui.common.formatDuration
 import com.example.openruncoach.ui.common.formatPace
 import com.example.openruncoach.ui.common.formatRunDate
-import com.example.openruncoach.ui.components.ItemSpacing
 import com.example.openruncoach.ui.components.ScreenPadding
-import com.example.openruncoach.ui.components.SectionSpacing
 import java.util.Locale
 
 @Composable
 fun PerformanceProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
   val environment = LocalOpenRunCoachEnvironment.current
   val viewModel: PerformanceProfileViewModel = viewModel {
-    PerformanceProfileViewModel(environment.profileRepository())
+    PerformanceProfileViewModel(environment.profileRepository(), environment.athleteStateRepository())
   }
   val state by viewModel.uiState.collectAsStateWithLifecycle()
 
   Column(
     modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(ScreenPadding),
-    verticalArrangement = Arrangement.spacedBy(SectionSpacing),
+    verticalArrangement = Arrangement.spacedBy(OpenRunSpacing.Comfortable),
   ) {
     TextButton(onClick = onBack) { Text("‹ Back") }
     Text("Performance Profile", style = MaterialTheme.typography.headlineMedium)
@@ -50,7 +56,10 @@ fun PerformanceProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) 
       state.isLoading -> Text("Building your performance profile…")
       state.profile == null -> Text(state.errorMessage ?: "Performance profile unavailable.")
       state.profile!!.totalCanonicalRuns == 0 -> EmptyProfile()
-      else -> ProfileContent(state.profile!!, state.showExplanations, viewModel::toggleExplanations)
+      else -> {
+        state.athleteState?.let { AthleteEvidence(it) }
+        ProfileContent(state.profile!!, state.showExplanations, viewModel::toggleExplanations)
+      }
     }
     state.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
   }
@@ -65,51 +74,58 @@ private fun EmptyProfile() {
 
 @Composable
 private fun ProfileContent(profile: AthletePerformanceProfile, showExplanations: Boolean, onToggle: () -> Unit) {
-  ProfileCard("Current Training") {
-    Text("Last 7 days", style = MaterialTheme.typography.titleMedium)
-    ProfileValue("Runs", profile.runsLast7Days.toString())
-    ProfileValue("Distance", formatDistance(profile.distanceLast7DaysMeters))
-    ProfileValue("Duration", formatDuration(profile.durationLast7DaysSeconds))
-    Text("Last 28 days", style = MaterialTheme.typography.titleMedium)
-    ProfileValue("Runs", profile.runsLast28Days.toString())
-    ProfileValue("Distance", formatDistance(profile.distanceLast28DaysMeters))
-    ProfileValue("Duration", formatDuration(profile.durationLast28DaysSeconds))
-    Text("4-week average", style = MaterialTheme.typography.titleMedium)
-    ProfileValue("Distance", "${formatDistance(profile.averageWeeklyDistanceLast4WeeksMeters)}/week")
-    ProfileValue("Duration", "${formatDuration(profile.averageWeeklyDurationLast4WeeksSeconds)}/week")
-    profile.longestRunLast28Days?.let { longest ->
-      Text("Longest recent run", style = MaterialTheme.typography.titleMedium)
-      ProfileValue("Distance", formatDistance(longest.distanceMeters))
-      ProfileValue("Duration", formatDuration(longest.durationSeconds))
-      ProfileValue("Date", formatRunDate(longest.date))
+  var selectedTab by rememberSaveable { mutableStateOf(0) }
+  OpenRunTabs(listOf("Training", "Benchmarks", "Evidence"), selectedTab, { selectedTab = it })
+  if (selectedTab == 0) {
+    ProfileCard("Current Training") {
+      Text("Last 7 days", style = MaterialTheme.typography.titleMedium)
+      ProfileValue("Runs", profile.runsLast7Days.toString())
+      ProfileValue("Distance", formatDistance(profile.distanceLast7DaysMeters))
+      ProfileValue("Duration", formatDuration(profile.durationLast7DaysSeconds))
+      Text("Last 28 days", style = MaterialTheme.typography.titleMedium)
+      ProfileValue("Runs", profile.runsLast28Days.toString())
+      ProfileValue("Distance", formatDistance(profile.distanceLast28DaysMeters))
+      ProfileValue("Duration", formatDuration(profile.durationLast28DaysSeconds))
+      Text("4-week average", style = MaterialTheme.typography.titleMedium)
+      ProfileValue("Distance", "${formatDistance(profile.averageWeeklyDistanceLast4WeeksMeters)}/week")
+      ProfileValue("Duration", "${formatDuration(profile.averageWeeklyDurationLast4WeeksSeconds)}/week")
+      profile.longestRunLast28Days?.let { longest ->
+        Text("Longest recent run", style = MaterialTheme.typography.titleMedium)
+        ProfileValue("Distance", formatDistance(longest.distanceMeters))
+        ProfileValue("Duration", formatDuration(longest.durationSeconds))
+        ProfileValue("Date", formatRunDate(longest.date))
+      }
     }
-  }
 
-  ProfileCard("Performance Benchmarks") {
-    StandardRunningDistance.entries.forEach { target ->
-      BenchmarkRow(profile.performanceBenchmarks.first { it.targetDistance == target })
+  }
+  if (selectedTab == 1) {
+    ProfileCard("Performance Benchmarks") {
+      StandardRunningDistance.entries.forEach { target ->
+        BenchmarkRow(profile.performanceBenchmarks.first { it.targetDistance == target })
+      }
     }
-  }
 
-  ProfileCard("Easy Running") {
-    BaselineValue("Typical pace", profile.typicalEasyPace) { formatPace(it) }
-    BaselineValue("Typical HR", profile.typicalEasyHeartRate) { "${formatNumber(it)} bpm" }
-    BaselineValue("Typical cadence", profile.typicalEasyCadence) { "${formatNumber(it)} spm" }
-    Text("Easy runs require completed feedback, RPE ≤ 4, easy or appropriate cardio effort, and no significant pain.", style = MaterialTheme.typography.bodySmall)
-    TextButton(onClick = onToggle) { Text(if (showExplanations) "Hide calculation details" else "Why these values?") }
-    if (showExplanations) {
-      listOfNotNull(profile.typicalEasyPace, profile.typicalEasyHeartRate, profile.typicalEasyCadence)
-        .flatMap(ProfileBaseline::reasons).distinct().forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+    ProfileCard("Easy Running") {
+      BaselineValue("Typical pace", profile.typicalEasyPace) { formatPace(it) }
+      BaselineValue("Typical HR", profile.typicalEasyHeartRate) { "${formatNumber(it)} bpm" }
+      BaselineValue("Typical cadence", profile.typicalEasyCadence) { "${formatNumber(it)} spm" }
+      Text("Easy runs require completed feedback, RPE ≤ 4, easy or appropriate cardio effort, and no significant pain.", style = MaterialTheme.typography.bodySmall)
+      TextButton(onClick = onToggle) { Text(if (showExplanations) "Hide calculation details" else "Why these values?") }
+      if (showExplanations) {
+        listOfNotNull(profile.typicalEasyPace, profile.typicalEasyHeartRate, profile.typicalEasyCadence)
+          .flatMap(ProfileBaseline::reasons).distinct().forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+      }
     }
-  }
 
-  ProfileCard("Fitness") {
-    ProfileValue("VO₂max", profile.vo2MaxLatest?.let(::formatNumber) ?: "Not available")
-    ProfileValue("VO₂max trend", profile.vo2MaxTrend.displayName())
-    ProfileValue("Easy pace trend", profile.recentPaceTrend.displayName())
-    ProfileValue("Recent average HR", profile.recentAverageHeartRate?.let { "${formatNumber(it)} bpm" } ?: "Not available")
-  }
+    ProfileCard("Fitness") {
+      ProfileValue("VO₂max", profile.vo2MaxLatest?.let(::formatNumber) ?: "Not available")
+      ProfileValue("VO₂max trend", profile.vo2MaxTrend.displayName())
+      ProfileValue("Easy pace trend", profile.recentPaceTrend.displayName())
+      ProfileValue("Recent average HR", profile.recentAverageHeartRate?.let { "${formatNumber(it)} bpm" } ?: "Not available")
+    }
 
+  }
+  if (selectedTab == 2) {
   ProfileCard("Recent Feedback") {
     if (profile.feedback.feedbackCount == 0) {
       Text("No post-run feedback in the last 28 days.")
@@ -136,6 +152,33 @@ private fun ProfileContent(profile: AthletePerformanceProfile, showExplanations:
     if (showExplanations) {
       profile.confidenceReasons.forEach { Text("• $it") }
       profile.dataQualityNotes.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+    }
+  }
+  }
+}
+
+@Composable
+private fun AthleteEvidence(state: AthleteState) {
+  OpenRunSection("Longitudinal capability") {
+    OpenRunCompactMetrics(listOf(
+      MetricItem(state.longestCompletedDistanceMeters?.let(::formatDistance) ?: "—", "Longest completed"),
+      MetricItem(state.longestDemonstratedContinuousDistanceMeters?.let(::formatDistance) ?: "—", "Continuous"),
+      MetricItem(state.longestToleratedDistanceMeters?.let(::formatDistance) ?: "—", "Tolerated"),
+    ))
+    OpenRunEvidenceRow("Capability confidence", state.capabilityConfidence.displayName())
+    OpenRunDisclosure("Capability evidence") {
+      state.capabilityReasons.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+    }
+  }
+  OpenRunSection("Current readiness") {
+    OpenRunEvidenceRow("Readiness", state.currentReadiness.name.lowercase().replace('_', ' '))
+    OpenRunEvidenceRow("Latest session cost", state.latestSessionCost?.name?.lowercase()?.replace('_', ' ') ?: "Unknown")
+    OpenRunCompactMetrics(listOf(
+      MetricItem(formatDistance(state.recentActualVolume7DaysMeters), "Last 7 days"),
+      MetricItem(formatNumber(state.recentRunFrequencyPerWeek), "Recent runs/week"),
+    ), columns = 2)
+    OpenRunDisclosure("Readiness evidence") {
+      state.readinessReasons.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
     }
   }
 }
@@ -171,20 +214,12 @@ private fun BaselineValue(label: String, baseline: ProfileBaseline?, format: (Do
 
 @Composable
 private fun ProfileCard(title: String, content: @Composable () -> Unit) {
-  Card(Modifier.fillMaxWidth()) {
-    Column(Modifier.padding(ScreenPadding), verticalArrangement = Arrangement.spacedBy(ItemSpacing)) {
-      Text(title, style = MaterialTheme.typography.titleLarge)
-      content()
-    }
-  }
+  OpenRunSection(title) { content() }
 }
 
 @Composable
 private fun ProfileValue(label: String, value: String) {
-  Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-    Text(label)
-    Text(value)
-  }
+  OpenRunEvidenceRow(label, value)
 }
 
 private fun ProfileConfidence.displayName() = name.lowercase().replace('_', ' ').replaceFirstChar(Char::titlecase)

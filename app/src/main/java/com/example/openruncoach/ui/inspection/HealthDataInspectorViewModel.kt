@@ -12,6 +12,7 @@ import com.example.openruncoach.data.samsunghealth.SamsungHealthExerciseInspecto
 import com.example.openruncoach.data.samsunghealth.SamsungHealthInspectionResult
 import com.example.openruncoach.data.samsunghealth.SamsungHealthPermissionManager
 import com.example.openruncoach.data.samsunghealth.SamsungMatchSelectionRepository
+import com.example.openruncoach.data.samsunghealth.SamsungExercisePermissionState
 import com.example.openruncoach.domain.RunSummary
 import com.example.openruncoach.domain.SourceDeviceType
 import com.example.openruncoach.domain.inspection.MetricAvailability
@@ -113,6 +114,20 @@ class HealthDataInspectorViewModel(
     }
   }
 
+  fun requestSamsungHealthRoutePermission(activity: Activity) {
+    val run = _uiState.value.run ?: return
+    viewModelScope.launch {
+      _uiState.update { it.copy(isInspectingSamsungHealth = true) }
+      val availability = samsungPermissionManager.requestExerciseLocationReadPermission(activity)
+      _uiState.update { it.copy(samsungHealthAvailability = availability) }
+      if (availability.exerciseReadPermission == SamsungExercisePermissionState.GRANTED) {
+        inspectSamsungHealth(run, _uiState.value.inspection)
+      } else {
+        _uiState.update { it.copy(isInspectingSamsungHealth = false) }
+      }
+    }
+  }
+
   fun resolveSamsungHealthIssue(activity: Activity) {
     samsungPermissionManager.resolveLastIssue(activity)?.let { availability ->
       _uiState.update { it.copy(samsungHealthAvailability = availability) }
@@ -141,6 +156,7 @@ class HealthDataInspectorViewModel(
           run.sourceDeviceType == SourceDeviceType.WATCH,
         averageHeartRate = run.averageHeartRate,
         maxHeartRate = run.maxHeartRate?.toDouble(),
+        runId = run.healthConnectRecordId,
       ),
       healthConnect,
       selectedCandidateId,

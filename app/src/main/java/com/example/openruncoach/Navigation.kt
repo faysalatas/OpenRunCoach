@@ -16,6 +16,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.Surface
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Icon
+import androidx.compose.ui.res.painterResource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -60,13 +62,13 @@ private object Routes {
   const val WORKOUT_ID = "workoutId"
 }
 
-private data class BottomDestination(val route: String, val label: String, val symbol: String)
+private data class BottomDestination(val route: String, val label: String, val icon: Int)
 
 private val bottomDestinations = listOf(
-  BottomDestination(Routes.HOME, "Home", "⌂"),
-  BottomDestination(Routes.HISTORY, "History", "≡"),
-  BottomDestination(Routes.PLAN, "Plan", "□"),
-  BottomDestination(Routes.SETTINGS, "Settings", "⚙"),
+  BottomDestination(Routes.HOME, "Home", R.drawable.ic_nav_home),
+  BottomDestination(Routes.HISTORY, "History", R.drawable.ic_nav_history),
+  BottomDestination(Routes.PLAN, "Plan", R.drawable.ic_nav_plan),
+  BottomDestination(Routes.SETTINGS, "Settings", R.drawable.ic_nav_settings),
 )
 
 @Composable
@@ -125,7 +127,7 @@ fun MainNavigation() {
                 },
                 icon = {
                   Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(destination.symbol)
+                    Icon(painterResource(destination.icon), contentDescription = null)
                     Box(
                       Modifier.padding(top = 3.dp).width(18.dp).height(2.dp).background(
                         if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
@@ -148,10 +150,8 @@ fun MainNavigation() {
     ) {
       composable(Routes.HOME) {
         HomeScreen(
-          onRunClick = { runId -> navController.navigate(runDetailRoute(runId)) },
-          onViewAnalysis = { runId -> navController.navigate(coachDetailRoute(runId)) },
           onViewPlan = { navController.navigate(Routes.PLAN) },
-          onViewGoal = { navController.navigate(Routes.GOAL) },
+          onOpenDetailedProgress = { navController.navigate(Routes.PERFORMANCE_PROFILE) },
         )
       }
       composable(Routes.HISTORY) {
@@ -202,7 +202,6 @@ fun MainNavigation() {
         RunDetailScreen(
           runId = runId,
           onBack = navController::navigateUp,
-          onViewAnalysis = { selectedRunId -> navController.navigate(coachDetailRoute(selectedRunId)) },
           onInspectHealthData = { selectedRunId -> navController.navigate(dataInspectorRoute(selectedRunId)) },
         )
       }

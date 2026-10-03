@@ -2,6 +2,7 @@ package com.example.openruncoach.data
 
 import com.example.openruncoach.data.local.OpenRunCoachDatabase
 import com.example.openruncoach.domain.workout.WorkoutResponse
+import com.example.openruncoach.domain.RunRelevance
 import com.example.openruncoach.domain.workout.WorkoutResponseEvaluator
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -54,7 +55,7 @@ class WorkoutResponseRepository(
     val run = source.run
     val feedback = source.feedback
     val execution = source.execution
-    if (run == null || !run.isCanonical || feedback == null || execution == null) {
+    if (run == null || !run.isCanonical || run.relevance != RunRelevance.ACTIVE.name || feedback == null || execution == null) {
       flowOf(null)
     } else combine(
       workflowDao.observeWorkout(execution.plannedWorkoutId),
