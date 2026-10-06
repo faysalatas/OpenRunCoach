@@ -129,12 +129,16 @@ class RunMetricsAutoRefreshCoordinator(
                 run.sourceDeviceType == SourceDeviceType.WATCH,
               averageHeartRate = run.averageHeartRate,
               maxHeartRate = run.maxHeartRate?.toDouble(),
-              runId = run.healthConnectRecordId,
+              runId = run.physicalRunId,
             ),
             healthConnectInspection = healthConnect,
             manualSelectionCandidateId = samsungSelectionRepository.selectedCandidateId(run.healthConnectRecordId),
           ).inspection
-          selectedRoute = samsung?.preferredRoute(run.healthConnectRecordId)
+          selectedRoute = samsung?.preferredRoute(
+            runId = run.physicalRunId,
+            canonicalStart = run.startTime,
+            canonicalEnd = run.endTime,
+          )
           samsungMetricsEnricher.enrich(base, samsung)
         }
       },
@@ -142,7 +146,7 @@ class RunMetricsAutoRefreshCoordinator(
         metricsRepository.save(metrics)
         selectedRoute?.let { route ->
           val result = routeSplitDeriver.derive(route, run.distanceMeters, metrics)
-          routeRepository?.save(result.route, result.splits)
+          routeRepository?.saveForPhysicalRun(result.route, result.splits, run.physicalRunId)
         }
         athleteProfileRepository?.recalculate()
       },

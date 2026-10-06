@@ -51,6 +51,12 @@ class RunChartPreparationTest {
     assertNull(chart.cadence)
   }
 
+  @Test fun aSingleSampleDoesNotCreateAnEmptyLookingChartTab() {
+    val chart = RunChartPreparer.prepare(metrics(cadence = listOf(sample(0, 160.0))))
+
+    assertNull(chart.cadence)
+  }
+
   @Test fun smallSeriesIsUnchangedByDownsampling() {
     val input = (0 until 20).map { RunChartPoint(it.toDouble(), it.toDouble()) }
     assertEquals(input, RunChartPreparer.downsample(input, 100))

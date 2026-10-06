@@ -105,6 +105,8 @@ class RunRepository(
 
   suspend fun refreshCanonicalSelection(preferredSourcePackage: String?) {
     val entities = runDao.getAllRuns()
+    val previousCanonicalByPhysicalRunId = entities.filter(RunEntity::isCanonical)
+      .associate { it.physicalRunId to it.healthConnectRecordId }
     val selections = selectCanonicalRuns(entities.map(RunEntity::toRunSummary), preferredSourcePackage)
       .associateBy { it.runId }
     val ignoredPhysicalRunIds = entities.filter { it.relevance == RunRelevance.IGNORED.name }
@@ -129,7 +131,9 @@ class RunRepository(
     if (runMetricsRefresher != null) {
       canonicalEntities.forEach { entity ->
         try {
-          runMetricsRefresher.refresh(entity.toRunSummary(), force = false)
+          val canonicalChanged = previousCanonicalByPhysicalRunId[entity.physicalRunId] !=
+            entity.healthConnectRecordId
+          runMetricsRefresher.refresh(entity.toRunSummary(), force = canonicalChanged)
         } catch (exception: CancellationException) {
           throw exception
         } catch (_: Exception) {

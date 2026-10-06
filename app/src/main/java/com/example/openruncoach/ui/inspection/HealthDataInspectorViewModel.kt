@@ -3,6 +3,8 @@ package com.example.openruncoach.ui.inspection
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.openruncoach.data.RunRepository
+import com.example.openruncoach.data.RunRouteRepository
+import com.example.openruncoach.data.RunSettingsRepository
 import com.example.openruncoach.data.healthconnect.HealthConnectRunMetricsProvider
 import com.example.openruncoach.data.samsunghealth.SamsungHealthRunMetricsEnricher
 import com.example.openruncoach.data.healthconnect.inspection.HealthConnectDataInspector
@@ -24,6 +26,7 @@ import com.example.openruncoach.domain.inspection.RunMetricType
 import com.example.openruncoach.domain.samsunghealth.SamsungHealthInspection
 import com.example.openruncoach.domain.samsunghealth.SamsungWorkoutTarget
 import com.example.openruncoach.domain.metrics.RunMetrics
+import com.example.openruncoach.domain.route.RunRouteData
 import android.app.Activity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -41,6 +44,8 @@ data class HealthDataInspectorUiState(
   val samsungHealthAvailability: SamsungHealthAvailabilityState? = null,
   val samsungHealthInspection: SamsungHealthInspection? = null,
   val unifiedMetrics: RunMetrics? = null,
+  val preferredSourcePackage: String? = null,
+  val persistedRoute: RunRouteData? = null,
   val errorMessage: String? = null,
 )
 
@@ -53,6 +58,8 @@ class HealthDataInspectorViewModel(
   private val samsungMatchSelectionRepository: SamsungMatchSelectionRepository,
   private val healthConnectMetricsProvider: HealthConnectRunMetricsProvider,
   private val samsungMetricsEnricher: SamsungHealthRunMetricsEnricher,
+  settingsRepository: RunSettingsRepository,
+  routeRepository: RunRouteRepository,
 ) : ViewModel() {
   private val _uiState = MutableStateFlow(HealthDataInspectorUiState())
   val uiState = _uiState.asStateFlow()
@@ -67,6 +74,16 @@ class HealthDataInspectorViewModel(
           inspectedRunId = run.healthConnectRecordId
           inspect()
         }
+      }
+    }
+    viewModelScope.launch {
+      settingsRepository.preferredSourcePackage.collect { preferredSource ->
+        _uiState.update { it.copy(preferredSourcePackage = preferredSource) }
+      }
+    }
+    viewModelScope.launch {
+      routeRepository.observe(runId).collect { route ->
+        _uiState.update { it.copy(persistedRoute = route) }
       }
     }
   }

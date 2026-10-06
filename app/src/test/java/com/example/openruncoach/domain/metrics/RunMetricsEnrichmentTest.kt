@@ -184,6 +184,41 @@ class RunMetricsEnrichmentTest {
   }
 
   @Test
+  fun smallTrimWithinExactMatchToleranceUsesOnlyCanonicalSensorWindow() {
+    val inside = (0 until 40).map { index ->
+      SamsungExerciseLogSample(start.plusSeconds(index * 49L), 140.0, 160.0, 2.5, 200.0, null)
+    }
+    val rawLogs = listOf(
+      SamsungExerciseLogSample(start.minusSeconds(1), 250.0, 250.0, 9.0, 500.0, null),
+    ) + inside + SamsungExerciseLogSample(start.plusSeconds(1_985), 250.0, 250.0, 9.0, 500.0, null)
+    val session = samsungSession(logs = rawLogs).let { original ->
+      original.copy(candidate = original.candidate.copy(
+        startTime = start.minusSeconds(1), endTime = start.plusSeconds(1_985),
+      ))
+    }
+    val canonical = base().copy(
+      averageHeartRate = null, maxHeartRate = null, averageSpeedMetersPerSecond = null,
+      averageCadence = null, elevationGainMeters = null, vo2Max = null, series = RunMetricSeries(),
+      recordingSource = "com.strava",
+    )
+
+    val result = enricher.enrich(canonical, samsungInspection(SamsungMatchConfidence.HIGH, session = session))
+
+    assertEquals(140.0, requireNotNull(result.averageHeartRate).value, 0.01)
+    assertEquals(160.0, requireNotNull(result.averageCadence).value, 0.01)
+    assertEquals(2.5, requireNotNull(result.averageSpeedMetersPerSecond).value, 0.01)
+    listOf(result.series.heartRate, result.series.speed, result.series.cadence).forEach { series ->
+      assertEquals(40, series.size)
+      assertTrue(series.all { it.timestamp in canonical.startTime..canonical.endTime })
+      assertTrue(series.all { it.source == MetricSource.SAMSUNG_HEALTH })
+    }
+    assertEquals(rawLogs, session.exerciseLogSamples)
+    assertEquals("com.strava", result.recordingSource)
+    assertNull(result.elevationGainMeters)
+    assertNull(result.vo2Max)
+  }
+
+  @Test
   fun elevationEnrichmentUsesSamsungWhenHealthConnectIsMissingIt() {
     val result = enricher.enrich(base(), samsungInspection(SamsungMatchConfidence.HIGH))
 

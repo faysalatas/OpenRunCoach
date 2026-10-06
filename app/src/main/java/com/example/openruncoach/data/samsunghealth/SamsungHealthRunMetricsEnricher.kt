@@ -23,9 +23,12 @@ class SamsungHealthRunMetricsEnricher {
   fun enrich(base: RunMetrics, inspection: SamsungHealthInspection?): RunMetrics {
     val session = inspection?.enrichmentSession ?: return base
     val confidence = trustedConfidence(inspection) ?: return base
+    val extendsBeyondCanonicalWindow = session.candidate.startTime.isBefore(base.startTime) ||
+      session.candidate.endTime.isAfter(base.endTime)
     val enriched = if (
-      inspection.enrichmentMatch.relationship == SamsungPhysicalWorkoutRelationship.OVERLAPPING_SESSION
-    ) enrichOverlapping(base, inspection, session) else enrichExact(base, session, confidence)
+      inspection.enrichmentMatch.relationship == SamsungPhysicalWorkoutRelationship.OVERLAPPING_SESSION ||
+      extendsBeyondCanonicalWindow
+    ) enrichOverlapping(base, session) else enrichExact(base, session, confidence)
     return addPaceIfMissing(enriched)
   }
 
@@ -56,7 +59,9 @@ class SamsungHealthRunMetricsEnricher {
       return verifyMetric(primary, available, source, tolerance)
     }
 
-    val log = session.exerciseLogSamples
+    val log = session.exerciseLogSamples.filter {
+      !it.timestamp.isBefore(base.startTime) && !it.timestamp.isAfter(base.endTime)
+    }
     fun sample(timestamp: java.time.Instant, value: Double) = TimedMetricSample(
       timestamp = timestamp,
       value = value,
@@ -115,11 +120,9 @@ class SamsungHealthRunMetricsEnricher {
 
   private fun enrichOverlapping(
     base: RunMetrics,
-    inspection: SamsungHealthInspection,
     session: SamsungExerciseSessionInspection,
   ): RunMetrics {
-    val clipped = inspection.clippedEnrichment
-      ?: clipSamsungSensorData(session.exerciseLogSamples, base.startTime, base.endTime)
+    val clipped = clipSamsungSensorData(session.exerciseLogSamples, base.startTime, base.endTime)
     val source = MetricSource.SAMSUNG_HEALTH
     val sourceDevice = session.sourceDeviceName ?: listOfNotNull(
       session.sourceDeviceManufacturer,
@@ -172,10 +175,7 @@ class SamsungHealthRunMetricsEnricher {
     val power = clipped.samples.mapNotNull { item ->
       item.powerWatts?.let { sample(item.timestamp, it, powerConfidence) }
     }
-    val candidate = session.candidate
-
-    // Full-session elevation and route-derived altitude are intentionally excluded until
-    // timestamped route altitude can be clipped to the canonical window.
+    // Full-session elevation/VO₂max cannot be attributed to a trimmed interval.
     return base.copy(
       durationSeconds = base.durationSeconds,
       distanceMeters = base.distanceMeters,

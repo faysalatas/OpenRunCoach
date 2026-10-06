@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
@@ -19,11 +21,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.openruncoach.LocalOpenRunCoachEnvironment
 import com.example.openruncoach.data.HealthConnectRepository
 import com.example.openruncoach.data.RunRepository
+import com.example.openruncoach.data.RunRouteRepository
 import com.example.openruncoach.data.RunSettingsRepository
 import com.example.openruncoach.data.WorkoutExecutionRepository
 import com.example.openruncoach.theme.OpenRunShapeTokens
@@ -32,6 +36,8 @@ import com.example.openruncoach.ui.common.formatDistance
 import com.example.openruncoach.ui.common.formatDuration
 import com.example.openruncoach.ui.common.formatPace
 import com.example.openruncoach.ui.components.ScreenPadding
+import com.example.openruncoach.ui.components.RunRouteCanvas
+import com.example.openruncoach.ui.components.RunRouteCanvasStyle
 
 @Composable
 fun HistoryScreen(onRunClick: (String) -> Unit, modifier: Modifier = Modifier) {
@@ -47,6 +53,7 @@ fun HistoryScreen(onRunClick: (String) -> Unit, modifier: Modifier = Modifier) {
         settingsRepository,
         clock = environment.clock,
       ),
+      RunRouteRepository(database.runRouteDao()),
       WorkoutExecutionRepository(database, environment.clock),
       environment.clock.zone,
     )
@@ -113,9 +120,17 @@ private fun HistoryRunRow(item: HistoryRunItem, onClick: () -> Unit) {
     color = MaterialTheme.colorScheme.surfaceContainerHigh,
   ) {
     Row(
-      modifier = Modifier.padding(horizontal = OpenRunSpacing.Standard, vertical = OpenRunSpacing.Compact),
+      modifier = Modifier.padding(horizontal = OpenRunSpacing.Compact, vertical = OpenRunSpacing.Compact),
       verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(OpenRunSpacing.Compact),
     ) {
+      item.route?.points?.takeIf { it.size >= 2 }?.let { points ->
+        RunRouteCanvas(
+          points = points,
+          style = RunRouteCanvasStyle.COMPACT,
+          modifier = Modifier.width(76.dp).height(68.dp),
+        )
+      }
       Column(
         modifier = Modifier.weight(1f),
         verticalArrangement = Arrangement.spacedBy(OpenRunSpacing.Micro),

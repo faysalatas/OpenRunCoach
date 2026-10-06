@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -80,6 +81,8 @@ import com.example.openruncoach.ui.components.OpenRunSection
 import com.example.openruncoach.ui.components.OpenRunEvidenceRow
 import com.example.openruncoach.ui.components.OpenRunCard
 import com.example.openruncoach.ui.components.OpenRunDisclosure
+import com.example.openruncoach.ui.components.RunRouteCanvas
+import com.example.openruncoach.ui.components.RunRouteCanvasStyle
 import com.example.openruncoach.theme.OpenRunSpacing
 import java.util.Locale
 import java.time.format.DateTimeFormatter
@@ -202,6 +205,13 @@ private fun CompletedOverview(
   OpenRunCard {
     OpenRunCompactMetrics(metrics, columns = metrics.size.coerceAtMost(4))
   }
+  state.routeData?.route?.points?.takeIf { it.size >= 2 }?.let { points ->
+    RunRouteCanvas(
+      points = points,
+      style = RunRouteCanvasStyle.DETAIL,
+      modifier = Modifier.fillMaxWidth().height(260.dp),
+    )
+  }
   state.metrics?.let { runMetrics ->
     state.charts?.let { charts ->
       RunChartsSection(runMetrics, charts, state.plannedWorkout.wholeRunPaceTarget())
@@ -210,19 +220,6 @@ private fun CompletedOverview(
   OpenRunDisclosure("Recording details") {
     SourceCard(state, onToggleSourceDetails)
     state.metrics?.let { RunMetricsCard(it, state.showMetricDetails, onToggleMetricDetails) }
-    state.routeData?.let { routeData ->
-      DetailCard("Route data") {
-        LabelValue("Source", routeData.route.sourceAppName ?: routeData.route.source.displayName())
-        LabelValue("Persisted points", routeData.route.points.size.toString())
-        LabelValue("Rejected points", routeData.route.rejectedPointCount.toString())
-        routeData.route.derivedDistanceMeters?.let { LabelValue("Route-derived distance", formatDistance(it)) }
-        routeData.route.canonicalDistanceMeters?.let { LabelValue("Canonical distance", formatDistance(it)) }
-        routeData.route.distanceDifferencePercent?.let {
-          LabelValue("Distance difference", "%.2f%%".format(Locale.getDefault(), it))
-        }
-        LabelValue("Confidence", routeData.route.confidence.displayName())
-      }
-    }
     if (showProviderActions) {
       TextButton(onClick = onRefreshMetrics, enabled = !state.isUpdatingMetrics) { Text("Refresh metrics") }
       if (run.isCanonical) TextButton(onClick = onInspectHealthData) { Text("Inspect Health Data") }
@@ -244,7 +241,7 @@ private fun CompletedSplits(state: RunDetailUiState) {
   val showCadence = splits.any { it.averageCadence != null }
   OpenRunSection("Splits") {
     SplitRow(
-      first = "KM",
+      first = "Split",
       pace = "Pace",
       heartRate = if (showHeartRate) "HR" else null,
       cadence = if (showCadence) "Cadence" else null,
@@ -254,8 +251,8 @@ private fun CompletedSplits(state: RunDetailUiState) {
     splits.forEach { split ->
       SplitRow(
         first = if (split.partial) {
-          "%.2f".format(Locale.getDefault(), split.distanceMeters / 1_000.0)
-        } else split.ordinal.toString(),
+          "%.2f km".format(Locale.getDefault(), split.distanceMeters / 1_000.0)
+        } else "${split.ordinal} km",
         pace = formatPace(split.averagePaceSecondsPerKm).replace(" min/km", " /km"),
         heartRate = if (showHeartRate) {
           split.averageHeartRate?.let { "%.0f".format(Locale.getDefault(), it) } ?: "—"

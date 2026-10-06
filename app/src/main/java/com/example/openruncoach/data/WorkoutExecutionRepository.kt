@@ -21,6 +21,7 @@ import com.example.openruncoach.domain.workout.WorkoutType
 import com.example.openruncoach.domain.workout.WorkoutAssociationDecision
 import com.example.openruncoach.domain.workout.WorkoutAssociationEvidence
 import com.example.openruncoach.domain.workout.assessWorkoutAssociation
+import com.example.openruncoach.domain.workout.displayName
 import com.example.openruncoach.domain.workout.resolveWorkoutAssociation
 import com.example.openruncoach.domain.workout.hasUnambiguousRunDate
 import java.time.Clock
@@ -52,6 +53,17 @@ class WorkoutExecutionRepository(
       val currentRunId = database.runDao().getCanonicalRunByPhysicalId(entity.physicalRunId)
         ?.healthConnectRecordId ?: entity.actualRunId
       put(currentRunId, type)
+    }
+  }
+
+  /** Returns the persisted prescription title for every currently associated canonical run. */
+  suspend fun getAssociatedWorkoutLabelsByRunId(): Map<String, String> = buildMap {
+    dao.getAllAssociations().forEach { association ->
+      val record = dao.getWorkout(association.plannedWorkoutId) ?: return@forEach
+      val workout = StructuredWorkoutPersistenceMapper.toDomain(record)
+      val currentRunId = database.runDao().getCanonicalRunByPhysicalId(association.physicalRunId)
+        ?.healthConnectRecordId ?: association.actualRunId
+      put(currentRunId, workout.name.ifBlank { workout.type.displayName() })
     }
   }
 

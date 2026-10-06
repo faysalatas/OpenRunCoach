@@ -5,6 +5,7 @@ import com.example.openruncoach.domain.metrics.MetricConfidence
 import com.example.openruncoach.domain.metrics.MetricSource
 import com.example.openruncoach.domain.metrics.MetricValue
 import com.example.openruncoach.domain.metrics.RunMetrics
+import com.example.openruncoach.domain.metrics.CURRENT_RUN_METRICS_DATA_VERSION
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -30,7 +31,7 @@ class RunMetricsRefreshEngineTest {
 
   @Test fun olderMetricPipelineVersionTriggersRefresh() = runTest {
     var providerCalls = 0
-    val result = engine.refresh(run(), metrics().copy(dataVersion = 2), false, {
+    val result = engine.refresh(run(), metrics().copy(dataVersion = CURRENT_RUN_METRICS_DATA_VERSION - 1), false, {
       providerCalls++
       metrics()
     }, { it }, {})

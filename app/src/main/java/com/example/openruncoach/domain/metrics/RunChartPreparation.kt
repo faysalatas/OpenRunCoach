@@ -160,6 +160,7 @@ object RunChartPreparer {
       }.takeIf(List<RunChartPoint>::isNotEmpty)
     }
     return PreparedRunChart(prepared, sourceDeviceName)
+      .takeIf { it.points.size >= MINIMUM_CHART_POINTS }
   }
 
   private fun List<TimedMetricSample<Double>>.nearestValue(timestamp: Instant): Double? =
@@ -169,4 +170,5 @@ object RunChartPreparer {
 
   private const val STOPPED_SPEED_METERS_PER_SECOND = 0.1
   private const val SPEED_ALIGNMENT_MILLIS = 2_000L
+  private const val MINIMUM_CHART_POINTS = 2
 }

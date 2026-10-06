@@ -437,6 +437,7 @@ private fun enrichmentReasons(
   if (metrics.cadenceSampleCount > 0) add(positive("${metrics.cadenceSampleCount} cadence samples"))
   if (metrics.powerSampleCount > 0) add(positive("${metrics.powerSampleCount} power samples"))
   else if (metrics.powerAvailable) add(positive("Power summary available"))
+  if ((metrics.routePointCount ?: 0) > 0) add(positive("${metrics.routePointCount} route points"))
   if (metrics.vo2Max != null) add(positive("VO₂max available"))
   if (metrics.elevationAvailable) add(positive("Elevation available"))
 }
@@ -449,6 +450,7 @@ private fun enrichmentRichnessScore(candidate: SamsungExerciseCandidate): Int {
     (if (metrics.speedSampleCount > 0 || metrics.averageSpeedMetersPerSecond != null) 70 else 0) +
     (if (metrics.cadenceSampleCount > 0 || metrics.meanCadence != null) 80 else 0) +
     (if (metrics.powerSampleCount > 0 || metrics.powerAvailable) 40 else 0) +
+    (if ((metrics.routePointCount ?: 0) >= 2) 100 else 0) +
     (if (metrics.vo2Max != null) 60 else 0) +
     (if (metrics.elevationAvailable) 60 else 0)
 }
@@ -457,10 +459,11 @@ private val SamsungCandidateMetrics.hasSensorEnrichment: Boolean
   get() = averageHeartRate != null || maxHeartRate != null || averageSpeedMetersPerSecond != null ||
     vo2Max != null || meanCadence != null || maxCadence != null || heartRateSampleCount > 0 ||
     speedSampleCount > 0 || cadenceSampleCount > 0 || powerSampleCount > 0 || powerAvailable ||
-    elevationAvailable
+    elevationAvailable || (routePointCount ?: 0) >= 2
 
 private val SamsungCandidateMetrics.hasTimeSeriesEnrichment: Boolean
-  get() = heartRateSampleCount > 0 || speedSampleCount > 0 || cadenceSampleCount > 0 || powerSampleCount > 0
+  get() = heartRateSampleCount > 0 || speedSampleCount > 0 || cadenceSampleCount > 0 || powerSampleCount > 0 ||
+    (routePointCount ?: 0) >= 2
 
 private val SamsungMatchConfidence.rank: Int
   get() = when (this) {

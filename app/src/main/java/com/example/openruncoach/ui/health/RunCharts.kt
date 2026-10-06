@@ -90,7 +90,7 @@ fun RunChartsSection(metrics: RunMetrics, charts: RunChartData, paceTarget: Pace
         ).joinToString(" · "),
         chart = chart,
         durationSeconds = charts.durationSeconds,
-        color = colors.pace,
+        color = colors.heartRate,
       )
     }
     if (active == "Cadence") charts.cadence?.let { chart ->

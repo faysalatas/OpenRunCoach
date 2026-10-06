@@ -254,6 +254,43 @@ class SamsungWorkoutMatcherTest {
   }
 
   @Test
+  fun routeIsMetricSpecificEnrichmentWhenCanonicalSourceIsNotSamsung() {
+    val routeOnly = candidate(
+      "samsung-route", start, 3_600, 10_000.0,
+      deviceType = SamsungSourceDeviceType.WATCH,
+      sourceAppId = "com.sec.android.app.shealth",
+    ).copy(metrics = SamsungCandidateMetrics(routePointCount = 240))
+
+    val result = matchSamsungEnrichment(
+      target.copy(canonicalSourceAppId = "com.strava"),
+      listOf(routeOnly),
+    )
+
+    assertEquals(SamsungWorkoutMatchStatus.MATCHED, result.status)
+    assertEquals("samsung-route", result.selected?.id)
+    assertTrue(result.reasons.any { it.text == "240 route points" })
+  }
+
+  @Test
+  fun overlappingRouteStillRequiresExistingWatchAndExerciseLogEvidence() {
+    val original = candidate(
+      "long-watch-route", start, 4_200, 11_500.0,
+      deviceType = SamsungSourceDeviceType.WATCH,
+    ).copy(metrics = SamsungCandidateMetrics(
+      routePointCount = 240, exerciseLogExists = true, totalLogSamples = 60,
+    ))
+
+    val trusted = matchSamsungEnrichment(target.copy(canonicalSourceAppId = "com.strava"), listOf(original))
+    assertEquals(SamsungMatchConfidence.HIGH, trusted.confidence)
+    assertEquals(SamsungPhysicalWorkoutRelationship.OVERLAPPING_SESSION, trusted.relationship)
+
+    val insufficient = original.copy(metrics = original.metrics.copy(totalLogSamples = 59))
+    assertEquals(SamsungWorkoutMatchStatus.NOT_FOUND, matchSamsungEnrichment(target, listOf(insufficient)).status)
+    val phone = original.copy(source = original.source.copy(deviceType = SamsungSourceDeviceType.MOBILE))
+    assertEquals(SamsungWorkoutMatchStatus.NOT_FOUND, matchSamsungEnrichment(target, listOf(phone)).status)
+  }
+
+  @Test
   fun fullCanonicalCoverageWithLongerWatchSessionIsAcceptedAsOverlap() {
     val watch = candidate(
       "long-watch", start.minusMillis(200), 4_200, 11_500.0,

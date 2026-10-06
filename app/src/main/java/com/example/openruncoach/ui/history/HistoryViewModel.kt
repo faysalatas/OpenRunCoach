@@ -3,9 +3,10 @@ package com.example.openruncoach.ui.history
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.openruncoach.data.RunRepository
+import com.example.openruncoach.data.RunRouteRepository
 import com.example.openruncoach.data.WorkoutExecutionRepository
 import com.example.openruncoach.domain.RunSummary
-import com.example.openruncoach.domain.workout.displayName
+import com.example.openruncoach.domain.route.RunRoute
 import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -20,6 +21,7 @@ data class HistoryRunItem(
   val run: RunSummary,
   val dateLabel: String,
   val workoutTypeLabel: String,
+  val route: RunRoute? = null,
 )
 
 data class RunHistoryGroup(val title: String, val runs: List<HistoryRunItem>)
@@ -34,14 +36,20 @@ data class HistoryUiState(
 
 class HistoryViewModel(
   runRepository: RunRepository,
+  runRouteRepository: RunRouteRepository,
   private val workoutExecutionRepository: WorkoutExecutionRepository,
   zoneId: ZoneId = ZoneId.systemDefault(),
 ) : ViewModel() {
   private val showIgnored = MutableStateFlow(false)
 
-  val uiState = combine(runRepository.canonicalRuns, runRepository.ignoredRuns, showIgnored) { active, ignored, showingIgnored ->
+  val uiState = combine(
+    runRepository.canonicalRuns,
+    runRepository.ignoredRuns,
+    runRouteRepository.observeAll(),
+    showIgnored,
+  ) { active, ignored, routes, showingIgnored ->
     val runs = if (showingIgnored) ignored else active
-    val workoutTypes = workoutExecutionRepository.getCompletedWorkoutTypesByRunId()
+    val workoutLabels = workoutExecutionRepository.getAssociatedWorkoutLabelsByRunId()
     val dateFormatter = DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault())
     val groups = runs.sortedByDescending(RunSummary::startTime)
       .groupBy { YearMonth.from(it.startTime.atZone(zoneId)) }
@@ -52,7 +60,8 @@ class HistoryViewModel(
             HistoryRunItem(
               run = run,
               dateLabel = run.startTime.atZone(zoneId).format(dateFormatter),
-              workoutTypeLabel = workoutTypes[run.healthConnectRecordId]?.displayName() ?: "Run",
+              workoutTypeLabel = workoutLabels[run.healthConnectRecordId] ?: "Run",
+              route = routes[run.physicalRunId]?.route,
             )
           },
         )

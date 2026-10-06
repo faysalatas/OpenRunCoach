@@ -29,6 +29,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.openruncoach.data.HealthConnectRepository
 import com.example.openruncoach.data.RunRepository
+import com.example.openruncoach.data.RunRouteRepository
 import com.example.openruncoach.data.RunSettingsRepository
 import com.example.openruncoach.data.healthconnect.HealthConnectRunMetricsProvider
 import com.example.openruncoach.data.healthconnect.inspection.HealthConnectDataInspector
@@ -42,6 +43,7 @@ import com.example.openruncoach.data.samsunghealth.SamsungHealthPermissionManage
 import com.example.openruncoach.data.samsunghealth.SamsungMatchSelectionRepository
 import com.example.openruncoach.data.samsunghealth.SamsungHealthRunMetricsEnricher
 import com.example.openruncoach.LocalOpenRunCoachEnvironment
+import com.example.openruncoach.BuildConfig
 import com.example.openruncoach.domain.RunSummary
 import com.example.openruncoach.domain.displaySourceName
 import com.example.openruncoach.domain.inspection.CountMetricSummary
@@ -104,6 +106,8 @@ fun HealthDataInspectorScreen(runId: String, onBack: () -> Unit, modifier: Modif
       SamsungMatchSelectionRepository(context),
       HealthConnectRunMetricsProvider(),
       SamsungHealthRunMetricsEnricher(),
+      settings,
+      RunRouteRepository(database.runRouteDao()),
     )
   }
   val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -170,7 +174,7 @@ fun HealthDataInspectorScreen(runId: String, onBack: () -> Unit, modifier: Modif
         }
         DiagnosticDisclosure("Canonical matching / raw comparison") {
           state.samsungHealthInspection?.let { inspection ->
-            state.run?.let { CanonicalWorkoutSummary(it) }
+            state.run?.let { CanonicalWorkoutSummary(it, state) }
             IdentityMatchSection(inspection)
             EnrichmentMatchSection(inspection, state.run, viewModel::selectSamsungWorkout)
             PlausibleSamsungCandidates(inspection, viewModel::selectSamsungWorkout)
@@ -382,8 +386,9 @@ private fun ProviderComparison(inspection: SamsungHealthInspection) {
 }
 
 @Composable
-private fun CanonicalWorkoutSummary(run: RunSummary) {
+private fun CanonicalWorkoutSummary(run: RunSummary, state: HealthDataInspectorUiState) {
   Text("Canonical workout", style = MaterialTheme.typography.titleMedium)
+  if (BuildConfig.DEBUG) CanonicalEnrichmentTrace(run, state)
   DiagnosticValue("Source", run.displaySourceName)
   DiagnosticValue("Device", listOfNotNull(run.sourceDeviceManufacturer, run.sourceDeviceModel)
     .joinToString(" ").ifBlank {
@@ -391,6 +396,28 @@ private fun CanonicalWorkoutSummary(run: RunSummary) {
     })
   DiagnosticValue("Distance", formatDistance(run.distanceMeters))
   DiagnosticValue("Duration", formatDuration(run.durationSeconds))
+}
+
+@Composable
+private fun CanonicalEnrichmentTrace(run: RunSummary, state: HealthDataInspectorUiState) {
+  DiagnosticValue("Canonical physical run ID", run.physicalRunId)
+  DiagnosticValue("Summary provider record ID", run.healthConnectRecordId)
+  DiagnosticValue("Canonical summary source", run.displaySourceName)
+  DiagnosticValue(
+    "Preferred workout source",
+    state.preferredSourcePackage?.let(::sourceDisplayName) ?: "Default",
+  )
+  val samsungMatch = state.samsungHealthInspection?.enrichmentMatch
+  DiagnosticValue("Samsung matched session", samsungMatch?.selected?.id ?: "Not available")
+  DiagnosticValue("Samsung match confidence", samsungMatch?.confidence?.displayName() ?: "Not available")
+  val route = state.persistedRoute?.route
+  DiagnosticValue("Route source", route?.source?.let { metricSourceDisplayName(it, run, state.samsungHealthInspection) } ?: "Not available")
+  DiagnosticValue("Route point count", route?.points?.size?.toString() ?: "Not available")
+  DiagnosticValue("Route canonical owner", route?.runId ?: "Not available")
+  val series = state.unifiedMetrics?.series
+  DiagnosticValue("Samsung HR samples used", series?.heartRate?.count { it.source == MetricSource.SAMSUNG_HEALTH }?.toString() ?: "Not available")
+  DiagnosticValue("Samsung speed samples used", series?.speed?.count { it.source == MetricSource.SAMSUNG_HEALTH }?.toString() ?: "Not available")
+  DiagnosticValue("Samsung cadence samples used", series?.cadence?.count { it.source == MetricSource.SAMSUNG_HEALTH }?.toString() ?: "Not available")
 }
 
 @Composable
