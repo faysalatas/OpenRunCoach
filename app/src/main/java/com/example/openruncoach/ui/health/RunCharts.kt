@@ -30,6 +30,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
@@ -42,6 +43,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.rememberTextMeasurer
 import com.example.openruncoach.domain.metrics.PreparedRunChart
@@ -57,19 +59,19 @@ fun RunChartsSection(
   metrics: RunMetrics,
   charts: RunChartData,
   paceTarget: PaceTarget? = null,
-  chartHeight: Dp = 132.dp,
+  chartHeight: Dp = 108.dp,
 ) {
   val colors = LocalRunChartColors.current
   val available = listOfNotNull(
     charts.pace?.takeIf(::hasDrawableSeries)?.let { "Pace" },
-    charts.heartRate?.takeIf(::hasDrawableSeries)?.let { "Heart rate" },
+    charts.heartRate?.takeIf(::hasDrawableSeries)?.let { "Heart Rate" },
     charts.cadence?.takeIf(::hasDrawableSeries)?.let { "Cadence" },
   )
   if (available.isEmpty()) return
   var selected by rememberSaveable { mutableStateOf("Pace") }
   val active = selected.takeIf { it in available } ?: available.first()
   Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-    ChartMetricSelector(available, active) { selected = it }
+    if (available.size > 1) ChartMetricSelector(available, active) { selected = it }
     if (active == "Pace") charts.pace?.let { chart ->
       ChartSection(
         title = "Pace",
@@ -89,7 +91,7 @@ fun RunChartsSection(
         targetKey = paceTarget != null,
       )
     }
-    if (active == "Heart rate") charts.heartRate?.let { chart ->
+    if (active == "Heart Rate") charts.heartRate?.let { chart ->
       ChartSection(
         title = "Heart Rate",
         subtitle = "bpm",
@@ -114,7 +116,7 @@ fun RunChartsSection(
       )
       RunComparisonSummary(
         (metrics.movingAverageCadence ?: metrics.averageCadence)?.value?.let { "${it.roundToInt()} spm" },
-        if (metrics.movingAverageCadence != null) "Moving average" else "Average cadence",
+        if (metrics.movingAverageCadence != null) "Avg. moving cadence" else "Average cadence",
         metrics.maxCadence?.value?.let { "${it.roundToInt()} spm" }, "Max cadence",
       )
     }
@@ -123,20 +125,22 @@ fun RunChartsSection(
 
 @Composable
 private fun ChartMetricSelector(labels: List<String>, selected: String, onSelected: (String) -> Unit) {
-  val shape = RoundedCornerShape(12.dp)
-  Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh, shape).selectableGroup()) {
+  val shape = RoundedCornerShape(16.dp)
+  val segmentShape = RoundedCornerShape(12.dp)
+  Row(Modifier.fillMaxWidth().clip(shape)
+    .background(MaterialTheme.colorScheme.surfaceContainerHigh).selectableGroup()) {
     labels.forEach { label ->
       val active = label == selected
       Box(
         Modifier.weight(1f).heightIn(min = 48.dp)
-          .selectable(active, onClick = { onSelected(label) }, role = Role.Tab).padding(4.dp),
+          .selectable(active, onClick = { onSelected(label) }, role = Role.Tab).padding(3.dp),
         contentAlignment = Alignment.Center,
       ) {
         Box(
           Modifier.fillMaxWidth()
-            .background(if (active) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent, shape)
-            .border(1.dp, if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.45f) else Color.Transparent, shape)
-            .padding(horizontal = 4.dp, vertical = 8.dp),
+            .background(if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.06f) else Color.Transparent, segmentShape)
+            .border(1.dp, if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f) else Color.Transparent, segmentShape)
+            .padding(horizontal = 4.dp, vertical = 6.dp),
           contentAlignment = Alignment.Center,
         ) {
           Text(label, style = MaterialTheme.typography.labelMedium,
@@ -160,7 +164,8 @@ internal fun RunComparisonSummary(
   BoxWithConstraints(Modifier.fillMaxWidth()) {
     val density = LocalDensity.current
     val fontScale = density.fontScale.coerceAtLeast(1f)
-    val valueStyle = MaterialTheme.typography.titleMedium.copy(fontFeatureSettings = "tnum")
+    val valueStyle = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp,
+      lineHeight = 22.sp, fontFeatureSettings = "tnum")
     val labelStyle = MaterialTheme.typography.labelSmall
     val measurer = rememberTextMeasurer()
     val minimumColumnWidth = remember(firstValue, secondValue, firstLabel, secondLabel, targetKey, valueStyle, labelStyle, density, measurer) {
@@ -168,9 +173,10 @@ internal fun RunComparisonSummary(
         measurer.measure(firstValue ?: "—", valueStyle, maxLines = 1).size.width,
         measurer.measure(secondValue ?: "—", valueStyle, maxLines = 1).size.width,
         measurer.measure(firstLabel, labelStyle, maxLines = 1).size.width,
-        measurer.measure(secondLabel, labelStyle, maxLines = 1).size.width,
+        measurer.measure(secondLabel, labelStyle, maxLines = 1).size.width +
+          with(density) { (if (targetKey) 22.dp else 0.dp).roundToPx() },
       )
-      with(density) { textWidth.toDp() } + (if (targetKey) 22.dp else 0.dp) + 4.dp
+      with(density) { textWidth.toDp() } + 4.dp
     }
     val columnWidth = maxOf((maxWidth - 12.dp) / 2, minimumColumnWidth)
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -178,16 +184,18 @@ internal fun RunComparisonSummary(
         Text(firstValue ?: "—", style = valueStyle, maxLines = 1)
         Text(firstLabel, style = labelStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
       }
-      Row(Modifier.width(columnWidth).heightIn(min = 44.dp * fontScale),
-        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (targetKey) Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-          Box(Modifier.width(14.dp).height(5.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.7f), RoundedCornerShape(2.dp)))
-          Box(Modifier.width(14.dp).height(5.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f), RoundedCornerShape(2.dp)))
-        }
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-          Text(secondValue ?: "—", style = valueStyle, maxLines = 1,
+      Column(Modifier.width(columnWidth).heightIn(min = 44.dp * fontScale),
+        verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        if (secondValue != null) {
+          Text(secondValue, style = valueStyle, maxLines = 1,
             color = if (accentSecond) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
-          Text(secondLabel, style = labelStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (targetKey) Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+              Box(Modifier.width(14.dp).height(3.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.7f), RoundedCornerShape(2.dp)))
+              Box(Modifier.width(14.dp).height(3.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f), RoundedCornerShape(2.dp)))
+            }
+            Text(secondLabel, style = labelStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          }
         }
       }
     }
@@ -253,14 +261,15 @@ private fun LineChart(
   val ticks = scale?.tickValues ?: listOf(maximum, (minimum + maximum) / 2, minimum)
   Row(
     Modifier.fillMaxWidth().height(height)
-      .background(surfaceColor, RoundedCornerShape(12.dp)).padding(4.dp)
+      .background(surfaceColor, RoundedCornerShape(12.dp)).padding(2.dp)
   ) {
     Column(
       Modifier.width(axisWidth).fillMaxHeight().padding(end = 6.dp),
       verticalArrangement = Arrangement.SpaceBetween,
     ) {
       ticks.forEach { value ->
-        Text(if (scale != null) formatPaceAxis(value) else value.roundToInt().toString(), style = MaterialTheme.typography.labelSmall)
+        Text(if (scale != null) formatPaceAxis(value) else value.roundToInt().toString(),
+          style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
       }
     }
     Spacer(Modifier.weight(1f).fillMaxHeight().drawWithCache {
@@ -292,7 +301,7 @@ private fun LineChart(
       onDrawBehind {
         gridFractions.forEach { fraction ->
           val y = fraction.toFloat() * size.height
-          drawLine(gridColor.copy(alpha = 0.35f), Offset(0f, y), Offset(size.width, y), strokeWidth = 0.5.dp.toPx())
+          drawLine(gridColor.copy(alpha = 0.22f), Offset(0f, y), Offset(size.width, y), strokeWidth = 0.5.dp.toPx())
         }
         if (scale != null && targetRange != null) {
           val firstY = scale.verticalFraction(targetRange.minimumSecondsPerKm).toFloat() * size.height

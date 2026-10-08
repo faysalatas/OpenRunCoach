@@ -12,7 +12,6 @@ import com.example.openruncoach.data.TrainingGoalRepository
 import com.example.openruncoach.data.WorkoutExecutionRepository
 import com.example.openruncoach.data.WorkoutAssignmentCandidate
 import com.example.openruncoach.data.WorkoutResponseRepository
-import com.example.openruncoach.data.StructuredWorkoutRepository
 import com.example.openruncoach.domain.CardioEffort
 import com.example.openruncoach.domain.CompletionStatus
 import com.example.openruncoach.domain.MuscleFatigue
@@ -35,9 +34,14 @@ import com.example.openruncoach.domain.workout.StructuredWorkout
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -74,6 +78,7 @@ data class RunDetailUiState(
   val workoutExecution: WorkoutExecutionResult? = null,
   val workoutResponse: WorkoutResponse? = null,
   val plannedWorkout: StructuredWorkout? = null,
+  val associationLoaded: Boolean = false,
   val routeData: RunRouteData? = null,
   val halfSplit: EqualDistanceHalves? = null,
   val splitDeltasSecondsPerKm: Map<Int, Double> = emptyMap(),
@@ -83,6 +88,7 @@ data class RunDetailUiState(
   val isUpdatingRelevance: Boolean = false,
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class RunDetailViewModel(
   private val runId: String,
   private val runRepository: RunRepository,
@@ -94,10 +100,9 @@ class RunDetailViewModel(
   private val goalCompletionRepository: GoalCompletionRepository? = null,
   private val workoutExecutionRepository: WorkoutExecutionRepository? = null,
   private val workoutResponseRepository: WorkoutResponseRepository? = null,
-  private val structuredWorkoutRepository: StructuredWorkoutRepository? = null,
   private val coachingEngine: CoachingEngine = CoachingEngine(),
 ) : ViewModel() {
-  private val _uiState = MutableStateFlow(RunDetailUiState())
+  private val _uiState = MutableStateFlow(RunDetailUiState(associationLoaded = workoutExecutionRepository == null))
   val uiState = _uiState.asStateFlow()
   private var allRuns: List<RunSummary> = emptyList()
   private var canonicalHistory: List<RunSummary> = emptyList()
@@ -114,6 +119,9 @@ class RunDetailViewModel(
             state.copy(
               run = run,
               runLoaded = true,
+              associationLoaded = workoutExecutionRepository == null ||
+                (state.associationLoaded && state.run?.physicalRunId == run?.physicalRunId),
+              plannedWorkout = state.plannedWorkout.takeIf { state.run?.physicalRunId == run?.physicalRunId },
               halfSplit = null,
               splitDeltasSecondsPerKm = emptyMap(),
               charts = state.metrics?.let { metrics -> prepareCharts(metrics, run) },
@@ -124,7 +132,6 @@ class RunDetailViewModel(
             autoRefreshRunId = run.healthConnectRecordId
             refreshMetrics(run, force = false)
           }
-          if (run != null) refreshAssociation(run)
         }
     }
     viewModelScope.launch {
@@ -178,12 +185,27 @@ class RunDetailViewModel(
     }
     workoutExecutionRepository?.let { repository ->
       viewModelScope.launch {
+        // The persisted physical-run association owns header metadata. Execution can
+        // arrive independently or be absent before checkout; it must not overwrite it.
+        _uiState.map { it.run?.physicalRunId }.distinctUntilChanged()
+          .flatMapLatest { physicalRunId ->
+            if (physicalRunId == null) flowOf(null to null)
+            else repository.observeAssociatedWorkout(physicalRunId).map { physicalRunId to it }
+          }
+          .catch { _uiState.update { it.copy(associationLoaded = true, error = "Could not load planned workout.") } }
+          .collect { (physicalRunId, workout) ->
+            _uiState.update { state ->
+              if (state.run?.physicalRunId != physicalRunId) state
+              else state.copy(plannedWorkout = workout, associationLoaded = physicalRunId != null)
+            }
+          }
+      }
+      viewModelScope.launch {
         repository.observeForRun(runId)
           .catch { _uiState.update { it.copy(error = "Could not load workout completion.") } }
           .collect { execution ->
-            val workout = execution?.plannedWorkoutId?.let { structuredWorkoutRepository?.getWorkout(it) }
             _uiState.update {
-              it.copy(workoutExecution = execution, plannedWorkout = workout ?: it.plannedWorkout).withDerivedState()
+              it.copy(workoutExecution = execution).withDerivedState()
             }
           }
       }
@@ -244,14 +266,6 @@ class RunDetailViewModel(
     refreshMetrics(run, force = true)
   }
 
-  private fun refreshAssociation(run: RunSummary) {
-    val repository = workoutExecutionRepository ?: return
-    viewModelScope.launch {
-      val assigned = repository.assignedWorkout(run)
-      _uiState.update { it.copy(plannedWorkout = assigned?.workout) }
-    }
-  }
-
   fun toggleRunRelevance() {
     val run = _uiState.value.run ?: return
     if (_uiState.value.isUpdatingRelevance) return
@@ -301,10 +315,8 @@ class RunDetailViewModel(
       _uiState.update { it.copy(isUpdatingAssociation = true, error = null) }
       try {
         repository.assignManually(run, workoutId)
-        val assigned = repository.assignedWorkout(run)
         _uiState.update {
           it.copy(
-            plannedWorkout = assigned?.workout,
             showAssignmentCandidates = false,
             isUpdatingAssociation = false,
           )
@@ -326,7 +338,6 @@ class RunDetailViewModel(
         repository.unassign(run)
         _uiState.update {
           it.copy(
-            plannedWorkout = null,
             workoutExecution = null,
             workoutResponse = null,
             showAssignmentCandidates = false,

@@ -29,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,6 +43,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -58,7 +60,6 @@ import com.example.openruncoach.data.TrainingGoalRepository
 import com.example.openruncoach.data.WorkoutExecutionRepository
 import com.example.openruncoach.data.WorkoutAssignmentState
 import com.example.openruncoach.data.WorkoutResponseRepository
-import com.example.openruncoach.data.StructuredWorkoutRepository
 import com.example.openruncoach.LocalOpenRunCoachEnvironment
 import com.example.openruncoach.BuildConfig
 import com.example.openruncoach.R
@@ -87,6 +88,7 @@ import com.example.openruncoach.domain.workout.StructuredWorkout
 import com.example.openruncoach.domain.workout.WorkoutBlock
 import com.example.openruncoach.domain.workout.WorkoutEstimateCalculator
 import com.example.openruncoach.domain.workout.WorkoutResponse
+import com.example.openruncoach.domain.workout.VolumeCompletion
 import com.example.openruncoach.domain.workout.displayName
 import com.example.openruncoach.ui.common.coachingActionLabel
 import com.example.openruncoach.ui.common.formatDistance
@@ -139,7 +141,6 @@ fun RunDetailScreen(
       GoalCompletionRepository(database, environment.clock),
       WorkoutExecutionRepository(database, environment.clock, athleteProfileRepository = profileRepository),
       WorkoutResponseRepository(database),
-      StructuredWorkoutRepository(database),
       CoachingEngine(environment.clock),
     )
   }
@@ -150,13 +151,16 @@ fun RunDetailScreen(
     val fontScale = LocalDensity.current.fontScale.coerceAtLeast(1f)
     // Reserve readable header/control/metric space; only the map and plot flex.
     // Small viewports and large fonts retain scrolling instead of shrinking text.
-    val checkoutHeight = if (state.feedbackLoaded && state.feedback == null) 48.dp else 0.dp
-    val plotBudget = (maxHeight - 532.dp * fontScale - checkoutHeight).coerceAtLeast(0.dp)
-    val chartHeight = (plotBudget * 0.4f).coerceIn(100.dp * fontScale, 148.dp * fontScale)
-    val mapHeight = (plotBudget - chartHeight).coerceIn(132.dp, 220.dp)
+    val checkoutHeight = if (state.feedbackLoaded && state.feedback == null) 56.dp else 0.dp
+    val updateHeight = if (state.isUpdatingMetrics || state.metricsUpdateError) 32.dp * fontScale else 0.dp
+    // Header, text tabs, metric strip, 48 dp selector, axes, summary and gaps.
+    // At default fonts the remaining space goes to a shallow map and dashboard plot.
+    val plotBudget = (maxHeight - 500.dp * fontScale - checkoutHeight - updateHeight).coerceAtLeast(0.dp)
+    val chartHeight = (plotBudget * 0.4f).coerceIn(88.dp * fontScale, 116.dp * fontScale)
+    val mapHeight = (plotBudget - chartHeight).coerceIn(120.dp, 192.dp)
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
       when {
-        !state.runLoaded -> {
+        !state.runLoaded || (state.run != null && !state.associationLoaded) -> {
           TextButton(onClick = onBack) { Text("‹ Back") }
           Text("Loading run…", Modifier.padding(ScreenPadding))
         }
@@ -224,22 +228,23 @@ fun RunDetailScreen(
 
 @Composable
 private fun CompletedRunHeader(title: String, date: String, heroResource: Int?, onBack: () -> Unit) {
-  Box(Modifier.fillMaxWidth().heightIn(min = 128.dp)) {
+  Box(Modifier.fillMaxWidth().heightIn(min = 112.dp)) {
     heroResource?.let { resource ->
       Image(painterResource(resource), contentDescription = null,
         modifier = Modifier.matchParentSize(), contentScale = ContentScale.Crop)
       Box(Modifier.matchParentSize().background(Brush.verticalGradient(
-        0f to Color.Black.copy(alpha = 0.3f),
-        1f to MaterialTheme.colorScheme.background.copy(alpha = 0.94f),
+        0f to Color.Black.copy(alpha = 0.18f),
+        0.55f to Color.Black.copy(alpha = 0.28f),
+        1f to MaterialTheme.colorScheme.background.copy(alpha = 0.88f),
       )))
     }
-    Column(Modifier.padding(horizontal = ScreenPadding, vertical = OpenRunSpacing.Small)) {
+    Column(Modifier.padding(horizontal = ScreenPadding, vertical = OpenRunSpacing.Micro)) {
       TextButton(onClick = onBack, contentPadding = PaddingValues(horizontal = 0.dp)) {
         Text("‹ Back", color = if (heroResource != null) Color.White else MaterialTheme.colorScheme.primary)
       }
-      Text(title, style = MaterialTheme.typography.headlineMedium,
+      Text(title, style = MaterialTheme.typography.headlineSmall,
         color = if (heroResource != null) Color.White else MaterialTheme.colorScheme.onSurface)
-      Text(date, style = MaterialTheme.typography.bodyMedium,
+      Text(date, style = MaterialTheme.typography.bodySmall,
         color = if (heroResource != null) Color.White.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant)
     }
   }
@@ -324,6 +329,19 @@ private fun CompletedSplits(state: RunDetailUiState) {
   }
   val showHeartRate = splits.any { it.averageHeartRate != null }
   val showDelta = state.splitDeltasSecondsPerKm.isNotEmpty()
+  val locale = Locale.getDefault()
+  val rows = remember(splits, state.splitDeltasSecondsPerKm, locale) {
+    splits.map { split ->
+      val delta = state.splitDeltasSecondsPerKm[split.ordinal]
+      CompletedSplitCells(
+        kilometre = split.kilometreLabel(),
+        pace = formatPace(split.averagePaceSecondsPerKm).removeSuffix(" min/km"),
+        delta = delta?.let(::formatPaceDelta),
+        faster = delta != null && delta < 0.0,
+        heartRate = split.averageHeartRate?.let { "%.0f".format(locale, it) },
+      )
+    }
+  }
   Column(verticalArrangement = Arrangement.spacedBy(OpenRunSpacing.Micro)) {
     BoxWithConstraints {
       val fontScale = LocalDensity.current.fontScale.coerceAtLeast(1f)
@@ -345,25 +363,24 @@ private fun CompletedSplits(state: RunDetailUiState) {
             header = true,
           )
           HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-          splits.forEach { split ->
-            val delta = state.splitDeltasSecondsPerKm[split.ordinal]
+          rows.forEach { row ->
             SplitRow(
               columnWidths = columnWidths,
               columnGap = columnGap,
-              first = split.kilometreLabel(),
-              pace = formatPace(split.averagePaceSecondsPerKm).removeSuffix(" min/km"),
-              delta = if (showDelta) delta?.let(::formatPaceDelta) ?: "—" else null,
-              faster = delta != null && delta < 0.0,
-              heartRate = if (showHeartRate) {
-                split.averageHeartRate?.let { "%.0f".format(Locale.getDefault(), it) } ?: "—"
-              } else null,
+              first = row.kilometre,
+              pace = row.pace,
+              delta = if (showDelta) row.delta ?: "—" else null,
+              faster = row.faster,
+              heartRate = if (showHeartRate) row.heartRate ?: "—" else null,
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
           }
         }
       }
     }
-    Text(
+  }
+  SplitSummary(state)
+  Text(
       splits.map(RunSplit::derivation).distinct().joinToString(" · ") { derivation -> when (derivation) {
         RunSplitDerivation.ROUTE_DERIVED -> "Derived from recorded GPS route"
         RunSplitDerivation.SOURCE_LAP -> "Recorded source laps"
@@ -372,9 +389,8 @@ private fun CompletedSplits(state: RunDetailUiState) {
       } },
       style = MaterialTheme.typography.bodySmall,
       color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-  }
-  SplitSummary(state)
+  )
+  HalfRunDetails(state)
   OpenRunDisclosure("Split details") {
     splits.forEach { split ->
       LabelValue(
@@ -387,6 +403,14 @@ private fun CompletedSplits(state: RunDetailUiState) {
     }
   }
 }
+
+private data class CompletedSplitCells(
+  val kilometre: String,
+  val pace: String,
+  val delta: String?,
+  val faster: Boolean,
+  val heartRate: String?,
+)
 
 @Composable
 private fun SplitRow(
@@ -403,7 +427,7 @@ private fun SplitRow(
     .copy(fontFeatureSettings = "tnum")
   val color = if (header) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
   val cells = listOfNotNull(first, pace, delta, heartRate)
-  Row(Modifier.fillMaxWidth().padding(vertical = OpenRunSpacing.Small), horizontalArrangement = Arrangement.spacedBy(columnGap)) {
+  Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(columnGap)) {
     cells.forEachIndexed { index, text ->
       Text(text, Modifier.width(columnWidths[index]), style = style,
         color = if (!header && delta != null && index == 2 && faster) MaterialTheme.colorScheme.primary else color,
@@ -424,11 +448,16 @@ private fun SplitSummary(state: RunDetailUiState) {
     secondLabel = when (halves?.direction) {
       com.example.openruncoach.domain.route.HalfSplitDirection.NEGATIVE -> "Negative split"
       com.example.openruncoach.domain.route.HalfSplitDirection.POSITIVE -> "Positive split"
-      else -> "Half-run pacing"
+      com.example.openruncoach.domain.route.HalfSplitDirection.EVEN -> "Equal-distance halves"
+      null -> "Half-run pacing"
     },
     accentSecond = halves?.direction == com.example.openruncoach.domain.route.HalfSplitDirection.NEGATIVE,
   )
-  halves?.let {
+}
+
+@Composable
+private fun HalfRunDetails(state: RunDetailUiState) {
+  state.halfSplit?.let {
     OpenRunDisclosure("Half-run details") {
       LabelValue("First-half distance", formatDistance(it.halfDistanceMeters))
       LabelValue("First-half duration", formatDuration(kotlin.math.round(it.firstHalfDurationSeconds).toLong()))
@@ -469,46 +498,65 @@ private fun CompletedAnalysis(state: RunDetailUiState, viewModel: RunDetailViewM
     return
   }
   AnalysisOutcomeCard(response)
-  OpenRunSection("Planned vs. actual") {
+  Column(verticalArrangement = Arrangement.spacedBy(OpenRunSpacing.Micro)) {
     PlannedActualTable(response, state.plannedWorkout.wholeRunPaceTarget() != null)
     if (state.plannedWorkout.wholeRunPaceTarget() == null && plannedPaceLabel(response) != null) {
       Text("Whole-run average pace is context, not evidence of work-segment pace adherence.",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
   }
-  LabelValue("Continuity", response.continuity.continuityLabel())
-  Text("Interpretation confidence: ${response.confidence.name.humanize()}",
-    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+  Column(verticalArrangement = Arrangement.spacedBy(OpenRunSpacing.Micro)) {
+    AnalysisFactRow("Continuity", when (response.continuity) {
+      RunContinuityEvidence.CONTINUOUS -> "Continuous"
+      RunContinuityEvidence.INTERRUPTED -> "Interrupted"
+      RunContinuityEvidence.UNKNOWN -> "Unknown"
+    })
+    if (response.continuity != RunContinuityEvidence.CONTINUOUS) {
+      Text(response.continuity.continuityLabel(), style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+  }
+  AnalysisFactRow("Interpretation confidence", response.confidence.name.humanize())
+  WorkoutAssociationCard(state, viewModel)
   OpenRunDisclosure("Evidence") {
+    LabelValue("Prescription", response.adherence.name.humanize())
+    if (response.paceResponse != PaceResponse.UNKNOWN) {
+      LabelValue("Pace vs. target", response.paceResponse.name.humanize())
+    }
     response.reasons.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
   }
-  WorkoutAssociationCard(state, viewModel)
+}
+
+@Composable
+private fun AnalysisFactRow(label: String, value: String) {
+  Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Text(label, Modifier.weight(2f), style = MaterialTheme.typography.bodyMedium,
+      color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text(value, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+      textAlign = TextAlign.End)
+  }
 }
 
 @Composable
 private fun AnalysisOutcomeCard(response: WorkoutResponse) {
-  OpenRunCard(contentPadding = PaddingValues(12.dp), contentSpacing = OpenRunSpacing.Small) {
-    val values = listOf(
-      response.completion.name.humanize() to "Completion",
+  OpenRunCard(contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp)) {
+    val values = listOfNotNull(
+      response.completion.name.humanize() to "Outcome",
       response.sessionCost.name.humanize() to "Session cost",
-      response.volumeCompletion.name.humanize() to "Volume",
+      response.volumeCompletion.takeUnless { it == VolumeCompletion.UNKNOWN }?.let { it.name.humanize() to "Volume" },
     )
     BoxWithConstraints {
-      val columnWidth = maxOf((maxWidth - 2.dp) / 3, 96.dp * LocalDensity.current.fontScale.coerceAtLeast(1f))
+      val columnWidth = maxOf((maxWidth - (values.size - 1).dp) / values.size,
+        84.dp * LocalDensity.current.fontScale.coerceAtLeast(1f))
       Row(Modifier.horizontalScroll(rememberScrollState()).height(IntrinsicSize.Min)) {
         values.forEachIndexed { index, (value, label) ->
           if (index > 0) VerticalDivider(Modifier.fillMaxHeight(), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
-          Column(Modifier.width(columnWidth).padding(horizontal = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+          Column(Modifier.width(columnWidth).padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(value, style = MaterialTheme.typography.titleSmall)
             Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
           }
         }
       }
-    }
-    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
-    LabelValue("Prescription", response.adherence.name.humanize())
-    if (response.paceResponse != PaceResponse.UNKNOWN) {
-      LabelValue("Pace vs. target", response.paceResponse.name.humanize())
     }
   }
 }
@@ -517,19 +565,19 @@ private fun AnalysisOutcomeCard(response: WorkoutResponse) {
 private fun PlannedActualTable(response: WorkoutResponse, wholeRunTarget: Boolean) {
   BoxWithConstraints {
     val fontScale = LocalDensity.current.fontScale.coerceAtLeast(1f)
-    val labelWidth = 80.dp * fontScale
-    val gap = 12.dp
-    val tableWidth = maxOf(maxWidth, 352.dp * fontScale)
+    val labelWidth = 64.dp * fontScale
+    val gap = 8.dp
+    val tableWidth = maxOf(maxWidth, 300.dp * fontScale)
     val valueWidth = (tableWidth - labelWidth - gap * 2) / 2
     val widths = listOf(labelWidth, valueWidth, valueWidth)
-    val paceTarget = plannedPaceLabel(response)
+    val paceTarget = plannedPaceLabel(response)?.removeSuffix(" /km")
     Column(Modifier.horizontalScroll(rememberScrollState())) {
       Column(Modifier.width(tableWidth)) {
         PlannedActualRow(widths, gap, "", "Planned", "Actual", header = true)
         if (response.plannedDistanceMeters != null || response.actualDistanceMeters != null) {
           PlannedActualRow(widths, gap, "Distance", response.plannedDistanceMeters?.let(::formatDistance), response.actualDistanceMeters?.let(::formatDistance))
         }
-        if (response.plannedDurationSeconds != null) {
+        if (response.plannedDistanceMeters == null && response.plannedDurationSeconds != null) {
           PlannedActualRow(widths, gap, "Duration", formatDuration(response.plannedDurationSeconds), formatDuration(response.actualDurationSeconds))
         }
         val actualPace = response.actualPaceSecondsPerKm?.let { formatPace(it).replace(" min/km", " /km") }
@@ -554,7 +602,8 @@ private fun PlannedActualRow(widths: List<Dp>, gap: Dp, label: String, planned: 
   Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(gap)) {
     listOf(label, planned ?: "—", actual ?: "—").forEachIndexed { index, text ->
       Text(text, Modifier.width(widths[index]),
-        style = (if (header) MaterialTheme.typography.labelMedium else MaterialTheme.typography.bodyMedium).copy(fontFeatureSettings = "tnum"),
+        style = (if (header) MaterialTheme.typography.labelMedium else MaterialTheme.typography.bodyMedium)
+          .copy(fontFeatureSettings = "tnum", fontWeight = if (!header && index == 2) FontWeight.Medium else FontWeight.Normal),
         color = if (header || index == 0) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
         textAlign = if (index == 0) TextAlign.Start else TextAlign.End)
     }
@@ -564,10 +613,13 @@ private fun PlannedActualRow(widths: List<Dp>, gap: Dp, label: String, planned: 
 
 @Composable
 private fun WorkoutAssociationCard(state: RunDetailUiState, viewModel: RunDetailViewModel) {
-  OpenRunSection("Planned workout") {
+  Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(OpenRunSpacing.Micro)) {
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+    Text("Planned workout", style = MaterialTheme.typography.labelMedium,
+      color = MaterialTheme.colorScheme.onSurfaceVariant)
     if (state.run?.relevance == RunRelevance.IGNORED) {
       Text("Restore this run before assigning it to a planned workout.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-      return@OpenRunSection
+      return@Column
     }
     val assigned = state.plannedWorkout
     if (assigned == null) {
@@ -576,14 +628,17 @@ private fun WorkoutAssociationCard(state: RunDetailUiState, viewModel: RunDetail
         Text("Assign to workout")
       }
     } else {
-      val distance = WorkoutEstimateCalculator.calculate(assigned).estimatedTotalDistanceMeters?.let(::formatDistance)
+      val distance = remember(assigned) { WorkoutEstimateCalculator.calculate(assigned).estimatedTotalDistanceMeters }
+        ?.let(::formatDistance)
       Text(listOfNotNull(assigned.name.ifBlank { assigned.type.displayName() }, distance).joinToString(" · "),
         style = MaterialTheme.typography.bodyMedium)
-      Row(horizontalArrangement = Arrangement.spacedBy(ItemSpacing)) {
-        TextButton(onClick = viewModel::showAssignmentCandidates, enabled = !state.isUpdatingAssociation) {
+      Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+        TextButton(onClick = viewModel::showAssignmentCandidates, enabled = !state.isUpdatingAssociation,
+          contentPadding = PaddingValues(horizontal = 0.dp)) {
           Text("Change association")
         }
-        TextButton(onClick = viewModel::unassignWorkout, enabled = !state.isUpdatingAssociation) {
+        TextButton(onClick = viewModel::unassignWorkout, enabled = !state.isUpdatingAssociation,
+          contentPadding = PaddingValues(horizontal = 0.dp)) {
           Text("Unassign")
         }
       }
@@ -685,7 +740,7 @@ private fun String.humanize(): String = lowercase().replace('_', ' ').replaceFir
 
 private fun RunContinuityEvidence.continuityLabel(): String = when (this) {
   RunContinuityEvidence.CONTINUOUS -> "Continuous"
-  RunContinuityEvidence.INTERRUPTED -> "Sustained walking/stopped interval"
+  RunContinuityEvidence.INTERRUPTED -> "Sustained walking/stopped interval detected"
   RunContinuityEvidence.UNKNOWN -> "Not enough movement samples"
 }
 

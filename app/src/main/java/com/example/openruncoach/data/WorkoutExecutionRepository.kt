@@ -46,6 +46,16 @@ class WorkoutExecutionRepository(
   fun observeForRun(runId: String): Flow<WorkoutExecutionResult?> =
     observeActualExecution(dao.observeExecutionForRun(runId))
 
+  /** Read-only detail metadata, including associations that do not yet have a checkout. */
+  @OptIn(ExperimentalCoroutinesApi::class)
+  fun observeAssociatedWorkout(physicalRunId: String): Flow<StructuredWorkout?> =
+    dao.observeAssociationForPhysicalRun(physicalRunId).flatMapLatest { association ->
+      if (association == null) flowOf(null)
+      else dao.observeWorkout(association.plannedWorkoutId).map { record ->
+        record?.let(StructuredWorkoutPersistenceMapper::toDomain)
+      }
+    }
+
   fun observeForWorkout(workoutId: String): Flow<WorkoutExecutionResult?> =
     observeActualExecution(dao.observeExecution(workoutId))
 

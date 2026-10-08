@@ -8,12 +8,20 @@ import com.example.openruncoach.data.local.PlannedWorkoutEntity
 import com.example.openruncoach.data.local.RunEntity
 import com.example.openruncoach.data.local.WorkoutExecutionEntity
 import com.example.openruncoach.domain.RunSummary
+import com.example.openruncoach.domain.workout.StructuredWorkout
+import com.example.openruncoach.domain.workout.WorkoutType
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.receiveAsFlow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -21,6 +29,46 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class WorkoutRunAssociationRepositoryTest {
+  @Test
+  fun detailWorkoutObservationTracksLateAssignmentEditsReassignmentAndUnassignmentWithoutCheckout() = runBlocking {
+    val database = database()
+    try {
+      database.runDao().upsertAll(listOf(runEntity("provider-a")))
+      val dao = database.coachingWorkflowDao()
+      dao.upsertPlannedWorkout(workout("easy"))
+      dao.upsertPlannedWorkout(workout("long").copy(type = "LONG_RUN", name = "Long Run"))
+      val repository = WorkoutExecutionRepository(database, CLOCK)
+      val updates = Channel<StructuredWorkout?>(Channel.UNLIMITED)
+      val observation = launch {
+        repository.observeAssociatedWorkout("physical-1").collect { updates.send(it) }
+      }
+      suspend fun awaitWorkout(id: String?, type: WorkoutType? = null): StructuredWorkout? =
+        withTimeout(5_000) {
+          updates.receiveAsFlow().first { it?.id == id && (type == null || it?.type == type) }
+        }
+      try {
+        assertNull(awaitWorkout(null))
+        repository.assignManually(runSummary("provider-a"), "easy")
+        assertEquals("Easy Run", awaitWorkout("easy", WorkoutType.EASY_RUN)?.name)
+        // Header metadata must not depend on an execution being created by checkout.
+        assertNull(repository.observeForRun("provider-a").first())
+
+        dao.upsertPlannedWorkout(workout("easy").copy(type = "RECOVERY_RUN", name = "Recovery Run"))
+        assertEquals("Recovery Run", awaitWorkout("easy", WorkoutType.RECOVERY_RUN)?.name)
+
+        repository.assignManually(runSummary("provider-a"), "long")
+        assertEquals("Long Run", awaitWorkout("long", WorkoutType.LONG_RUN)?.name)
+        repository.unassign(runSummary("provider-a"))
+        assertNull(awaitWorkout(null))
+      } finally {
+        observation.cancelAndJoin()
+        updates.close()
+      }
+    } finally {
+      database.close()
+    }
+  }
+
   @Test
   fun manualAssignmentCanBeReassignedAndUnassignedWithoutDeletingRunOrWorkout() = runBlocking {
     val database = database()

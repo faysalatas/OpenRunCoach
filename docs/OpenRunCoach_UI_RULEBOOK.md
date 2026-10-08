@@ -505,9 +505,17 @@ Confirmed completed-run patterns:
 
 - Reuse bundled workout heroes only from an actual associated workout type, with
   a compact dark-gradient header and local tabs below it. Unmatched runs remain neutral.
+  Observe the physical-run association and its prescription reactively, including
+  assignments without checkout. Wait for the initial association read before choosing
+  the header; an execution result must not independently overwrite its workout metadata.
+  Keep the header shallow (about 112 dp at default fonts), allowing readable text to grow.
 - Overview sizes its map/plot against the available viewport and font scale so the
   primary content is compact at normal phone sizes; retain readable text and scrolling
-  on small screens/large fonts. Keep the four-column metric card.
+  on small screens/large fonts. Its primary order is metric strip, map, metric pill,
+  chart, then two-column summary. Keep the four-column icon/value/label metric card;
+  measure text before requiring horizontal scrolling instead of imposing wide columns.
+  Dashboard plots are approximately 88–116 dp high at default fonts, plus minimal axes;
+  maps flex around 120–192 dp. Do not reduce font scaling to meet these proportions.
 - Detail routes use a real dark/desaturated street map when available, with mint
   route/start/finish and padded whole-route fitting. MapLibre rendering is independent
   of replaceable style/tile configuration. Keep required map-data attribution visible.
@@ -515,23 +523,41 @@ Confirmed completed-run patterns:
   History thumbnails remain Canvas-only; never create a map per list row.
 - Charts use a compact equal-width rounded metric pill, not navigation underlines;
   keep at least 48 dp touch targets and a stable chart/summary footprint when switching.
-  Use restrained axes/grid, a thin line and
+  Pace / Heart Rate / Cadence sit in one dark rounded container with small internal
+  padding and a quiet accent outline only on the selected segment. Offer only drawable
+  recorded series; omit the selector entirely when just one metric is available.
+  Overview / Splits / Analysis / Coach retain text tabs with an active underline and
+  a subtle full-width divider. Use restrained axes/grid, a thin line and
   subtle mint area fill fading to transparent. Keep actual values/gaps unchanged.
 - Pace target bands apply only to meaningful continuous whole-run prescriptions,
   never interval work targets. Average/target summaries dominate, with a quiet target key;
   Fastest 30 sec and off-scale clipping notes belong in Recording diagnostics.
+  Place two equal visual columns directly below the chart, with value above label.
+  Average is off-white; a genuine target is restrained mint with a small parallel-bar
+  range key beside its label. HR uses recorded average/max; cadence retains its existing
+  moving-average preference, explicitly labelled when moving, and recorded maximum.
+  Leave an unavailable second measurement absent while retaining the summary footprint.
 - Split Δ is split pace minus canonical whole-run average pace, including partial
   splits. Positive means slower and stays neutral; negative means faster and may
   use restrained mint. Use explicitly aligned Km/Pace/Δ/HR columns (numbers right aligned).
+  Keep Km left aligned; full kilometre rows show their ordinal, partial rows their
+  fractional distance without repeating the unit. Use tabular numerals and thin row
+  dividers, never per-row cards. Omit HR when absent throughout the run. Place the
+  average/half-run summary immediately below the table, ahead of the muted provenance.
 - Negative/positive split compares two equal-distance halves using genuine cumulative
   distance/time interpolation. Never compare just first/last kilometre or average
   unweighted paces. ±3 sec/km is Even split; suppress short/uncertain results.
 - Keep cadence/duration in collapsed Split details. Use only average pace and
   positive/negative/even half-run pacing in the primary summary, with collapsed Half-run
   details. Do not show fastest/slowest split rankings. Provenance is a small muted caption.
-- Analysis groups completion/cost/volume in one compact outcome card, uses aligned
-  Planned/Actual columns, and keeps continuity/confidence visible. Full reasons stay
-  under collapsed Evidence. Association actions remain in a compact lower section.
+- Analysis groups Outcome / Session cost / Volume in one compact strip, with friendly
+  values and no invented unknown volume. Use aligned Planned/Actual columns, subtle
+  headers/dividers and slightly stronger actual values. Prioritize distance, pace and
+  checkout RPE; add duration for time-based prescriptions rather than repeating every
+  available metric. Keep continuity as a concise status/detail and confidence as a row.
+  Association follows immediately: Planned workout, title/distance, Change association
+  and Unassign. Full original reasons and additional adherence facts stay under Evidence,
+  collapsed initially. Keep this density at default fonts; allow scrolling at large fonts.
   Do not visually equate an interval work target with whole-run average pace.
 - Data sources stays collapsed and Ignore run stays a secondary text action.
 
