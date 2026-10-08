@@ -56,6 +56,38 @@ class HomeFourWeekComparisonsTest {
     assertNull(result.distanceDifferenceMeters)
   }
 
+  @Test fun selectedWeekUsesWeightedCanonicalActualsDespiteEnrichmentDistanceDisagreement() {
+    val first = run("first", currentWeekStart, 4000.0, 1644)
+    val second = run("second", currentWeekStart.plusDays(1), 2000.0, 900)
+    val actuals = listOf(first, second).map { canonical ->
+      com.example.openruncoach.domain.RunActualResolver.resolve(canonical, measurements(canonical, 5000.0))
+    }
+    val week = buildWeeklyMetrics(currentWeekStart, actuals, null, ZoneOffset.UTC)
+    assertEquals(6000.0, week.totalDistanceMeters!!, 0.0)
+    assertEquals(424.0, week.averagePaceSecondsPerKm!!, 0.0)
+    assertEquals(411.0, week.days[0].averagePaceSecondsPerKm!!, 0.0)
+    assertEquals(450.0, week.days[1].averagePaceSecondsPerKm!!, 0.0)
+  }
+
+  @Test fun fourWeekPaceWeightsCanonicalDistancesInsteadOfProviderMeasurementsOrWeeklyMeans() {
+    val actuals = (1L..4L).map { ago ->
+      val canonical = run("week-$ago", currentWeekStart.minusWeeks(ago), ago * 1000.0, 400L * ago + 100L)
+      com.example.openruncoach.domain.RunActualResolver.resolve(canonical, measurements(canonical, 6000.0))
+    }
+    val result = calculateFourWeekComparisons(currentWeekStart, actuals, 3000.0, 400.0, ZoneOffset.UTC)
+    assertEquals(40.0, result.paceDifferenceSecondsPerKm!!, 0.000001)
+    assertEquals(500.0, result.distanceDifferenceMeters!!, 0.000001)
+  }
+
+  private fun measurements(run: RunSummary, distance: Double) = com.example.openruncoach.domain.metrics.RunMetrics(
+    run.healthConnectRecordId, run.startTime, run.endTime,
+    com.example.openruncoach.domain.metrics.MetricValue(run.durationSeconds,
+      com.example.openruncoach.domain.metrics.MetricSource.HEALTH_CONNECT,
+      com.example.openruncoach.domain.metrics.MetricConfidence.HIGH),
+    distanceMeters = com.example.openruncoach.domain.metrics.MetricValue(distance,
+      com.example.openruncoach.domain.metrics.MetricSource.SAMSUNG_HEALTH,
+      com.example.openruncoach.domain.metrics.MetricConfidence.HIGH), generatedAt = run.endTime)
+
   private fun run(
     id: String,
     date: LocalDate,

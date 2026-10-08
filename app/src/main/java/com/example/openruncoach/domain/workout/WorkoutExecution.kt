@@ -1,8 +1,10 @@
 package com.example.openruncoach.domain.workout
 
 import com.example.openruncoach.domain.CompletionStatus
+import com.example.openruncoach.domain.RunActualResolver
 import com.example.openruncoach.domain.RunFeedback
 import com.example.openruncoach.domain.RunSummary
+import com.example.openruncoach.domain.belongsTo
 import java.time.Clock
 import java.time.Instant
 
@@ -89,7 +91,8 @@ class WorkoutAdherenceEvaluator(private val clock: Clock = Clock.systemUTC()) {
     feedback: RunFeedback,
     evidence: WorkoutExecutionEvidence = WorkoutExecutionEvidence(),
   ): WorkoutExecutionResult {
-    require(feedback.runId == actualRun.healthConnectRecordId) { "Feedback must belong to the actual run." }
+    val actual = RunActualResolver.resolve(actualRun)
+    require(feedback.belongsTo(actualRun)) { "Feedback must belong to the actual run." }
     require(plannedWorkout.type != WorkoutType.REST) { "A rest day cannot be associated with a completed run." }
 
     val estimate = WorkoutEstimateCalculator.calculate(plannedWorkout)
@@ -99,12 +102,12 @@ class WorkoutAdherenceEvaluator(private val clock: Clock = Clock.systemUTC()) {
     val completionFraction = completionFraction(
       intendedDistance,
       intendedDuration,
-      actualRun.distanceMeters,
-      actualRun.durationSeconds,
+      actual.distanceMeters,
+      actual.durationSeconds,
     )
     val qualityPurpose = plannedWorkout.purpose.requiresQualityEvidence()
     val qualityFraction = evidence.qualityWorkCompletionFraction
-    val effortDeviation = effortDiffersMaterially(plannedWorkout, adjustedWorkout, actualRun, feedback)
+    val effortDeviation = effortDiffersMaterially(plannedWorkout, adjustedWorkout, actual, feedback)
     val comparisonUnavailable = completionFraction == null && (intendedDistance != null || intendedDuration != null)
 
     val status = when {
@@ -137,8 +140,8 @@ class WorkoutAdherenceEvaluator(private val clock: Clock = Clock.systemUTC()) {
       },
       intendedDistanceMeters = intendedDistance,
       intendedDurationSeconds = intendedDuration,
-      actualDistanceMeters = actualRun.distanceMeters,
-      actualDurationSeconds = actualRun.durationSeconds,
+      actualDistanceMeters = actual.distanceMeters,
+      actualDurationSeconds = actual.durationSeconds,
       qualityWorkCompletionFraction = qualityFraction,
       explanation = explanation(plannedWorkout, status, completionFraction, qualityFraction, comparisonUnavailable),
       evaluatedAt = clock.instant(),
@@ -238,4 +241,14 @@ private fun WorkoutPurpose.trainingIntent(): String = when (this) {
   WorkoutPurpose.RACE_SPECIFIC -> "race-specific work"
   WorkoutPurpose.GOAL_COMPLETION -> "controlled endurance session"
   WorkoutPurpose.ASSESSMENT -> "assessment session"
+}
+
+/** Current whole-run actuals for presentation; the persisted completion decision stays intact. */
+fun WorkoutExecutionResult.withActualSummary(actual: RunSummary?): WorkoutExecutionResult {
+  if (actual == null || !actual.isCanonical || actual.physicalRunId != physicalRunId) return this
+  return copy(
+    actualRunId = actual.healthConnectRecordId,
+    actualDistanceMeters = actual.distanceMeters,
+    actualDurationSeconds = actual.durationSeconds,
+  )
 }

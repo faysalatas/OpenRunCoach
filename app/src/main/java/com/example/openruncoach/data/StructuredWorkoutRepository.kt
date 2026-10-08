@@ -5,6 +5,7 @@ import com.example.openruncoach.domain.RunFeedback
 import com.example.openruncoach.domain.RunSummary
 import com.example.openruncoach.domain.workout.StructuredWorkout
 import com.example.openruncoach.domain.workout.WorkoutExecutionResult
+import com.example.openruncoach.domain.workout.withActualSummary
 import com.example.openruncoach.domain.workout.WorkoutLifecycleState
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -23,7 +24,7 @@ data class StructuredWorkoutDetails(
 class StructuredWorkoutRepository(database: OpenRunCoachDatabase) {
   private val dao = database.coachingWorkflowDao()
   private val runDao = database.runDao()
-  private val feedbackDao = database.runFeedbackDao()
+  private val feedbackRepository = RunFeedbackRepository(database)
 
   fun observeWorkout(workoutId: String): Flow<StructuredWorkout?> =
     dao.observeWorkout(workoutId).map { it?.let(StructuredWorkoutPersistenceMapper::toDomain) }
@@ -38,14 +39,15 @@ class StructuredWorkoutRepository(database: OpenRunCoachDatabase) {
       else if (execution == null) {
         flowOf(StructuredWorkoutDetails(StructuredWorkoutPersistenceMapper.toDomain(workout), null))
       } else combine(
-        runDao.observeRun(execution.actualRunId),
-        feedbackDao.observeFeedbackForRun(execution.actualRunId),
+        runDao.observeActualRun(execution.actualRunId),
+        feedbackRepository.observeFeedbackForRun(execution.physicalRunId),
       ) { run, feedback ->
+        val actual = run?.toActualSummary()
         StructuredWorkoutDetails(
           workout = StructuredWorkoutPersistenceMapper.toDomain(workout),
-          executionResult = execution.toDomain(),
-          actualRun = run?.toRunSummary(),
-          feedback = feedback?.toDomain(),
+          executionResult = execution.toDomain().withActualSummary(actual),
+          actualRun = actual,
+          feedback = feedback,
         )
       }
   }

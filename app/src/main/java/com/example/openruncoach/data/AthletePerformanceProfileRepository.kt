@@ -48,8 +48,13 @@ class AthletePerformanceProfileRepository(
     val profile = calculator.calculate(
       runs = runs,
       metrics = RunMetricsRepository(database.runMetricsDao()).getCanonicalRunMetrics(),
-      feedback = database.runFeedbackDao().getAllFeedback().map { it.toDomain() },
+      feedback = RunFeedbackRepository(database).getAllFeedback(),
       executionResults = database.coachingWorkflowDao().getAllExecutions().map { it.toDomain() },
+      associatedWorkouts = database.coachingWorkflowDao().getAllAssociations().mapNotNull { association ->
+        database.coachingWorkflowDao().getWorkout(association.plannedWorkoutId)?.let {
+          association.physicalRunId to StructuredWorkoutPersistenceMapper.toDomain(it)
+        }
+      }.toMap(),
     )
     dao.replace(profile.toSnapshot())
     profile

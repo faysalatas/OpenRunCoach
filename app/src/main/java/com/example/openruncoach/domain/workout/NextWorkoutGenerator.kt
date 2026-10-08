@@ -3,6 +3,7 @@ package com.example.openruncoach.domain.workout
 import com.example.openruncoach.domain.CompletionStatus
 import com.example.openruncoach.domain.PainLevel
 import com.example.openruncoach.domain.RunFeedback
+import com.example.openruncoach.domain.belongsTo
 import com.example.openruncoach.domain.RunSummary
 import com.example.openruncoach.domain.coaching.CoachingAction
 import com.example.openruncoach.domain.coaching.CoachingDecision
@@ -23,7 +24,7 @@ class NextWorkoutGenerator(
     postRunFeedback: RunFeedback,
     coachingDecision: CoachingDecision,
   ): PlannedWorkout {
-    require(postRunFeedback.runId == actualRun.healthConnectRecordId) { "Feedback must belong to the completed run." }
+    require(postRunFeedback.belongsTo(actualRun)) { "Feedback must belong to the completed run." }
     val baseDuration = prescribedWorkout.durationMinutes.coerceAtLeast(MIN_NEXT_RUN_MINUTES)
     val safetyRest = postRunFeedback.painLevel == PainLevel.SIGNIFICANT ||
       (postRunFeedback.completionStatus == CompletionStatus.ABORTED && postRunFeedback.painLevel != PainLevel.NONE)

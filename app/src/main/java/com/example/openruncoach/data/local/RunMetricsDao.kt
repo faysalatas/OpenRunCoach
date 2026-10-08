@@ -18,6 +18,13 @@ data class RunMetricsWithValues(
 
 @Dao
 interface RunMetricsDao {
+  /** Detail follows the current canonical summary even when opened via an older provider ID. */
+  @Transaction
+  @Query("""SELECT run_metrics.* FROM run_metrics JOIN runs canonical ON canonical.healthConnectRecordId = run_metrics.runId
+    WHERE canonical.isCanonical = 1 AND canonical.physicalRunId = COALESCE(
+      (SELECT physicalRunId FROM runs WHERE healthConnectRecordId = :runId), :runId) LIMIT 1""")
+  fun observeActualRunMetrics(runId: String): Flow<RunMetricsWithValues?>
+
   @Transaction
   @Query("SELECT * FROM run_metrics WHERE runId = :runId LIMIT 1")
   fun observeRunMetrics(runId: String): Flow<RunMetricsWithValues?>

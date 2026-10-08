@@ -23,6 +23,7 @@ import com.example.openruncoach.domain.plan.WeeklyWorkoutSlot
 import com.example.openruncoach.domain.profile.AthletePerformanceProfile
 import com.example.openruncoach.domain.profile.ProfileConfidence
 import com.example.openruncoach.domain.workout.WorkoutLifecycleState
+import com.example.openruncoach.domain.workout.withActualSummary
 import java.time.Instant
 import java.time.LocalDate
 import kotlinx.coroutines.CancellationException
@@ -46,13 +47,19 @@ class TrainingPlanRepository(
     emitAll(combine(
       dao.observeActivePlan(),
       dao.observeActivePlanExecutionRevision(),
-    ) { entity, _ -> entity?.let { loadPlan(it) } })
+      database.runDao().observeCanonicalActualRuns(),
+    ) { entity, _, _ -> entity?.let { loadPlan(it) } })
   }
 
   suspend fun getActivePlan(): TrainingPlan? {
     executionRepository.reconcileExistingCheckouts()
     return dao.getActivePlan()?.let { loadPlan(it) }
   }
+
+  /** Observes saved plan state without checkout reconciliation or other persistence. */
+  internal suspend fun getActivePlanSnapshot(): TrainingPlan? = dao.getActivePlan()?.let { loadPlan(it) }
+
+  internal suspend fun getPlanSnapshot(planId: String): TrainingPlan? = dao.getPlan(planId)?.let { loadPlan(it) }
 
   suspend fun generate(goal: TrainingGoal, profile: AthletePerformanceProfile): TrainingPlan {
     val milestone = completionRepository.refreshReadiness(goal, profile)
@@ -192,7 +199,8 @@ class TrainingPlanRepository(
       }
     }
     val executions = workoutDao.getExecutionsForPlan(planId).associate { execution ->
-      execution.plannedWorkoutId to execution.toDomain()
+      execution.plannedWorkoutId to execution.toDomain().withActualSummary(
+        database.runDao().getActualRun(execution.physicalRunId)?.toActualSummary())
     }
     return TrainingPlanPersistenceMapper.toDomain(
       TrainingPlanSnapshot(

@@ -1,7 +1,10 @@
 package com.example.openruncoach.domain.athlete
 
 import com.example.openruncoach.domain.PainLevel
+import com.example.openruncoach.domain.CompletionStatus
 import com.example.openruncoach.domain.RunSummary
+import com.example.openruncoach.domain.evidence.TrainingEvidencePolicy
+import com.example.openruncoach.domain.evidence.TrainingEvidencePurpose
 import com.example.openruncoach.domain.metrics.RunContinuityEvidence
 import com.example.openruncoach.domain.profile.AthletePerformanceProfile
 import com.example.openruncoach.domain.profile.ProfileConfidence
@@ -53,23 +56,39 @@ class AthleteStateBuilder {
     val runsById = canonicalRuns.asSequence()
       .filter { it.isCanonical && it.relevance == com.example.openruncoach.domain.RunRelevance.ACTIVE }
       .filter { !it.startTime.isAfter(profile.calculatedAt) }
-      .distinctBy(RunSummary::healthConnectRecordId)
+      .distinctBy(RunSummary::physicalRunId)
       .associateBy(RunSummary::healthConnectRecordId)
     val responses = workoutResponses.asSequence()
       .distinctBy { it.runId to it.plannedWorkoutId }
       .mapNotNull { response -> runsById[response.runId]?.let { response to it } }
       .sortedWith(compareBy<Pair<WorkoutResponse, RunSummary>> { it.second.startTime }.thenBy { it.first.runId })
       .toList()
-    val recentResponses = responses.filter { (_, run) ->
-      !run.startTime.isBefore(profile.calculatedAt.minus(Duration.ofDays(7))) &&
+    fun evidence(run: RunSummary, response: WorkoutResponse?) = TrainingEvidencePolicy.evaluate(
+      run.copy(distanceMeters = response?.actualDistanceMeters ?: run.distanceMeters,
+        durationSeconds = response?.actualDurationSeconds ?: run.durationSeconds),
+      associatedWorkoutId = response?.plannedWorkoutId,
+      observedCompletion = response?.completion?.let { when (it) {
+        WorkoutCompletionOutcome.COMPLETED -> CompletionStatus.COMPLETED
+        WorkoutCompletionOutcome.PARTIAL -> CompletionStatus.PARTIAL
+        WorkoutCompletionOutcome.ABORTED -> CompletionStatus.ABORTED
+      } },
+    )
+    val recentResponses = responses.filter { (response, run) ->
+      evidence(run, response).getValue(TrainingEvidencePurpose.SAFETY_RECOVERY).eligible &&
+        !run.startTime.isBefore(profile.calculatedAt.minus(Duration.ofDays(7))) &&
         !run.startTime.isAfter(profile.calculatedAt)
     }
-    val recentCapabilityResponses = responses.filter { (_, run) ->
+    val capabilityResponses = responses.filter { (response, run) ->
+      evidence(run, response).getValue(TrainingEvidencePurpose.CAPABILITY).eligible
+    }
+    val recentCapabilityResponses = capabilityResponses.filter { (_, run) ->
       !run.startTime.isBefore(profile.calculatedAt.minus(Duration.ofDays(28))) &&
         !run.startTime.isAfter(profile.calculatedAt)
     }
     val recentCanonicalRunCount = runsById.values.count { run ->
-      !run.startTime.isBefore(profile.calculatedAt.minus(Duration.ofDays(28))) &&
+      evidence(run, responses.firstOrNull { it.second.physicalRunId == run.physicalRunId }?.first)
+        .getValue(TrainingEvidencePurpose.CAPABILITY).eligible &&
+        !run.startTime.isBefore(profile.calculatedAt.minus(Duration.ofDays(28))) &&
         !run.startTime.isAfter(profile.calculatedAt)
     }
     val recentContinuity = continuitySummary(
@@ -77,16 +96,16 @@ class AthleteStateBuilder {
       recentCanonicalRunCount,
       profile.recentContinuity,
     )
-    val completedDistances = responses.mapNotNull { (response, _) ->
+    val completedDistances = capabilityResponses.mapNotNull { (response, _) ->
       response.actualDistanceMeters?.takeIf { response.completion == WorkoutCompletionOutcome.COMPLETED }
     }
-    val continuousDistances = responses.mapNotNull { (response, _) ->
+    val continuousDistances = capabilityResponses.mapNotNull { (response, _) ->
       response.actualDistanceMeters?.takeIf {
         response.completion == WorkoutCompletionOutcome.COMPLETED &&
           response.continuity == RunContinuityEvidence.CONTINUOUS
       }
     }
-    val tolerated = responses.filter { (response, _) -> response.isToleratedAerobicEvidence() }
+    val tolerated = capabilityResponses.filter { (response, _) -> response.isToleratedAerobicEvidence() }
     val toleratedDistances = tolerated.mapNotNull { it.first.actualDistanceMeters }
     val latest = recentResponses.lastOrNull()?.first
     val elevatedCount = recentResponses.count { it.first.sessionCost == SessionCost.ELEVATED }

@@ -1,25 +1,28 @@
 package com.example.openruncoach.data
 
+import com.example.openruncoach.data.healthconnect.HealthConnectRunMetricsProvider
 import com.example.openruncoach.data.local.RunDao
 import com.example.openruncoach.data.local.RunEntity
-import com.example.openruncoach.domain.RunSummary
+import com.example.openruncoach.data.local.RunMetricsWithValues
+import com.example.openruncoach.data.local.RunWithActualMetrics
 import com.example.openruncoach.domain.CanonicalRunSelection
-import com.example.openruncoach.domain.PossibleDuplicate
-import com.example.openruncoach.domain.SourceDeviceType
 import com.example.openruncoach.domain.PhysicalRunMatchDecision
+import com.example.openruncoach.domain.PossibleDuplicate
+import com.example.openruncoach.domain.RunActualResolver
 import com.example.openruncoach.domain.RunRelevance
+import com.example.openruncoach.domain.RunSummary
+import com.example.openruncoach.domain.SourceDeviceType
 import com.example.openruncoach.domain.WorkoutSource
 import com.example.openruncoach.domain.findPossibleDuplicates
-import com.example.openruncoach.domain.selectCanonicalRuns
-import com.example.openruncoach.data.healthconnect.HealthConnectRunMetricsProvider
 import com.example.openruncoach.domain.metrics.MetricSource
 import com.example.openruncoach.domain.metrics.metricValues
+import com.example.openruncoach.domain.selectCanonicalRuns
 import java.time.Clock
 import java.time.Instant
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 
 class RunRepository(
   private val runDao: RunDao,
@@ -32,16 +35,16 @@ class RunRepository(
   private val runMetricsRefresher: RunMetricsRefresher? = null,
 ) {
   val recentRuns: Flow<List<RunSummary>> =
-    runDao.observeRecentRuns().map { runs -> runs.map(RunEntity::toRunSummary) }
+    runDao.observeRecentActualRuns().map { runs -> runs.map { it.toActualSummary() } }
 
   val duplicateDiagnostics: Flow<Map<String, List<PossibleDuplicate>>> =
     runDao.observeAllRuns().map { runs -> findPossibleDuplicates(runs.map(RunEntity::toRunSummary)) }
 
   val canonicalRuns: Flow<List<RunSummary>> =
-    runDao.observeCanonicalRuns().map { runs -> runs.map(RunEntity::toRunSummary) }
+    runDao.observeCanonicalActualRuns().map { runs -> runs.map { it.toActualSummary() } }
 
   val ignoredRuns: Flow<List<RunSummary>> =
-    runDao.observeIgnoredCanonicalRuns().map { runs -> runs.map(RunEntity::toRunSummary) }
+    runDao.observeIgnoredActualRuns().map { runs -> runs.map { it.toActualSummary() } }
 
   val allRuns: Flow<List<RunSummary>> =
     runDao.observeAllRuns().map { runs -> runs.map(RunEntity::toRunSummary) }
@@ -59,7 +62,10 @@ class RunRepository(
   }
 
   fun observeRun(runId: String): Flow<RunSummary?> =
-    runDao.observeRun(runId).map { it?.toRunSummary() }
+    runDao.observeActualRun(runId).map { it?.toActualSummary() }
+
+  /** Raw provider summary for refresh/import inputs; resolved fallback values are never written back. */
+  suspend fun getProviderRun(runId: String): RunSummary? = runDao.getRun(runId)?.toRunSummary()
 
   suspend fun syncRuns(): Int {
     val runs = healthConnectRepository.runningWorkoutsLast90Days()
@@ -209,3 +215,9 @@ internal fun RunEntity.toRunSummary() =
     relevance = RunRelevance.valueOf(relevance),
     canonicalMatchDecision = PhysicalRunMatchDecision.valueOf(canonicalMatchDecision),
   )
+
+/** Separate from raw mapping used by import, matching, and source preference. */
+internal fun RunWithActualMetrics.toActualSummary(): RunSummary =
+  RunActualResolver.resolve(run.toRunSummary(), metrics.singleOrNull()?.let {
+    RunMetricsWithValues(it.snapshot, it.values, emptyList()).toDomain()
+  })

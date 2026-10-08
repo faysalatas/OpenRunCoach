@@ -38,6 +38,11 @@ data class RunTimeSeries(
 
 typealias RunMetricSeries = RunTimeSeries
 
+/**
+ * Provider-independent measurements/enrichment, not the authoritative whole-run activity summary.
+ * Distance may be a time-window aggregate or a provider measurement that differs from an edited
+ * canonical session. Whole-run actual consumers resolve RunSummary through RunActualResolver.
+ */
 data class RunMetrics(
   val runId: String,
   val startTime: Instant,

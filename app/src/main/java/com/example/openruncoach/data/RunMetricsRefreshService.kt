@@ -7,7 +7,7 @@ import com.example.openruncoach.domain.inspection.RunDataInspection
 import com.example.openruncoach.domain.metrics.RunMetrics
 import com.example.openruncoach.domain.samsunghealth.SamsungHealthInspection
 
-/** Builds and atomically replaces one summary snapshot. Raw series remain in memory only. */
+/** Builds and atomically replaces one measurement snapshot. Raw series remain in memory only. */
 class RunMetricsRefreshService(
   private val healthConnectProvider: HealthConnectRunMetricsProvider,
   private val samsungEnricher: SamsungHealthRunMetricsEnricher,

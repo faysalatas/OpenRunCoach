@@ -1,32 +1,55 @@
 package com.example.openruncoach.data
 
+import com.example.openruncoach.data.local.PhysicalRunRouteWithPointsAndSplits
 import com.example.openruncoach.data.local.RunRouteDao
 import com.example.openruncoach.data.local.RunRouteEntity
 import com.example.openruncoach.data.local.RunRoutePointEntity
 import com.example.openruncoach.data.local.RunRouteWithPointsAndSplits
-import com.example.openruncoach.data.local.PhysicalRunRouteWithPointsAndSplits
 import com.example.openruncoach.data.local.RunSplitEntity
+import com.example.openruncoach.domain.RunActualResolver
+import com.example.openruncoach.domain.RunSummary
 import com.example.openruncoach.domain.metrics.MetricConfidence
 import com.example.openruncoach.domain.metrics.MetricSource
+import com.example.openruncoach.domain.metrics.RunMetrics
 import com.example.openruncoach.domain.route.RunRoute
 import com.example.openruncoach.domain.route.RunRouteData
 import com.example.openruncoach.domain.route.RunRoutePoint
 import com.example.openruncoach.domain.route.RunSplit
 import com.example.openruncoach.domain.route.RunSplitDerivation
+import com.example.openruncoach.domain.route.RunSplitResolver
 import java.time.Instant
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 
 class RunRouteRepository(private val dao: RunRouteDao) {
-  fun observe(runId: String): Flow<RunRouteData?> = dao.observePhysicalRoute(runId).map { it?.toPhysicalDomain() }
+  fun observe(runId: String): Flow<RunRouteData?> = combine(
+    dao.observePhysicalRoute(runId), dao.observePhysicalMetrics(runId),
+  ) { stored, metrics -> stored?.let { resolve(it, metrics?.toDomain()) } }.flowOn(Dispatchers.Default)
 
   fun observeAll(): Flow<Map<String, RunRouteData>> = dao.observePhysicalRoutes().map { records ->
     records.groupBy(PhysicalRunRouteWithPointsAndSplits::physicalRunId).mapNotNull { (id, candidates) ->
-      candidates.firstNotNullOfOrNull { it.toPhysicalDomain() }?.let { id to it }
+      val metrics = dao.getPhysicalMetrics(id)?.toDomain()
+      candidates.firstNotNullOfOrNull { resolve(it, metrics) }?.let { id to it }
     }.toMap()
+  }.flowOn(Dispatchers.Default)
+
+  suspend fun get(runId: String): RunRouteData? = withContext(Dispatchers.Default) {
+    dao.getPhysicalRoute(runId)?.let { resolve(it, dao.getPhysicalMetrics(runId)?.toDomain()) }
   }
 
-  suspend fun get(runId: String): RunRouteData? = dao.getPhysicalRoute(runId)?.toPhysicalDomain()
+  /** Explicit normal-refresh cache backfill. Never invoked by get/observe or diagnostics. */
+  suspend fun backfillSplits(runId: String) {
+    withContext(Dispatchers.Default) {
+      dao.backfillPhysicalSplits(runId) { stored, metrics ->
+        resolve(stored, metrics?.toDomain())?.splits.orEmpty()
+          .map { it.copy(runId = stored.route.runId).toEntity() }
+      }
+    }
+  }
 
   suspend fun save(route: RunRoute, splits: List<RunSplit>) {
     validate(route, splits)
@@ -56,7 +79,24 @@ class RunRouteRepository(private val dao: RunRouteDao) {
   }
 }
 
-private fun PhysicalRunRouteWithPointsAndSplits.toPhysicalDomain(): RunRouteData? {
+private fun resolve(
+  stored: PhysicalRunRouteWithPointsAndSplits,
+  metrics: RunMetrics?,
+): RunRouteData? = stored.toPhysicalDomain()?.let {
+  val canonical = RunSummary(
+    healthConnectRecordId = stored.canonicalRunId,
+    physicalRunId = stored.physicalRunId,
+    startTime = Instant.ofEpochMilli(stored.canonicalStartTimeEpochMillis),
+    endTime = Instant.ofEpochMilli(stored.canonicalEndTimeEpochMillis),
+    durationSeconds = stored.canonicalDurationSeconds,
+    distanceMeters = stored.canonicalRunDistanceMeters,
+    averagePaceSecondsPerKm = null, averageHeartRate = null, maxHeartRate = null,
+  )
+  val actual = RunActualResolver.resolve(canonical, metrics)
+  RunSplitResolver.resolve(it, actual.distanceMeters, metrics)
+}
+
+internal fun PhysicalRunRouteWithPointsAndSplits.toPhysicalDomain(): RunRouteData? {
   val data = RunRouteWithPointsAndSplits(route, points, splits).toDomain()
   val start = Instant.ofEpochMilli(canonicalStartTimeEpochMillis)
   val end = Instant.ofEpochMilli(canonicalEndTimeEpochMillis)
@@ -73,11 +113,11 @@ private fun PhysicalRunRouteWithPointsAndSplits.toPhysicalDomain(): RunRouteData
       distanceDifferencePercent = if (windowChanged) null else data.route.distanceDifferencePercent,
       distanceScaleFactor = if (windowChanged) 1.0 else data.route.distanceScaleFactor,
     ),
-    // Rebuild splits through the normal refresh after an interval change; never show
-    // boundaries derived from the trimmed-away portion of an older route.
+    // Never reuse boundaries from a trimmed-away interval. The resolver derives a read-only fallback.
     splits = if (windowChanged) emptyList() else data.splits
       .takeIf { values -> values.all { !it.startTime.isBefore(start) && !it.endTime.isAfter(end) } }
       .orEmpty().map { it.copy(runId = physicalRunId) },
+    persistedSplitCount = data.splits.size,
   )
 }
 

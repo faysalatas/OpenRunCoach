@@ -17,6 +17,9 @@ interface RunFeedbackDao {
   @Query("SELECT * FROM run_feedback")
   suspend fun getAllFeedback(): List<RunFeedbackEntity>
 
+  @Query("SELECT * FROM run_feedback")
+  fun observeAllFeedback(): Flow<List<RunFeedbackEntity>>
+
   @Insert
   suspend fun insertFeedback(feedback: RunFeedbackEntity)
 

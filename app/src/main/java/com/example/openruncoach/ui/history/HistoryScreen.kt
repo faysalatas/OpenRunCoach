@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -20,6 +21,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import com.example.openruncoach.theme.WorkoutAccents
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -33,7 +37,7 @@ import com.example.openruncoach.data.WorkoutExecutionRepository
 import com.example.openruncoach.theme.OpenRunShapeTokens
 import com.example.openruncoach.theme.OpenRunSpacing
 import com.example.openruncoach.ui.common.formatDistance
-import com.example.openruncoach.ui.common.formatDuration
+import com.example.openruncoach.ui.common.formatActualDuration
 import com.example.openruncoach.ui.common.formatPace
 import com.example.openruncoach.ui.components.ScreenPadding
 import com.example.openruncoach.ui.components.RunRouteCanvas
@@ -97,11 +101,14 @@ fun HistoryScreen(onRunClick: (String) -> Unit, modifier: Modifier = Modifier) {
       }
       else -> state.groups.forEach { group ->
         item(key = group.title) {
-          Text(
-            group.title,
-            modifier = Modifier.padding(top = OpenRunSpacing.Standard, bottom = OpenRunSpacing.Micro),
-            style = MaterialTheme.typography.titleMedium,
-          )
+          Column(verticalArrangement = Arrangement.spacedBy(OpenRunSpacing.Small)) {
+            Text(
+              group.title,
+              modifier = Modifier.padding(top = OpenRunSpacing.Standard, bottom = OpenRunSpacing.Micro),
+              style = MaterialTheme.typography.titleMedium,
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+          }
         }
         items(group.runs, key = { it.run.healthConnectRecordId }) { item ->
           HistoryRunRow(item) { onRunClick(item.run.healthConnectRecordId) }
@@ -114,13 +121,16 @@ fun HistoryScreen(onRunClick: (String) -> Unit, modifier: Modifier = Modifier) {
 @Composable
 private fun HistoryRunRow(item: HistoryRunItem, onClick: () -> Unit) {
   val run = item.run
+  val accent = WorkoutAccents.forType(item.workoutType)
   Surface(
     modifier = Modifier.fillMaxWidth().clickable(onClickLabel = "Open ${item.workoutTypeLabel}", onClick = onClick),
     shape = OpenRunShapeTokens.Compact,
     color = MaterialTheme.colorScheme.surfaceContainerHigh,
   ) {
     Row(
-      modifier = Modifier.padding(horizontal = OpenRunSpacing.Compact, vertical = OpenRunSpacing.Compact),
+      modifier = Modifier.drawBehind {
+        drawLine(accent, Offset(1.5.dp.toPx(), 0f), Offset(1.5.dp.toPx(), size.height), 3.dp.toPx())
+      }.padding(horizontal = OpenRunSpacing.Compact, vertical = OpenRunSpacing.Small),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(OpenRunSpacing.Compact),
     ) {
@@ -144,10 +154,10 @@ private fun HistoryRunRow(item: HistoryRunItem, onClick: () -> Unit) {
         Text(
           listOf(
             formatDistance(run.distanceMeters),
-            formatDuration(run.durationSeconds),
+            formatActualDuration(run.durationSeconds),
             formatPace(run.averagePaceSecondsPerKm).replace(" min/km", " /km"),
           ).joinToString(" · "),
-          style = MaterialTheme.typography.bodyMedium,
+          style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
       }

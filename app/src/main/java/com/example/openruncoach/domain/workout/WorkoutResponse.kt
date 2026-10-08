@@ -3,10 +3,12 @@ package com.example.openruncoach.domain.workout
 import com.example.openruncoach.domain.CardioEffort
 import com.example.openruncoach.domain.MuscleFatigue
 import com.example.openruncoach.domain.PainLevel
+import com.example.openruncoach.domain.RunActualResolver
 import com.example.openruncoach.domain.RunFeedback
 import com.example.openruncoach.domain.RunSummary
-import com.example.openruncoach.domain.metrics.RunContinuityEvidence
+import com.example.openruncoach.domain.belongsTo
 import com.example.openruncoach.domain.metrics.RunContinuityEvaluator
+import com.example.openruncoach.domain.metrics.RunContinuityEvidence
 import com.example.openruncoach.domain.metrics.RunMetrics
 import java.util.Locale
 
@@ -85,7 +87,7 @@ class WorkoutResponseEvaluator(
   ): WorkoutResponse {
     require(execution.plannedWorkoutId == plannedWorkout.id)
     require(execution.actualRunId == actualRun.healthConnectRecordId)
-    require(feedback.runId == actualRun.healthConnectRecordId)
+    require(feedback.belongsTo(actualRun))
     require(metrics == null || metrics.runId == actualRun.healthConnectRecordId)
 
     val targetSegments = plannedWorkout.responseTargetSegments()
@@ -98,11 +100,10 @@ class WorkoutResponseEvaluator(
       ?: plannedRpeTargets.minOfOrNull(RpeTarget::minimum)
     val plannedRpeMaximum = adjustedWorkout?.targetRpeMax?.takeIf { it > 0 }
       ?: plannedRpeTargets.maxOfOrNull(RpeTarget::maximum)
-    val actualDistance = metrics?.distanceMeters?.value ?: actualRun.distanceMeters ?: execution.actualDistanceMeters
-    val actualDuration = metrics?.durationSeconds?.value ?: actualRun.durationSeconds
-    val actualPace = metrics?.averagePaceSecondsPerKm?.value
-      ?: actualRun.averagePaceSecondsPerKm
-      ?: derivePace(actualDistance, actualDuration)
+    val actual = RunActualResolver.resolve(actualRun, metrics)
+    val actualDistance = actual.distanceMeters
+    val actualDuration = actual.durationSeconds
+    val actualPace = actual.averagePaceSecondsPerKm
     // The execution records the exact original or adjusted prescription that was compared.
     val plannedDistance = execution.intendedDistanceMeters
     val plannedDuration = execution.intendedDurationSeconds
@@ -356,9 +357,6 @@ class WorkoutResponseEvaluator(
       add("This session appears more costly than the intended ${workout.purpose.trainingIntentLabel()} stimulus.")
     }
   }
-
-  private fun derivePace(distanceMeters: Double?, durationSeconds: Long): Double? =
-    if (distanceMeters != null && distanceMeters > 0.0) durationSeconds * 1000.0 / distanceMeters else null
 
   private fun distance(meters: Double) = "%.2f km".format(Locale.ROOT, meters / 1000.0)
 

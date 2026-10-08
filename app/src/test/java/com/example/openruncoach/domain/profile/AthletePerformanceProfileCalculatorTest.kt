@@ -224,7 +224,7 @@ class AthletePerformanceProfileCalculatorTest {
     val run = run("one", 1)
     val profile = calculate(listOf(run))
     assertEquals(ProfileConfidence.LOW, profile.profileConfidence)
-    assertTrue(profile.confidenceReasons.any { it.contains("1 runs") })
+    assertTrue(profile.confidenceReasons.any { it.contains("1 meaningful sessions") })
   }
 
   @Test
@@ -325,10 +325,33 @@ class AthletePerformanceProfileCalculatorTest {
 
   @Test
   fun easyPaceTrendUsesOnlyQualifiedEasyRuns() {
-    val runs = listOf(run("a", 12), run("b", 9), run("c", 5), run("d", 1))
-    val paces = listOf(450.0, 450.0, 400.0, 400.0)
-    val profile = calculate(runs, runs.zip(paces).map { metrics(it.first, pace = it.second) }, runs.map(::feedback))
+    val runs = listOf(run("a", 12, duration = 2250), run("b", 9, duration = 2250),
+      run("c", 5, duration = 2000), run("d", 1, duration = 2000))
+    val profile = calculate(runs, runs.map { metrics(it, pace = 420.0) }, runs.map(::feedback))
     assertEquals(PaceTrend.FASTER, profile.recentPaceTrend)
+  }
+
+  @Test fun easyBaselineAndVolumeUseCanonicalActualsWhileTinyFragmentsStayExcluded() {
+    val easy = run("canonical-easy", 1, distance = 4000.0, duration = 1644)
+    val tiny = run("tiny-fragment", 1, distance = 76.5, duration = 10)
+    val enriched = metrics(easy, pace = 405.0).copy(distanceMeters = metric(4755.0))
+    // A longer provider duration must not turn a canonical ten-second fragment into a session.
+    val tinyMeasurements = metrics(tiny, pace = 100.0).copy(durationSeconds = metric(1800L))
+    val profile = calculate(listOf(easy, tiny), listOf(enriched, tinyMeasurements), listOf(feedback(easy), feedback(tiny)))
+    assertEquals(411.0, profile.typicalEasyPace!!.representative, 0.000001)
+    assertEquals(1, profile.typicalEasyPace.contributingRuns)
+    assertEquals(1, profile.runsLast7Days)
+    assertEquals(4076.5, profile.distanceLast7DaysMeters, 0.000001)
+    assertEquals(1654L, profile.durationLast7DaysSeconds)
+    assertEquals(160.0, profile.typicalEasyCadence!!.representative, 0.0)
+  }
+
+  @Test fun profileUsesCentralMatchedFallbackWhenCanonicalDistanceIsMissing() {
+    val missing = run("missing", 1, distance = null, duration = 1644)
+    val enriched = metrics(missing, pace = 405.0).copy(distanceMeters = metric(4000.0))
+    val profile = calculate(listOf(missing), listOf(enriched), listOf(feedback(missing)))
+    assertEquals(411.0, profile.typicalEasyPace!!.representative, 0.0)
+    assertEquals(4000.0, profile.distanceLast7DaysMeters, 0.0)
   }
 
   private fun calculate(

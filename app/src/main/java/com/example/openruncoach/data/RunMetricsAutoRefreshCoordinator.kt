@@ -94,7 +94,7 @@ class RunMetricsAutoRefreshCoordinator(
     val existing = metricsRepository.getRunMetrics(run.healthConnectRecordId)
     var healthConnect: com.example.openruncoach.domain.inspection.RunDataInspection? = null
     var selectedRoute: RunRoute? = null
-    engine.refresh(
+    val outcome = engine.refresh(
       run = run,
       existing = existing,
       force = force,
@@ -151,6 +151,9 @@ class RunMetricsAutoRefreshCoordinator(
         athleteProfileRepository?.recalculate()
       },
     )
+    // Saved routes may predate split derivation, even when metrics are already fresh.
+    routeRepository?.backfillSplits(run.physicalRunId)
+    outcome
   }
 
   companion object {

@@ -60,4 +60,8 @@ data class RunSplit(
 data class RunRouteData(
   val route: RunRoute,
   val splits: List<RunSplit>,
+  val persistedSplitCount: Int = splits.size,
+  val splitDerivationSource: SplitDerivationSource = if (splits.isEmpty()) SplitDerivationSource.UNAVAILABLE else SplitDerivationSource.PERSISTED_CACHE,
 )
+
+enum class SplitDerivationSource { PERSISTED_CACHE, ROUTE_DERIVED_ON_READ, UNAVAILABLE }

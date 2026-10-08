@@ -20,6 +20,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 class RunMetricsRepository(private val dao: RunMetricsDao) {
+  fun observeActualRunMetrics(runId: String): Flow<RunMetrics?> =
+    dao.observeActualRunMetrics(runId).map { it?.toDomain() }
+
   fun observeRunMetrics(runId: String): Flow<RunMetrics?> =
     dao.observeRunMetrics(runId).map { it?.toDomain() }
 

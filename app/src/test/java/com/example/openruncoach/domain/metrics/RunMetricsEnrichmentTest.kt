@@ -172,6 +172,29 @@ class RunMetricsEnrichmentTest {
     assertTrue(result.averageHeartRate.verificationReason!!.contains("clipped"))
   }
 
+  @Test fun trimmedSummaryKeepsCorrectedActualsAndClippedSamsungEnrichment() {
+    val logs = (-1..41).map { index ->
+      SamsungExerciseLogSample(start.plusSeconds(index * 49L), 140.0, 160.0, 2.5, null, null)
+    }
+    val original = samsungSession(logs = logs).let { session -> session.copy(candidate = session.candidate.copy(
+      startTime = start.minusSeconds(60), endTime = start.plusSeconds(2500),
+      durationSeconds = 2560, distanceMeters = 6000.0)) }
+    val canonical = run().copy(sourcePackageName = "com.strava", distanceMeters = 4680.438)
+    val measurements = enricher.enrich(base().copy(averageHeartRate = null, series = RunMetricSeries()), overlappingInspection(original))
+    val actual = com.example.openruncoach.domain.RunActualResolver.resolve(canonical, measurements)
+    assertEquals(4680.438, actual.distanceMeters!!, 0.000001)
+    assertEquals(1974L, actual.durationSeconds)
+    assertEquals(1974000.0 / 4680.438, actual.averagePaceSecondsPerKm!!, 0.000001)
+    assertEquals(4802.8, measurements.distanceMeters!!.value, 0.01)
+    assertTrue(measurements.series.heartRate.isNotEmpty())
+    listOf(measurements.series.heartRate, measurements.series.speed, measurements.series.cadence).forEach { series ->
+      assertTrue(series.isNotEmpty())
+      assertTrue(series.all { it.timestamp in canonical.startTime..canonical.endTime })
+      assertTrue(series.all { it.source == MetricSource.SAMSUNG_HEALTH })
+    }
+    assertEquals(logs, original.exerciseLogSamples)
+  }
+
   @Test
   fun overlappingMetricWithPoorSampleCoverageIsNotApplied() {
     val sparseLogs = (0 until 5).map { index ->

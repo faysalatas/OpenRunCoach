@@ -1,6 +1,7 @@
 package com.example.openruncoach.domain.workout
 
 import com.example.openruncoach.domain.RunFeedback
+import com.example.openruncoach.domain.belongsTo
 import com.example.openruncoach.domain.RunSummary
 import com.example.openruncoach.domain.coaching.CoachingDecision
 
@@ -91,7 +92,7 @@ class WorkoutLifecycleService {
       lifecycle.copy(state = WorkoutLifecycleState.CHECKOUT_REQUIRED)
 
     lifecycle.state == WorkoutLifecycleState.CHECKOUT_REQUIRED && event is WorkoutLifecycleEvent.AnalysisCompleted -> {
-      require(event.feedback.runId == lifecycle.actualRun?.healthConnectRecordId) {
+      require(lifecycle.actualRun?.let(event.feedback::belongsTo) == true) {
         "Post-run feedback must belong to the completed run."
       }
       lifecycle.copy(

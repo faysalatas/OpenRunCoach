@@ -7,6 +7,8 @@ import com.example.openruncoach.data.RunRouteRepository
 import com.example.openruncoach.data.WorkoutExecutionRepository
 import com.example.openruncoach.domain.RunSummary
 import com.example.openruncoach.domain.route.RunRoute
+import com.example.openruncoach.domain.workout.WorkoutType
+import com.example.openruncoach.domain.workout.displayName
 import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -22,6 +24,7 @@ data class HistoryRunItem(
   val dateLabel: String,
   val workoutTypeLabel: String,
   val route: RunRoute? = null,
+  val workoutType: WorkoutType? = null,
 )
 
 data class RunHistoryGroup(val title: String, val runs: List<HistoryRunItem>)
@@ -49,7 +52,7 @@ class HistoryViewModel(
     showIgnored,
   ) { active, ignored, routes, showingIgnored ->
     val runs = if (showingIgnored) ignored else active
-    val workoutLabels = workoutExecutionRepository.getAssociatedWorkoutLabelsByRunId()
+    val workouts = workoutExecutionRepository.getAssociatedWorkoutsByRunId()
     val dateFormatter = DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault())
     val groups = runs.sortedByDescending(RunSummary::startTime)
       .groupBy { YearMonth.from(it.startTime.atZone(zoneId)) }
@@ -60,8 +63,9 @@ class HistoryViewModel(
             HistoryRunItem(
               run = run,
               dateLabel = run.startTime.atZone(zoneId).format(dateFormatter),
-              workoutTypeLabel = workoutLabels[run.healthConnectRecordId] ?: "Run",
+              workoutTypeLabel = workouts[run.healthConnectRecordId]?.let { it.name.ifBlank { it.type.displayName() } } ?: "Run",
               route = routes[run.physicalRunId]?.route,
+              workoutType = workouts[run.healthConnectRecordId]?.type,
             )
           },
         )

@@ -137,6 +137,43 @@ class WorkoutResponseEvaluatorTest {
     assertEquals(VolumeCompletion.PARTIAL, response.volumeCompletion)
   }
 
+  @Test fun canonicalVolumeAndPaceOverrideMeasurementsWithoutChangingCompletionToleranceOrCost() {
+    val workout = distanceWorkout(5200.0, WorkoutPurpose.ENDURANCE, 3, 5, null)
+    val run = run(4680.438, 1923, 405.0)
+    val feedback = feedback(4)
+    val execution = adherenceEvaluator.evaluate(workout, null, run, feedback)
+    val measurements = metrics(run, emptyList()).copy(
+      distanceMeters = MetricValue(5100.0, MetricSource.SAMSUNG_HEALTH, MetricConfidence.HIGH),
+      durationSeconds = MetricValue(2100L, MetricSource.SAMSUNG_HEALTH, MetricConfidence.HIGH),
+    )
+    val withoutMeasurements = responseEvaluator.evaluate(workout, null, execution, run, feedback)
+    val response = responseEvaluator.evaluate(workout, null, execution, run, feedback, measurements)
+    assertEquals(4680.438, response.actualDistanceMeters!!, 0.000001)
+    assertEquals(1923L, response.actualDurationSeconds)
+    assertEquals(1923000.0 / 4680.438, response.actualPaceSecondsPerKm!!, 0.000001)
+    assertEquals(WorkoutCompletionOutcome.PARTIAL, response.completion)
+    assertEquals(VolumeCompletion.PARTIAL, response.volumeCompletion)
+    assertEquals(withoutMeasurements.adherence, response.adherence)
+    assertEquals(withoutMeasurements.sessionCost, response.sessionCost)
+    assertEquals(withoutMeasurements.continuity, response.continuity)
+    assertEquals(withoutMeasurements.pain, response.pain)
+  }
+
+  @Test fun wholeRunFallbackIsSharedWithResponseWithoutUsingStaleExecutionDistance() {
+    val workout = distanceWorkout(4000.0, WorkoutPurpose.AEROBIC_BASE, 3, 4, null)
+    val missing = run(4000.0, 1644, 405.0).copy(distanceMeters = null)
+    val measurements = metrics(missing, emptyList()).copy(
+      distanceMeters = MetricValue(4000.0, MetricSource.SAMSUNG_HEALTH, MetricConfidence.HIGH))
+    val actual = com.example.openruncoach.domain.RunActualResolver.resolve(missing, measurements)
+    val feedback = feedback(3)
+    val execution = adherenceEvaluator.evaluate(workout, null, actual, feedback)
+    val response = responseEvaluator.evaluate(workout, null, execution.copy(actualDistanceMeters = 4755.0), missing, feedback, measurements)
+    assertEquals(4000.0, response.actualDistanceMeters!!, 0.0)
+    assertEquals(411.0, response.actualPaceSecondsPerKm!!, 0.0)
+    assertEquals(WorkoutCompletionOutcome.COMPLETED, response.completion)
+    assertEquals(VolumeCompletion.MET, response.volumeCompletion)
+  }
+
   private fun distanceWorkout(
     distanceMeters: Double,
     purpose: WorkoutPurpose,

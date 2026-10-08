@@ -15,6 +15,8 @@ import kotlin.math.sqrt
 data class RouteSplitDerivationResult(
   val route: RunRoute,
   val splits: List<RunSplit>,
+  // Read-only distance evidence for presentation calculations; not persisted.
+  val distanceSamples: List<RunDistanceSample> = emptyList(),
 )
 
 class RouteSplitDeriver {
@@ -22,6 +24,7 @@ class RouteSplitDeriver {
     route: RunRoute,
     canonicalDistanceMeters: Double?,
     metrics: RunMetrics?,
+    includeDistanceSamples: Boolean = false,
   ): RouteSplitDerivationResult {
     val ordered = route.points
       .filter(::validPoint)
@@ -131,6 +134,7 @@ class RouteSplitDeriver {
         confidence = confidence,
       ),
       splits,
+      if (includeDistanceSamples) calibratedVertices.map { RunDistanceSample(it.timestamp, it.distanceMeters) } else emptyList(),
     )
   }
 

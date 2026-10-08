@@ -1,109 +1,195 @@
 package com.example.openruncoach.ui.health
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
-import com.example.openruncoach.ui.components.OpenRunTabs
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
 import com.example.openruncoach.domain.metrics.PreparedRunChart
 import com.example.openruncoach.domain.metrics.RunChartData
 import com.example.openruncoach.domain.metrics.RunMetrics
 import com.example.openruncoach.domain.workout.PaceTarget
 import com.example.openruncoach.theme.LocalRunChartColors
 import com.example.openruncoach.ui.common.formatPace
-import com.example.openruncoach.ui.components.ItemSpacing
 import kotlin.math.roundToInt
 
 @Composable
-fun RunChartsSection(metrics: RunMetrics, charts: RunChartData, paceTarget: PaceTarget? = null) {
+fun RunChartsSection(
+  metrics: RunMetrics,
+  charts: RunChartData,
+  paceTarget: PaceTarget? = null,
+  chartHeight: Dp = 132.dp,
+) {
   val colors = LocalRunChartColors.current
   val available = listOfNotNull(
-    charts.pace?.let { "Pace" },
-    charts.heartRate?.let { "Heart rate" },
-    charts.cadence?.let { "Cadence" },
+    charts.pace?.takeIf(::hasDrawableSeries)?.let { "Pace" },
+    charts.heartRate?.takeIf(::hasDrawableSeries)?.let { "Heart rate" },
+    charts.cadence?.takeIf(::hasDrawableSeries)?.let { "Cadence" },
   )
   if (available.isEmpty()) return
   var selected by rememberSaveable { mutableStateOf("Pace") }
   val active = selected.takeIf { it in available } ?: available.first()
-  Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
-    OpenRunTabs(available, available.indexOf(active), { selected = available[it] }, distributeEvenly = true)
+  Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    ChartMetricSelector(available, active) { selected = it }
     if (active == "Pace") charts.pace?.let { chart ->
       ChartSection(
         title = "Pace",
-        subtitle = listOfNotNull(
-          charts.averagePaceSecondsPerKm?.let { "Avg ${formatPace(it)}" },
-          charts.fastestThirtySecondPaceSecondsPerKm?.let { "Fastest 30 sec ${formatPace(it)}" },
-        ).joinToString(" · "),
+        subtitle = "min/km",
         chart = chart,
         durationSeconds = charts.durationSeconds,
         color = colors.pace,
         targetRange = paceTarget,
+        height = chartHeight,
       )
-      paceTarget?.let { target ->
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-          Column {
-            Text(charts.averagePaceSecondsPerKm?.let(::formatPace) ?: "Unknown",
-              style = MaterialTheme.typography.titleMedium)
-            Text("Average pace", style = MaterialTheme.typography.labelSmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant)
-          }
-          Column {
-            Text(
-              "${paceClock(target.minimumSecondsPerKm)}–${paceClock(target.maximumSecondsPerKm)} /km",
-              style = MaterialTheme.typography.titleMedium,
-            )
-            Text("Target range", style = MaterialTheme.typography.labelSmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant)
-          }
-        }
-      }
+      RunComparisonSummary(
+        firstValue = charts.averagePaceSecondsPerKm?.let { formatPace(it).replace(" min/km", " /km") },
+        firstLabel = "Average pace",
+        secondValue = paceTarget?.let { "${paceClock(it.minimumSecondsPerKm)}–${paceClock(it.maximumSecondsPerKm)} /km" },
+        secondLabel = "Target range",
+        accentSecond = paceTarget != null,
+        targetKey = paceTarget != null,
+      )
     }
     if (active == "Heart rate") charts.heartRate?.let { chart ->
       ChartSection(
         title = "Heart Rate",
-        subtitle = listOfNotNull(
-          metrics.averageHeartRate?.value?.roundToInt()?.let { "$it avg" },
-          metrics.maxHeartRate?.value?.roundToInt()?.let { "$it max" },
-        ).joinToString(" · "),
+        subtitle = "bpm",
         chart = chart,
         durationSeconds = charts.durationSeconds,
         color = colors.heartRate,
+        height = chartHeight,
+      )
+      RunComparisonSummary(
+        metrics.averageHeartRate?.value?.let { "${it.roundToInt()} bpm" }, "Average HR",
+        metrics.maxHeartRate?.value?.let { "${it.roundToInt()} bpm" }, "Max HR",
       )
     }
     if (active == "Cadence") charts.cadence?.let { chart ->
       ChartSection(
         title = "Cadence",
-        subtitle = listOfNotNull(
-          metrics.movingAverageCadence?.value?.roundToInt()?.let { "$it spm moving avg" },
-          metrics.maxCadence?.value?.roundToInt()?.let { "$it max" },
-        ).joinToString(" · "),
+        subtitle = "spm",
         chart = chart,
         durationSeconds = charts.durationSeconds,
         color = colors.cadence,
+        height = chartHeight,
       )
+      RunComparisonSummary(
+        (metrics.movingAverageCadence ?: metrics.averageCadence)?.value?.let { "${it.roundToInt()} spm" },
+        if (metrics.movingAverageCadence != null) "Moving average" else "Average cadence",
+        metrics.maxCadence?.value?.let { "${it.roundToInt()} spm" }, "Max cadence",
+      )
+    }
+  }
+}
+
+@Composable
+private fun ChartMetricSelector(labels: List<String>, selected: String, onSelected: (String) -> Unit) {
+  val shape = RoundedCornerShape(12.dp)
+  Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh, shape).selectableGroup()) {
+    labels.forEach { label ->
+      val active = label == selected
+      Box(
+        Modifier.weight(1f).heightIn(min = 48.dp)
+          .selectable(active, onClick = { onSelected(label) }, role = Role.Tab).padding(4.dp),
+        contentAlignment = Alignment.Center,
+      ) {
+        Box(
+          Modifier.fillMaxWidth()
+            .background(if (active) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent, shape)
+            .border(1.dp, if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.45f) else Color.Transparent, shape)
+            .padding(horizontal = 4.dp, vertical = 8.dp),
+          contentAlignment = Alignment.Center,
+        ) {
+          Text(label, style = MaterialTheme.typography.labelMedium,
+            color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+      }
+    }
+  }
+}
+
+/** Shared compact two-column presentation; unknown values stay unknown, never zero. */
+@Composable
+internal fun RunComparisonSummary(
+  firstValue: String?,
+  firstLabel: String,
+  secondValue: String?,
+  secondLabel: String,
+  accentSecond: Boolean = false,
+  targetKey: Boolean = false,
+) {
+  BoxWithConstraints(Modifier.fillMaxWidth()) {
+    val density = LocalDensity.current
+    val fontScale = density.fontScale.coerceAtLeast(1f)
+    val valueStyle = MaterialTheme.typography.titleMedium.copy(fontFeatureSettings = "tnum")
+    val labelStyle = MaterialTheme.typography.labelSmall
+    val measurer = rememberTextMeasurer()
+    val minimumColumnWidth = remember(firstValue, secondValue, firstLabel, secondLabel, targetKey, valueStyle, labelStyle, density, measurer) {
+      val textWidth = maxOf(
+        measurer.measure(firstValue ?: "—", valueStyle, maxLines = 1).size.width,
+        measurer.measure(secondValue ?: "—", valueStyle, maxLines = 1).size.width,
+        measurer.measure(firstLabel, labelStyle, maxLines = 1).size.width,
+        measurer.measure(secondLabel, labelStyle, maxLines = 1).size.width,
+      )
+      with(density) { textWidth.toDp() } + (if (targetKey) 22.dp else 0.dp) + 4.dp
+    }
+    val columnWidth = maxOf((maxWidth - 12.dp) / 2, minimumColumnWidth)
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+      Column(Modifier.width(columnWidth).heightIn(min = 44.dp * fontScale), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(firstValue ?: "—", style = valueStyle, maxLines = 1)
+        Text(firstLabel, style = labelStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+      }
+      Row(Modifier.width(columnWidth).heightIn(min = 44.dp * fontScale),
+        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (targetKey) Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+          Box(Modifier.width(14.dp).height(5.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.7f), RoundedCornerShape(2.dp)))
+          Box(Modifier.width(14.dp).height(5.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f), RoundedCornerShape(2.dp)))
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+          Text(secondValue ?: "—", style = valueStyle, maxLines = 1,
+            color = if (accentSecond) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+          Text(secondLabel, style = labelStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+      }
     }
   }
 }
@@ -115,28 +201,19 @@ private fun ChartSection(
   chart: PreparedRunChart,
   durationSeconds: Long,
   color: Color,
+  height: Dp,
   targetRange: PaceTarget? = null,
 ) {
-  Column(verticalArrangement = Arrangement.spacedBy(ItemSpacing)) {
+  val axisWidth = PaceAxisWidth * LocalDensity.current.fontScale.coerceAtLeast(1f)
+  Column(Modifier.semantics { contentDescription = "$title ($subtitle) over elapsed time" },
+    verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    LineChart(chart, durationSeconds, color, height, axisWidth, targetRange)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-      Column {
-        Text(title, style = MaterialTheme.typography.titleMedium)
-        if (subtitle.isNotBlank()) Text(subtitle, style = MaterialTheme.typography.bodySmall)
-      }
-      chart.sourceDeviceName?.let {
-        Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-      }
-    }
-    if (chart.scale != null) {
-      Text("min/km", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-    LineChart(chart, durationSeconds, color, targetRange)
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-      if (chart.scale != null) Spacer(Modifier.width(PaceAxisWidth))
+      Spacer(Modifier.width(axisWidth))
       Row(Modifier.weight(1f), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text("0:00", style = MaterialTheme.typography.labelSmall)
-        Text(formatElapsed(durationSeconds / 2), style = MaterialTheme.typography.labelSmall)
-        Text(formatElapsed(durationSeconds), style = MaterialTheme.typography.labelSmall)
+        Text("0:00", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(formatElapsed(durationSeconds / 2), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(formatElapsed(durationSeconds), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
       }
     }
   }
@@ -147,72 +224,103 @@ private fun LineChart(
   chart: PreparedRunChart,
   durationSeconds: Long,
   lineColor: Color,
+  height: Dp,
+  axisWidth: Dp,
   targetRange: PaceTarget? = null,
 ) {
   val gridColor = LocalRunChartColors.current.grid
   val referenceColor = LocalRunChartColors.current.reference
   val surfaceColor = MaterialTheme.colorScheme.surface
+  val points = remember(chart) { chart.points }
+  val bounds = remember(chart) {
+    val minimum = points.minOfOrNull { it.value } ?: 0.0
+    val maximum = points.maxOfOrNull { it.value } ?: minimum
+    val padding = maxOf(5.0, (maximum - minimum) * 0.1)
+    (minimum - padding).coerceAtLeast(0.0) to maximum + padding
+  }
+  val scale = remember(chart, targetRange) {
+    chart.scale?.let { original ->
+      // Display-only extension keeps a legitimate target visible without changing samples.
+      val lower = minOf(original.minimumValue, targetRange?.minimumSecondsPerKm ?: original.minimumValue)
+      val upper = maxOf(original.maximumValue, targetRange?.maximumSecondsPerKm ?: original.maximumValue)
+      original.copy(minimumValue = lower, maximumValue = upper,
+        tickValues = listOf(lower, (lower + upper) / 2, upper))
+    }
+  }
+  val minimum = scale?.minimumValue ?: bounds.first
+  val maximum = scale?.maximumValue ?: bounds.second
+  val range = (maximum - minimum).takeIf { it > 0.0 } ?: 1.0
+  val ticks = scale?.tickValues ?: listOf(maximum, (minimum + maximum) / 2, minimum)
   Row(
-    Modifier.fillMaxWidth().height(180.dp)
-      .background(surfaceColor, RoundedCornerShape(12.dp)).padding(10.dp)
+    Modifier.fillMaxWidth().height(height)
+      .background(surfaceColor, RoundedCornerShape(12.dp)).padding(4.dp)
   ) {
-    chart.scale?.let { scale ->
-      Column(
-        Modifier.width(PaceAxisWidth).fillMaxHeight().padding(end = 6.dp),
-        verticalArrangement = Arrangement.SpaceBetween,
-      ) {
-        scale.tickValues.forEach { value ->
-          Text(formatPaceAxis(value), style = MaterialTheme.typography.labelSmall)
-        }
+    Column(
+      Modifier.width(axisWidth).fillMaxHeight().padding(end = 6.dp),
+      verticalArrangement = Arrangement.SpaceBetween,
+    ) {
+      ticks.forEach { value ->
+        Text(if (scale != null) formatPaceAxis(value) else value.roundToInt().toString(), style = MaterialTheme.typography.labelSmall)
       }
     }
-    Canvas(Modifier.weight(1f).fillMaxHeight()) {
-      val points = chart.points
-      if (points.isEmpty()) return@Canvas
-      val scale = chart.scale
-      val minimum = scale?.minimumValue ?: points.minOf { it.value }
-      val maximum = scale?.maximumValue ?: points.maxOf { it.value }
-      val range = (maximum - minimum).takeIf { it > 0.0 } ?: 1.0
+    Spacer(Modifier.weight(1f).fillMaxHeight().drawWithCache {
       val totalSeconds = durationSeconds.coerceAtLeast(1).toDouble()
       val gridFractions = scale?.tickValues?.map(scale::verticalFraction) ?: listOf(0.0, 0.5, 1.0)
-      gridFractions.forEach { fraction ->
-        val y = fraction.toFloat() * size.height
-        drawLine(gridColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx())
-      }
-      if (scale != null && targetRange != null) {
-        val firstY = scale.verticalFraction(targetRange.minimumSecondsPerKm).toFloat() * size.height
-        val secondY = scale.verticalFraction(targetRange.maximumSecondsPerKm).toFloat() * size.height
-        val top = minOf(firstY, secondY).coerceIn(0f, size.height)
-        val bottom = maxOf(firstY, secondY).coerceIn(0f, size.height)
-        drawRect(
-          color = lineColor.copy(alpha = 0.12f),
-          topLeft = Offset(0f, top),
-          size = androidx.compose.ui.geometry.Size(size.width, (bottom - top).coerceAtLeast(1.dp.toPx())),
-        )
-      }
-      scale?.referenceValue?.let { reference ->
-        val y = scale.verticalFraction(reference).toFloat() * size.height
-        drawLine(
-          color = referenceColor,
-          start = Offset(0f, y),
-          end = Offset(size.width, y),
-          strokeWidth = 1.dp.toPx(),
-          pathEffect = PathEffect.dashPathEffect(floatArrayOf(8.dp.toPx(), 6.dp.toPx())),
-        )
-      }
-      chart.segments.forEach { segment ->
-        if (segment.isEmpty()) return@forEach
-        val path = Path()
-        segment.forEachIndexed { index, point ->
-          val x = (point.elapsedSeconds / totalSeconds).coerceIn(0.0, 1.0).toFloat() * size.width
-          val yFraction = scale?.verticalFraction(point.value)
-            ?: (1.0 - (point.value - minimum) / range).coerceIn(0.0, 1.0)
-          val y = yFraction.toFloat() * size.height
-          if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+      val paths = chart.segments.filter { it.size >= 2 }.map { segment ->
+        val line = Path().apply {
+          segment.forEachIndexed { index, point ->
+            val x = (point.elapsedSeconds / totalSeconds).coerceIn(0.0, 1.0).toFloat() * size.width
+            val fraction = scale?.verticalFraction(point.value)
+              ?: (1.0 - (point.value - minimum) / range).coerceIn(0.0, 1.0)
+            val y = fraction.toFloat() * size.height
+            if (index == 0) moveTo(x, y) else lineTo(x, y)
+          }
         }
-        drawPath(path, lineColor, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round))
+        val area = Path().apply {
+          addPath(line)
+          val endX = (segment.last().elapsedSeconds / totalSeconds).coerceIn(0.0, 1.0).toFloat() * size.width
+          val startX = (segment.first().elapsedSeconds / totalSeconds).coerceIn(0.0, 1.0).toFloat() * size.width
+          lineTo(endX, size.height)
+          lineTo(startX, size.height)
+          close()
+        }
+        line to area
       }
-    }
+      val fill = Brush.verticalGradient(listOf(lineColor.copy(alpha = 0.14f), Color.Transparent), endY = size.height)
+      val lineStroke = Stroke(width = 1.4.dp.toPx(), cap = StrokeCap.Round)
+      val dash = PathEffect.dashPathEffect(floatArrayOf(8.dp.toPx(), 6.dp.toPx()))
+      onDrawBehind {
+        gridFractions.forEach { fraction ->
+          val y = fraction.toFloat() * size.height
+          drawLine(gridColor.copy(alpha = 0.35f), Offset(0f, y), Offset(size.width, y), strokeWidth = 0.5.dp.toPx())
+        }
+        if (scale != null && targetRange != null) {
+          val firstY = scale.verticalFraction(targetRange.minimumSecondsPerKm).toFloat() * size.height
+          val secondY = scale.verticalFraction(targetRange.maximumSecondsPerKm).toFloat() * size.height
+          val top = minOf(firstY, secondY).coerceIn(0f, size.height)
+          val bottom = maxOf(firstY, secondY).coerceIn(0f, size.height)
+          if (bottom > top) drawRect(
+            color = lineColor.copy(alpha = 0.07f),
+            topLeft = Offset(0f, top),
+            size = androidx.compose.ui.geometry.Size(size.width, bottom - top),
+          )
+        }
+        scale?.referenceValue?.let { reference ->
+          val y = scale.verticalFraction(reference).toFloat() * size.height
+          drawLine(
+            color = referenceColor.copy(alpha = 0.4f),
+            start = Offset(0f, y),
+            end = Offset(size.width, y),
+            strokeWidth = 0.75.dp.toPx(),
+            pathEffect = dash,
+          )
+        }
+        paths.forEach { (line, area) ->
+          drawPath(area, fill)
+          drawPath(line, lineColor, style = lineStroke)
+        }
+      }
+    })
   }
 }
 
@@ -228,4 +336,8 @@ private fun paceClock(secondsPerKm: Double): String {
   return "${seconds / 60}:${(seconds % 60).toString().padStart(2, '0')}"
 }
 
-private val PaceAxisWidth = 48.dp
+private val PaceAxisWidth = 40.dp
+
+private fun hasDrawableSeries(chart: PreparedRunChart): Boolean = chart.segments.any {
+  it.size >= 2 && it.last().elapsedSeconds > it.first().elapsedSeconds
+}

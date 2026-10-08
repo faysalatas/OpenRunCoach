@@ -1,7 +1,7 @@
 # OpenRunCoach UI Rulebook
 
 **Status:** Design source of truth  
-**Version:** 1.0  
+**Version:** 1.2\
 **Applies to:** Android app UI built with Jetpack Compose  
 **Visual targets:** `docs/UI/openruncoach-ui-target.png` and, for History and workout details, `docs/UI/history-workout-detail-target.png`
 
@@ -89,7 +89,9 @@ The palette below is derived from the approved reference and should be encoded a
 
 Use **one main accent color** throughout the normal product UI.
 
-Do not assign a unique color to every metric or workout type.
+Do not assign a unique color to every metric. History may use centrally defined,
+low-saturation workout-type accents as narrow row-edge strips; mint remains the
+dominant accent. Unknown types stay neutral and must not be inferred from pace.
 
 ### Semantic colors
 
@@ -381,6 +383,12 @@ Reflow metric groups into fewer columns on narrow screens or at larger font scal
 rather than truncating recorded values. Four metrics should use a balanced 2×2 grid
 when a readable single row is not possible.
 
+Completed Run Overview is an exception: use one compact horizontal card of equal
+metric columns (normally four), each with a vector icon, value, and muted label.
+Separate columns with subtle vertical rules. Omit unavailable metrics and redistribute
+columns. Keep the row at narrow widths/large fonts by allowing horizontal scrolling
+of readable equal-width columns rather than shrinking values or returning to 2×2.
+
 Examples:
 
 - Distance
@@ -493,6 +501,40 @@ Rules:
 - Key metrics are shown once, not repeatedly across several cards.
 - The analysis section may be richer but should remain secondary to the actual run data.
 
+Confirmed completed-run patterns:
+
+- Reuse bundled workout heroes only from an actual associated workout type, with
+  a compact dark-gradient header and local tabs below it. Unmatched runs remain neutral.
+- Overview sizes its map/plot against the available viewport and font scale so the
+  primary content is compact at normal phone sizes; retain readable text and scrolling
+  on small screens/large fonts. Keep the four-column metric card.
+- Detail routes use a real dark/desaturated street map when available, with mint
+  route/start/finish and padded whole-route fitting. MapLibre rendering is independent
+  of replaceable style/tile configuration. Keep required map-data attribution visible.
+- Reuse the dark Canvas silhouette during map loading, offline/tile/style failure.
+  History thumbnails remain Canvas-only; never create a map per list row.
+- Charts use a compact equal-width rounded metric pill, not navigation underlines;
+  keep at least 48 dp touch targets and a stable chart/summary footprint when switching.
+  Use restrained axes/grid, a thin line and
+  subtle mint area fill fading to transparent. Keep actual values/gaps unchanged.
+- Pace target bands apply only to meaningful continuous whole-run prescriptions,
+  never interval work targets. Average/target summaries dominate, with a quiet target key;
+  Fastest 30 sec and off-scale clipping notes belong in Recording diagnostics.
+- Split Δ is split pace minus canonical whole-run average pace, including partial
+  splits. Positive means slower and stays neutral; negative means faster and may
+  use restrained mint. Use explicitly aligned Km/Pace/Δ/HR columns (numbers right aligned).
+- Negative/positive split compares two equal-distance halves using genuine cumulative
+  distance/time interpolation. Never compare just first/last kilometre or average
+  unweighted paces. ±3 sec/km is Even split; suppress short/uncertain results.
+- Keep cadence/duration in collapsed Split details. Use only average pace and
+  positive/negative/even half-run pacing in the primary summary, with collapsed Half-run
+  details. Do not show fastest/slowest split rankings. Provenance is a small muted caption.
+- Analysis groups completion/cost/volume in one compact outcome card, uses aligned
+  Planned/Actual columns, and keeps continuity/confidence visible. Full reasons stay
+  under collapsed Evidence. Association actions remain in a compact lower section.
+  Do not visually equate an interval work target with whole-run average pace.
+- Data sources stays collapsed and Ignore run stays a secondary text action.
+
 ---
 
 ## 19. Coach Analysis rules
@@ -510,6 +552,12 @@ Suggested order:
 Internal domain concepts such as `WorkoutResponse`, continuity, adherence, session cost, and confidence may be surfaced when useful, but should use human-readable labels.
 
 Do not create synthetic overall scores unless the domain model explicitly defines them.
+
+Completed-run Coach defaults to recommendation/status, at most 2–4 concise
+evidence-backed observations, and one action-consistent next-training implication.
+Keep lower-priority evidence, confidence, RPE/fatigue, and full original reasons under
+More details. Analysis remains the factual table; Coach is the short takeaway, not
+the same table repeated as paragraphs. No new evaluator or invented conclusion.
 
 ---
 

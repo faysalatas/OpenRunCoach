@@ -175,6 +175,20 @@ class WorkoutAdherenceEvaluatorTest {
     assertEquals(WorkoutExecutionStatus.ABORTED, result.status)
   }
 
+  @Test fun currentActualProjectionPreservesPersistedCompletionAndPrescription() {
+    val workout = distanceWorkout(4000.0)
+    val original = run(3780.0)
+    val recorded = evaluator.evaluate(workout, null, original, feedback())
+    val current = com.example.openruncoach.domain.RunActualResolver.resolve(original.copy(
+      healthConnectRecordId = "preferred-provider", physicalRunId = original.physicalRunId,
+      distanceMeters = 3680.0, durationSeconds = 1700))
+    val displayed = recorded.withActualSummary(current)
+    assertEquals(recorded.copy(actualRunId = current.healthConnectRecordId,
+      actualDistanceMeters = 3680.0, actualDurationSeconds = 1700), displayed)
+    assertEquals(recorded.status, displayed.status)
+    assertEquals(recorded, recorded.withActualSummary(current.copy(physicalRunId = "unrelated")))
+  }
+
   private fun distanceWorkout(
     distanceMeters: Double,
     purpose: WorkoutPurpose = WorkoutPurpose.AEROBIC_BASE,

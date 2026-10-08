@@ -24,6 +24,23 @@ class GoalCompletionEvaluatorTest {
   private val now = Instant.parse("2026-09-25T08:00:00Z")
   private val evaluator = GoalCompletionEvaluator()
 
+  @Test fun physicalCheckoutIdentityPreservesStrictGoalEvaluationAcrossProviderRepresentations() {
+    val providerRun = run(5030.0).copy(physicalRunId = "physical")
+    val result = evaluator.evaluate(goal(), providerRun, metrics(5030.0), WorkoutLifecycleState.COMPLETED,
+      feedback().copy(runId = "physical"))
+    assertEquals(GoalCompletionStatus.GOAL_DISTANCE_DEMONSTRATED, result.status)
+    val unrelated = evaluator.evaluate(goal(), providerRun, metrics(5030.0), WorkoutLifecycleState.COMPLETED,
+      feedback().copy(runId = "other-physical"))
+    assertEquals(GoalCompletionStatus.INVALID_RUN, unrelated.status)
+  }
+
+  @Test fun correctedCanonicalDistanceCannotCompleteGoalUsingOriginalProviderVolume() {
+    val result = evaluator.evaluate(goal(), run(4780.0), metrics(5030.0), WorkoutLifecycleState.COMPLETED, feedback())
+    assertEquals(GoalCompletionStatus.TARGET_NOT_REACHED, result.status)
+    assertEquals(4780.0, result.observedDistanceMeters!!, 0.0)
+    assertFalse(result.completed)
+  }
+
   @Test fun fourPointSevenEightKmDoesNotCompleteFiveK() {
     val result = evaluator.evaluate(goal(), run(4_780.0), metrics(4_780.0), WorkoutLifecycleState.COMPLETED, feedback())
     assertFalse(result.completed)

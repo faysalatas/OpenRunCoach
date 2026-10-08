@@ -28,6 +28,7 @@ import com.example.openruncoach.domain.coaching.CoachingDecision
 import com.example.openruncoach.ui.common.WeekSelectorUiModel
 import com.example.openruncoach.ui.common.coachingActionLabel
 import com.example.openruncoach.ui.common.formatDistance
+import com.example.openruncoach.ui.common.formatActualDuration
 import com.example.openruncoach.ui.common.formatDuration
 import com.example.openruncoach.ui.common.formatHistoryDate
 import com.example.openruncoach.ui.common.formatPace
@@ -96,7 +97,7 @@ fun RunSummaryCard(
     Column(Modifier.padding(ScreenPadding), verticalArrangement = Arrangement.spacedBy(ItemSpacing)) {
       Text("Run", style = MaterialTheme.typography.titleLarge)
       Text(
-        "${formatDistance(run.distanceMeters)} · ${formatDuration(run.durationSeconds)}",
+        "${formatDistance(run.distanceMeters)} · ${formatActualDuration(run.durationSeconds)}",
         style = MaterialTheme.typography.headlineSmall,
       )
       Text("Average pace ${formatPace(run.averagePaceSecondsPerKm)}")
@@ -179,7 +180,7 @@ fun RunHistoryItem(run: RunSummary, onClick: () -> Unit, modifier: Modifier = Mo
       verticalAlignment = Alignment.CenterVertically,
     ) {
       Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("${formatDistance(run.distanceMeters)} · ${formatDuration(run.durationSeconds)}", fontWeight = FontWeight.SemiBold)
+        Text("${formatDistance(run.distanceMeters)} · ${formatActualDuration(run.durationSeconds)}", fontWeight = FontWeight.SemiBold)
         Text(formatHistoryDate(run.startTime), style = MaterialTheme.typography.bodyMedium)
       }
       Text(formatPace(run.averagePaceSecondsPerKm), style = MaterialTheme.typography.bodyMedium)

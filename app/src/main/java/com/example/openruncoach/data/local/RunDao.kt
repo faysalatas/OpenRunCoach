@@ -1,5 +1,7 @@
 package com.example.openruncoach.data.local
 
+import androidx.room.Embedded
+import androidx.room.Relation
 import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Upsert
@@ -7,8 +9,46 @@ import androidx.room.Update
 import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
 
+/** Summary fallback reads need values, not potentially large sensor series. */
+data class ActualMetricSnapshot(
+  @Embedded val snapshot: RunMetricsEntity,
+  @Relation(parentColumn = "runId", entityColumn = "runId")
+  val values: List<RunMetricValueEntity>,
+)
+
+data class RunWithActualMetrics(
+  @Embedded val run: RunEntity,
+  @Relation(parentColumn = "healthConnectRecordId", entityColumn = "runId", entity = RunMetricsEntity::class)
+  val metrics: List<ActualMetricSnapshot>,
+)
+
 @Dao
 interface RunDao {
+  @Transaction
+  @Query("""SELECT * FROM runs WHERE isCanonical = 1 AND physicalRunId = COALESCE(
+    (SELECT physicalRunId FROM runs WHERE healthConnectRecordId = :runId), :runId) LIMIT 1""")
+  fun observeActualRun(runId: String): Flow<RunWithActualMetrics?>
+
+  @Transaction
+  @Query("""SELECT * FROM runs WHERE isCanonical = 1 AND physicalRunId = COALESCE(
+    (SELECT physicalRunId FROM runs WHERE healthConnectRecordId = :runId), :runId) LIMIT 1""")
+  suspend fun getActualRun(runId: String): RunWithActualMetrics?
+
+  @Transaction
+  @Query("SELECT * FROM runs WHERE isCanonical = 1 AND relevance = 'ACTIVE' ORDER BY startTimeEpochMillis DESC, healthConnectRecordId DESC LIMIT 10")
+  fun observeRecentActualRuns(): Flow<List<RunWithActualMetrics>>
+
+  @Transaction
+  @Query("SELECT * FROM runs WHERE isCanonical = 1 AND relevance = 'ACTIVE' ORDER BY startTimeEpochMillis DESC, healthConnectRecordId DESC")
+  fun observeCanonicalActualRuns(): Flow<List<RunWithActualMetrics>>
+
+  @Transaction
+  @Query("SELECT * FROM runs WHERE isCanonical = 1 AND relevance = 'IGNORED' ORDER BY startTimeEpochMillis DESC, healthConnectRecordId DESC")
+  fun observeIgnoredActualRuns(): Flow<List<RunWithActualMetrics>>
+
+  @Query("SELECT * FROM runs WHERE healthConnectRecordId = :runId LIMIT 1")
+  suspend fun getRun(runId: String): RunEntity?
+
   @Query("SELECT * FROM runs WHERE healthConnectRecordId = :runId LIMIT 1")
   fun observeRun(runId: String): Flow<RunEntity?>
 
@@ -56,15 +96,6 @@ interface RunDao {
     updateRelevance(physicalRunId, "IGNORED")
   }
 
-  @Query(
-    """UPDATE run_feedback SET runId = :canonicalRunId
-      WHERE runId = (SELECT run_feedback.runId FROM run_feedback
-        INNER JOIN runs ON runs.healthConnectRecordId = run_feedback.runId
-        WHERE runs.physicalRunId = :physicalRunId AND run_feedback.runId != :canonicalRunId LIMIT 1)
-      AND NOT EXISTS (SELECT 1 FROM run_feedback WHERE runId = :canonicalRunId)"""
-  )
-  suspend fun moveFeedbackToCanonical(physicalRunId: String, canonicalRunId: String)
-
   @Query("UPDATE workout_run_associations SET actualRunId = :canonicalRunId WHERE physicalRunId = :physicalRunId")
   suspend fun updateAssociationCanonicalRecord(physicalRunId: String, canonicalRunId: String)
 
@@ -73,7 +104,6 @@ interface RunDao {
 
   @Transaction
   suspend fun repointPhysicalRunReferences(physicalRunId: String, canonicalRunId: String) {
-    moveFeedbackToCanonical(physicalRunId, canonicalRunId)
     updateAssociationCanonicalRecord(physicalRunId, canonicalRunId)
     updateExecutionCanonicalRecord(physicalRunId, canonicalRunId)
   }

@@ -22,6 +22,9 @@ data class PhysicalRunRouteWithPointsAndSplits(
   val physicalRunId: String,
   val canonicalStartTimeEpochMillis: Long,
   val canonicalEndTimeEpochMillis: Long,
+  val canonicalRunDistanceMeters: Double?,
+  val canonicalRunId: String = physicalRunId,
+  val canonicalDurationSeconds: Long = (canonicalEndTimeEpochMillis - canonicalStartTimeEpochMillis) / 1000L,
   @Relation(parentColumn = "runId", entityColumn = "runId")
   val points: List<RunRoutePointEntity>,
   @Relation(parentColumn = "runId", entityColumn = "runId")
@@ -30,6 +33,38 @@ data class PhysicalRunRouteWithPointsAndSplits(
 
 @Dao
 interface RunRouteDao {
+  @Transaction
+  suspend fun backfillPhysicalSplits(
+    runId: String,
+    derive: (PhysicalRunRouteWithPointsAndSplits, RunMetricsWithValues?) -> List<RunSplitEntity>,
+  ) {
+    val stored = getPhysicalRoute(runId) ?: return
+    val resolved = derive(stored, getPhysicalMetrics(runId))
+    if (stored.splits.sortedBy { it.ordinal } != resolved) replaceSplitCache(stored.route.runId, resolved)
+  }
+
+  @Transaction
+  @Query("""SELECT run_metrics.* FROM run_metrics JOIN runs canonical ON canonical.healthConnectRecordId = run_metrics.runId
+    WHERE canonical.isCanonical = 1 AND canonical.physicalRunId = COALESCE(
+      (SELECT physicalRunId FROM runs WHERE healthConnectRecordId = :runId), :runId) LIMIT 1""")
+  suspend fun getPhysicalMetrics(runId: String): RunMetricsWithValues?
+
+  @Transaction
+  @Query("""SELECT run_metrics.* FROM run_metrics JOIN runs canonical ON canonical.healthConnectRecordId = run_metrics.runId
+    WHERE canonical.isCanonical = 1 AND canonical.physicalRunId = COALESCE(
+      (SELECT physicalRunId FROM runs WHERE healthConnectRecordId = :runId), :runId) LIMIT 1""")
+  fun observePhysicalMetrics(runId: String): Flow<RunMetricsWithValues?>
+
+  @Query("DELETE FROM run_splits WHERE runId = :runId")
+  suspend fun deleteSplits(runId: String)
+
+  @Transaction
+  suspend fun replaceSplitCache(runId: String, splits: List<RunSplitEntity>) {
+    require(splits.all { it.runId == runId })
+    deleteSplits(runId)
+    if (splits.isNotEmpty()) insertSplits(splits)
+  }
+
   @Transaction
   @Query("SELECT * FROM run_routes WHERE runId = :runId LIMIT 1")
   fun observeRoute(runId: String): Flow<RunRouteWithPointsAndSplits?>
@@ -41,7 +76,10 @@ interface RunRouteDao {
   @Transaction
   @Query("""SELECT run_routes.*, owner.physicalRunId,
       canonical.startTimeEpochMillis AS canonicalStartTimeEpochMillis,
-      canonical.endTimeEpochMillis AS canonicalEndTimeEpochMillis
+      canonical.endTimeEpochMillis AS canonicalEndTimeEpochMillis,
+      canonical.distanceMeters AS canonicalRunDistanceMeters,
+      canonical.healthConnectRecordId AS canonicalRunId,
+      canonical.durationSeconds AS canonicalDurationSeconds
     FROM run_routes JOIN runs AS owner ON owner.healthConnectRecordId = run_routes.runId
     JOIN runs AS canonical ON canonical.physicalRunId = owner.physicalRunId AND canonical.isCanonical = 1
     WHERE owner.physicalRunId = COALESCE(
@@ -53,7 +91,10 @@ interface RunRouteDao {
   @Transaction
   @Query("""SELECT run_routes.*, owner.physicalRunId,
       canonical.startTimeEpochMillis AS canonicalStartTimeEpochMillis,
-      canonical.endTimeEpochMillis AS canonicalEndTimeEpochMillis
+      canonical.endTimeEpochMillis AS canonicalEndTimeEpochMillis,
+      canonical.distanceMeters AS canonicalRunDistanceMeters,
+      canonical.healthConnectRecordId AS canonicalRunId,
+      canonical.durationSeconds AS canonicalDurationSeconds
     FROM run_routes JOIN runs AS owner ON owner.healthConnectRecordId = run_routes.runId
     JOIN runs AS canonical ON canonical.physicalRunId = owner.physicalRunId AND canonical.isCanonical = 1
     WHERE owner.physicalRunId = COALESCE(
@@ -65,7 +106,10 @@ interface RunRouteDao {
   @Transaction
   @Query("""SELECT run_routes.*, owner.physicalRunId,
       canonical.startTimeEpochMillis AS canonicalStartTimeEpochMillis,
-      canonical.endTimeEpochMillis AS canonicalEndTimeEpochMillis
+      canonical.endTimeEpochMillis AS canonicalEndTimeEpochMillis,
+      canonical.distanceMeters AS canonicalRunDistanceMeters,
+      canonical.healthConnectRecordId AS canonicalRunId,
+      canonical.durationSeconds AS canonicalDurationSeconds
     FROM run_routes JOIN runs AS owner ON owner.healthConnectRecordId = run_routes.runId
     JOIN runs AS canonical ON canonical.physicalRunId = owner.physicalRunId AND canonical.isCanonical = 1
     ORDER BY CASE WHEN run_routes.runId = owner.physicalRunId THEN 0 ELSE 1 END, run_routes.runId""")

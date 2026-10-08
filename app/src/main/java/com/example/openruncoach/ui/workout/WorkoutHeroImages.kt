@@ -4,7 +4,7 @@ import androidx.annotation.DrawableRes
 import com.example.openruncoach.R
 import com.example.openruncoach.domain.workout.WorkoutType
 
-/** Single production mapping from the existing workout model to bundled Home hero artwork. */
+/** Shared semantic mapping to bundled artwork for Home and workout/run detail headers. */
 @DrawableRes
 fun WorkoutType.heroImageResource(): Int? = when (this) {
   WorkoutType.EASY_RUN -> R.drawable.hero_easy

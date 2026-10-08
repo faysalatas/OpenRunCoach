@@ -24,6 +24,8 @@ data class RunSummary(
   val physicalRunId: String = healthConnectRecordId,
   val relevance: RunRelevance = RunRelevance.ACTIVE,
   val canonicalMatchDecision: PhysicalRunMatchDecision = PhysicalRunMatchDecision.SEPARATE,
+  /** Read-time actual-summary provenance; never persisted over provider records. */
+  val actualProvenance: RunActualProvenance? = null,
 )
 
 enum class SourceDeviceType { WATCH, OTHER }

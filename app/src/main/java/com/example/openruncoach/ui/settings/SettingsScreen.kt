@@ -135,6 +135,7 @@ fun SettingsScreen(
         SyncState.Error -> ErrorText("Could not sync runs. Saved runs are unchanged.")
       }
     }
+    DiagnosticDumpSettings()
     SettingsCard("About") {
       Text("OpenRunCoach")
       Text("Version 1.0", style = MaterialTheme.typography.bodyMedium)

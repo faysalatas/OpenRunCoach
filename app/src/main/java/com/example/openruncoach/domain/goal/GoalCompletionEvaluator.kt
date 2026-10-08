@@ -1,12 +1,14 @@
 package com.example.openruncoach.domain.goal
 
 import com.example.openruncoach.domain.CompletionStatus
+import com.example.openruncoach.domain.RunActualResolver
 import com.example.openruncoach.domain.RunFeedback
-import com.example.openruncoach.domain.RunSummary
 import com.example.openruncoach.domain.RunRelevance
-import com.example.openruncoach.domain.metrics.RunMetrics
+import com.example.openruncoach.domain.RunSummary
+import com.example.openruncoach.domain.belongsTo
 import com.example.openruncoach.domain.metrics.RunContinuityEvaluator
 import com.example.openruncoach.domain.metrics.RunContinuityEvidence
+import com.example.openruncoach.domain.metrics.RunMetrics
 import com.example.openruncoach.domain.workout.WorkoutLifecycleState
 
 enum class GoalCompletionStatus {
@@ -42,7 +44,7 @@ class GoalCompletionEvaluator {
     }
     if (!canonicalRun.isCanonical || canonicalRun.relevance != RunRelevance.ACTIVE ||
       metrics?.runId?.let { it != canonicalRun.healthConnectRecordId } == true ||
-      feedback?.runId?.let { it != canonicalRun.healthConnectRecordId } == true
+      feedback?.let { !it.belongsTo(canonicalRun) } == true
     ) {
       return result(GoalCompletionStatus.INVALID_RUN, target, null, "The result must use the matching canonical run and metrics.")
     }
@@ -91,8 +93,7 @@ class GoalCompletionEvaluator {
     GoalCompletionResult(status, false, target, observed, listOf(reason))
 
   private fun observedDistance(run: RunSummary, metrics: RunMetrics?): Double? =
-    metrics?.distanceMeters?.value?.takeIf { it.isFinite() && it > 0.0 }
-      ?: run.distanceMeters?.takeIf { it.isFinite() && it > 0.0 }
+    RunActualResolver.resolve(run, metrics).distanceMeters
 
   private fun formatKm(meters: Double) = "%.2f km".format(java.util.Locale.ROOT, meters / 1_000.0)
 

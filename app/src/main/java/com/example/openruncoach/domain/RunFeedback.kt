@@ -29,6 +29,7 @@ data class RunFeedbackDraft(
 
 data class RunFeedback(
   val id: String,
+  /** Stable physical-run identity; repositories normalize legacy provider-keyed storage. */
   val runId: String,
   val rpe: Int,
   val cardioEffort: CardioEffort,
@@ -40,3 +41,7 @@ data class RunFeedback(
   val createdAt: Instant,
   val updatedAt: Instant,
 )
+
+/** Provider-ID compatibility for old in-memory callers; persisted consumers resolve physically. */
+fun RunFeedback.belongsTo(run: RunSummary): Boolean =
+  runId == run.physicalRunId || runId == run.healthConnectRecordId

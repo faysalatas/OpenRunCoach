@@ -6,10 +6,11 @@ import com.example.openruncoach.data.RunFeedbackRepository
 import com.example.openruncoach.data.RunRepository
 import com.example.openruncoach.data.TrainingGoalRepository
 import com.example.openruncoach.data.TrainingPlanRepository
-import com.example.openruncoach.data.WorkoutResponseRepository
 import com.example.openruncoach.data.WorkoutExecutionRepository
+import com.example.openruncoach.data.WorkoutResponseRepository
 import com.example.openruncoach.domain.RunFeedback
 import com.example.openruncoach.domain.RunSummary
+import com.example.openruncoach.domain.aggregateActualPaceSecondsPerKm
 import com.example.openruncoach.domain.coaching.CoachingDecision
 import com.example.openruncoach.domain.coaching.CoachingEngine
 import com.example.openruncoach.domain.goal.GoalDistance
@@ -333,7 +334,7 @@ private fun buildWeekSummary(
   )
 }
 
-private fun buildWeeklyMetrics(
+internal fun buildWeeklyMetrics(
   monday: LocalDate,
   runs: List<RunSummary>,
   plan: TrainingPlan?,
@@ -353,8 +354,7 @@ private fun buildWeeklyMetrics(
   val plannedDistance = plannedDistances.takeIf { it.isNotEmpty() && it.all { distance -> distance != null } }
     ?.sumOf { requireNotNull(it) }
   val totalDistance = if (usePlannedDistance) plannedDistance else actualDistance
-  val averagePace = actualDistance?.takeIf { it > 0.0 }
-    ?.let { distance -> weekRuns.sumOf(RunSummary::durationSeconds) * 1_000.0 / distance }
+  val averagePace = aggregateActualPaceSecondsPerKm(weekRuns)
   val comparisons = calculateFourWeekComparisons(monday, runs, actualDistance, averagePace, zoneId)
   val dailyMetrics = (0L..6L).map { offset ->
     val date = monday.plusDays(offset)
@@ -370,8 +370,7 @@ private fun buildWeeklyMetrics(
     HomeDailyMetric(
       date = date,
       distanceMeters = if (usePlannedDistance) plannedDayDistance else dayDistance,
-      averagePaceSecondsPerKm = dayDistance?.takeIf { it > 0.0 }
-        ?.let { distance -> dayRuns.sumOf(RunSummary::durationSeconds) * 1_000.0 / distance },
+      averagePaceSecondsPerKm = aggregateActualPaceSecondsPerKm(dayRuns),
     )
   }
   return HomeWeeklyMetrics(
@@ -417,8 +416,7 @@ internal fun calculateFourWeekComparisons(
 
   val hasCompletePaceHistory = historicalWeeks.flatten().all { it.durationSeconds > 0 }
   val historicalPace = if (hasCompletePaceHistory) {
-    historicalWeeks.flatten().sumOf(RunSummary::durationSeconds) * 1_000.0 /
-      historicalWeeklyDistances.sum()
+    aggregateActualPaceSecondsPerKm(historicalWeeks.flatten())
   } else null
   return HomeFourWeekComparisons(
     paceDifferenceSecondsPerKm = if (currentPaceSecondsPerKm != null && historicalPace != null) {

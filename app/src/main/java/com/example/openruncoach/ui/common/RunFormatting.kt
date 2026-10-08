@@ -36,6 +36,9 @@ fun formatDuration(seconds: Long): String =
     "%d:%02d".format(seconds / 60, seconds % 60)
   }
 
+/** Zero is the resolved RunSummary sentinel for unavailable duration, not a recorded 0:00. */
+fun formatActualDuration(seconds: Long): String = if (seconds > 0) formatDuration(seconds) else "—"
+
 fun formatPace(paceSecondsPerKm: Double?): String =
   paceSecondsPerKm?.roundToLong()?.let { seconds ->
     "%d:%02d min/km".format(seconds / 60, seconds % 60)

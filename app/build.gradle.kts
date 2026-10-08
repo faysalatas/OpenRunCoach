@@ -5,6 +5,14 @@ plugins {
   id("kotlin-parcelize")
 }
 
+// Renderer and provider are independent. No keys are stored in the repository.
+// Blank URI disables network maps. Configure a reviewed provider for release builds.
+val configuredRouteMapStyle = providers.gradleProperty("routeMapStyleUri").orNull
+fun quotedBuildString(value: String) = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+configuredRouteMapStyle?.let {
+    require(it.none(Char::isISOControl) && (it.isBlank() || it.startsWith("https://") || it.startsWith("asset://")))
+}
+
 android {
     namespace = "com.example.openruncoach"
     compileSdk = 36
@@ -18,7 +26,12 @@ android {
     }
 
     buildTypes {
+        debug {
+            buildConfigField("String", "ROUTE_MAP_STYLE_URI", quotedBuildString(
+                configuredRouteMapStyle ?: "https://tiles.openfreemap.org/styles/dark"))
+        }
         release {
+            buildConfigField("String", "ROUTE_MAP_STYLE_URI", quotedBuildString(configuredRouteMapStyle ?: ""))
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
@@ -63,6 +76,7 @@ dependencies {
   implementation(libs.androidx.room.runtime)
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.datastore.preferences)
+  implementation(libs.maplibre.android)
   implementation(files("libs/samsung-health-data-api.aar"))
   implementation("com.google.code.gson:gson:2.13.2")
   ksp(libs.androidx.room.compiler)

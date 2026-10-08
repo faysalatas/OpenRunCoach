@@ -27,11 +27,14 @@ import com.example.openruncoach.domain.metrics.RunMetrics
 import com.example.openruncoach.domain.metrics.RunChartData
 import com.example.openruncoach.domain.metrics.RunChartPreparer
 import com.example.openruncoach.domain.route.RunRouteData
+import com.example.openruncoach.domain.route.EqualDistanceHalves
+import com.example.openruncoach.domain.route.RunPacingSummaryCalculator
 import com.example.openruncoach.domain.workout.WorkoutExecutionResult
 import com.example.openruncoach.domain.workout.WorkoutResponse
 import com.example.openruncoach.domain.workout.StructuredWorkout
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
@@ -72,6 +75,8 @@ data class RunDetailUiState(
   val workoutResponse: WorkoutResponse? = null,
   val plannedWorkout: StructuredWorkout? = null,
   val routeData: RunRouteData? = null,
+  val halfSplit: EqualDistanceHalves? = null,
+  val splitDeltasSecondsPerKm: Map<Int, Double> = emptyMap(),
   val assignmentCandidates: List<WorkoutAssignmentCandidate> = emptyList(),
   val showAssignmentCandidates: Boolean = false,
   val isUpdatingAssociation: Boolean = false,
@@ -98,6 +103,7 @@ class RunDetailViewModel(
   private var canonicalHistory: List<RunSummary> = emptyList()
   private var metricsRefreshJob: Job? = null
   private var autoRefreshRunId: String? = null
+  private var pacingJob: Job? = null
 
   init {
     viewModelScope.launch {
@@ -108,9 +114,12 @@ class RunDetailViewModel(
             state.copy(
               run = run,
               runLoaded = true,
+              halfSplit = null,
+              splitDeltasSecondsPerKm = emptyMap(),
               charts = state.metrics?.let { metrics -> prepareCharts(metrics, run) },
             ).withDerivedState()
           }
+          refreshPacingSummary()
           if (runMetricsRefresher != null && run != null && run.isCanonical && autoRefreshRunId != run.healthConnectRecordId) {
             autoRefreshRunId = run.healthConnectRecordId
             refreshMetrics(run, force = false)
@@ -119,16 +128,20 @@ class RunDetailViewModel(
         }
     }
     viewModelScope.launch {
-      runMetricsRepository.observeRunMetrics(runId)
+      runMetricsRepository.observeActualRunMetrics(runId)
         .catch { _uiState.update { it.copy(error = "Could not load run metrics.") } }
-        .collect { metrics -> if (metrics != null) _uiState.update {
-          it.copy(metrics = metrics, charts = prepareCharts(metrics, it.run))
-        } }
+        .collect { metrics ->
+          _uiState.update { state -> state.copy(metrics = metrics, charts = metrics?.let { prepareCharts(it, state.run) }) }
+          refreshPacingSummary()
+        }
     }
     viewModelScope.launch {
       runRouteRepository.observe(runId)
         .catch { _uiState.update { it.copy(error = "Could not load route and splits.") } }
-        .collect { routeData -> _uiState.update { it.copy(routeData = routeData) } }
+        .collect { routeData ->
+          _uiState.update { it.copy(routeData = routeData, halfSplit = null, splitDeltasSecondsPerKm = emptyMap()) }
+          refreshPacingSummary()
+        }
     }
     viewModelScope.launch {
       runRepository.allRuns.collect { runs ->
@@ -186,6 +199,21 @@ class RunDetailViewModel(
 
   fun updateForm(change: (FeedbackForm) -> FeedbackForm) {
     _uiState.update { it.copy(form = change(it.form), isDirty = true, error = null, saved = false) }
+  }
+
+  private fun refreshPacingSummary() {
+    pacingJob?.cancel()
+    val snapshot = _uiState.value
+    val run = snapshot.run ?: return
+    val routeData = snapshot.routeData ?: return
+    pacingJob = viewModelScope.launch(Dispatchers.Default) {
+      val pacing = RunPacingSummaryCalculator.summarize(run, routeData)
+      _uiState.update { current ->
+        if (current.run == run && current.routeData == routeData && current.metrics == snapshot.metrics) {
+          current.copy(halfSplit = pacing.equalDistanceHalves, splitDeltasSecondsPerKm = pacing.deltasSecondsPerKm)
+        } else current
+      }
+    }
   }
 
   fun editFeedback() {
@@ -319,7 +347,12 @@ class RunDetailViewModel(
     metricsRefreshJob = viewModelScope.launch {
       _uiState.update { it.copy(isUpdatingMetrics = true, metricsUpdateError = false) }
       try {
-        val outcome = refresher.refresh(run, force)
+        val providerRun = runRepository.getProviderRun(run.healthConnectRecordId)
+        if (providerRun == null) {
+          _uiState.update { it.copy(isUpdatingMetrics = false) }
+          return@launch
+        }
+        val outcome = refresher.refresh(providerRun, force)
         _uiState.update {
           it.copy(
             metrics = outcome.metrics,
@@ -337,8 +370,8 @@ class RunDetailViewModel(
 
   private fun prepareCharts(metrics: RunMetrics, run: RunSummary?): RunChartData = RunChartPreparer.prepare(
     metrics = metrics,
-    canonicalDurationSeconds = run?.durationSeconds ?: metrics.durationSeconds.value,
-    canonicalDistanceMeters = run?.distanceMeters ?: metrics.distanceMeters?.value,
+    canonicalDurationSeconds = run?.durationSeconds ?: 0L,
+    canonicalDistanceMeters = run?.distanceMeters,
   )
 
   fun saveFeedback() {

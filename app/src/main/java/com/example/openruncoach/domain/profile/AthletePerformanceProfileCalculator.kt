@@ -1,16 +1,19 @@
 package com.example.openruncoach.domain.profile
 
-import com.example.openruncoach.domain.CardioEffort
 import com.example.openruncoach.domain.CompletionStatus
 import com.example.openruncoach.domain.PainLevel
+import com.example.openruncoach.domain.RunActualResolver
 import com.example.openruncoach.domain.RunFeedback
 import com.example.openruncoach.domain.RunSummary
+import com.example.openruncoach.domain.evidence.CanonicalTrainingEvidence
+import com.example.openruncoach.domain.evidence.TrainingEvidencePurpose
 import com.example.openruncoach.domain.metrics.MetricConfidence
 import com.example.openruncoach.domain.metrics.MetricVerification
-import com.example.openruncoach.domain.metrics.RunMetrics
 import com.example.openruncoach.domain.metrics.RunContinuityEvaluator
 import com.example.openruncoach.domain.metrics.RunContinuityEvidence
+import com.example.openruncoach.domain.metrics.RunMetrics
 import com.example.openruncoach.domain.metrics.metricValues
+import com.example.openruncoach.domain.workout.StructuredWorkout
 import com.example.openruncoach.domain.workout.WorkoutExecutionResult
 import com.example.openruncoach.domain.workout.WorkoutExecutionStatus
 import java.time.Clock
@@ -48,48 +51,59 @@ class AthletePerformanceProfileCalculator(
     metrics: List<RunMetrics>,
     feedback: List<RunFeedback>,
     executionResults: List<WorkoutExecutionResult> = emptyList(),
+    associatedWorkouts: Map<String, StructuredWorkout> = emptyMap(),
   ): AthletePerformanceProfile {
     val now = clock.instant()
     val canonicalRuns = runs.filter { it.isCanonical && it.relevance == com.example.openruncoach.domain.RunRelevance.ACTIVE }
       .filter { !it.startTime.isAfter(now) }
-      .distinctBy(RunSummary::healthConnectRecordId)
+      .distinctBy(RunSummary::physicalRunId)
       .sortedBy(RunSummary::startTime)
     val metricsByRun = metrics.associateBy(RunMetrics::runId)
-    val feedbackByRun = feedback.associateBy(RunFeedback::runId)
-    val executionByRun = executionResults.associateBy(WorkoutExecutionResult::actualRunId)
-    val recent7 = canonicalRuns.inWindow(now.minus(Duration.ofDays(7)), now)
-    val recent28 = canonicalRuns.inWindow(now.minus(Duration.ofDays(28)), now)
+    val feedbackByPhysical = feedback.associateBy(RunFeedback::runId)
+    val feedbackByRun = canonicalRuns.mapNotNull { run ->
+      (feedbackByPhysical[run.physicalRunId] ?: feedbackByPhysical[run.healthConnectRecordId])
+        ?.copy(runId = run.physicalRunId)?.let { run.healthConnectRecordId to it }
+    }.toMap()
+    val executionsByPhysical = executionResults.associateBy(WorkoutExecutionResult::physicalRunId)
+    val executionByRun = canonicalRuns.mapNotNull { run ->
+      executionsByPhysical[run.physicalRunId]?.let { run.healthConnectRecordId to it }
+    }.toMap()
+    val eligibility = canonicalRuns.associate { run -> run.healthConnectRecordId to CanonicalTrainingEvidence.evaluate(
+      run, metricsByRun[run.healthConnectRecordId], feedbackByRun[run.healthConnectRecordId],
+      executionByRun[run.healthConnectRecordId], associatedWorkouts[run.physicalRunId],
+    ) }
+    fun eligible(run: RunSummary, purpose: TrainingEvidencePurpose) = eligibility.getValue(run.healthConnectRecordId).getValue(purpose).eligible
+    val sessions = canonicalRuns.filter { eligible(it, TrainingEvidencePurpose.SESSION_FREQUENCY) }
+    val capabilityRuns = canonicalRuns.filter { eligible(it, TrainingEvidencePurpose.CAPABILITY) }
+    val volumeRuns = canonicalRuns.filter { eligible(it, TrainingEvidencePurpose.ACTUAL_VOLUME) }
+    val recent7 = volumeRuns.inWindow(now.minus(Duration.ofDays(7)), now)
+    val recent28 = volumeRuns.inWindow(now.minus(Duration.ofDays(28)), now)
+    val recentSessions7 = sessions.inWindow(now.minus(Duration.ofDays(7)), now)
+    val recentSessions28 = sessions.inWindow(now.minus(Duration.ofDays(28)), now)
+    val recentCapability = capabilityRuns.inWindow(now.minus(Duration.ofDays(28)), now)
     val currentWeekStart = now.atZone(zoneId).toLocalDate().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
-    val activeWeeks = activeWeekStarts(canonicalRuns, currentWeekStart.minusWeeks(7), currentWeekStart)
+    val activeWeeks = activeWeekStarts(sessions, currentWeekStart.minusWeeks(7), currentWeekStart)
     val completedWeeks = (4L downTo 1L).map { weeksAgo ->
-      weeklyVolume(currentWeekStart.minusWeeks(weeksAgo), canonicalRuns, metricsByRun)
+      weeklyVolume(currentWeekStart.minusWeeks(weeksAgo), volumeRuns, metricsByRun, sessions)
     }
-    val easyRuns = recent28.mapNotNull { run ->
-      val runFeedback = feedbackByRun[run.healthConnectRecordId] ?: return@mapNotNull null
-      val qualifies = qualifiesAsEasy(
-        run,
-        metricsByRun[run.healthConnectRecordId],
-        runFeedback,
-        executionByRun[run.healthConnectRecordId],
-      )
-      if (!qualifies) return@mapNotNull null
-      EasyRun(run, metricsByRun[run.healthConnectRecordId])
-    }
+    val easyRuns = recent28.filter { eligible(it, TrainingEvidencePurpose.EASY_PACE) }
+      .map { EasyRun(it, metricsByRun[it.healthConnectRecordId]) }
     val easyPaces = easyRuns.mapNotNull { it.paceSecondsPerKm }
-    val easyHeartRates = easyRuns.mapNotNull { it.averageHeartRate }
-    val easyCadences = easyRuns.mapNotNull { it.cadence }
-    val recentHeartRates = recent28.mapNotNull { runValue(it, metricsByRun[it.healthConnectRecordId]).averageHeartRate }
-    val vo2Values = canonicalRuns.mapNotNull { run ->
+    val easyHeartRates = easyRuns.filter { eligible(it.run, TrainingEvidencePurpose.EASY_HEART_RATE) }.mapNotNull { it.averageHeartRate }
+    val easyCadences = easyRuns.filter { eligible(it.run, TrainingEvidencePurpose.EASY_CADENCE) }.mapNotNull { it.cadence }
+    val recentHeartRates = recentSessions28.mapNotNull { runValue(it, metricsByRun[it.healthConnectRecordId]).averageHeartRate }
+    val vo2Values = capabilityRuns.mapNotNull { run ->
       metricsByRun[run.healthConnectRecordId]?.vo2Max?.value?.let { run.startTime to it }
     }
-    val feedbackRecent = recent28.mapNotNull { feedbackByRun[it.healthConnectRecordId] }
+    val feedbackRecent = canonicalRuns.inWindow(now.minus(Duration.ofDays(28)), now)
+      .filter { eligible(it, TrainingEvidencePurpose.SAFETY_RECOVERY) }.mapNotNull { feedbackByRun[it.healthConnectRecordId] }
     val consistency = consistency(activeWeeks.size)
-    val confidence = confidence(canonicalRuns, recent28, activeWeeks.size, metricsByRun, feedbackByRun)
+    val confidence = confidence(sessions, recentSessions28, activeWeeks.size, metricsByRun, feedbackByRun)
 
     return AthletePerformanceProfile(
       totalCanonicalRuns = canonicalRuns.size,
-      runsLast7Days = recent7.size,
-      runsLast28Days = recent28.size,
+      runsLast7Days = recentSessions7.size,
+      runsLast28Days = recentSessions28.size,
       activeWeeksLast8Weeks = activeWeeks.size,
       distanceLast7DaysMeters = recent7.sumOf { runValue(it, metricsByRun[it.healthConnectRecordId]).distanceMeters ?: 0.0 },
       durationLast7DaysSeconds = recent7.sumOf { runValue(it, metricsByRun[it.healthConnectRecordId]).durationSeconds },
@@ -98,12 +112,12 @@ class AthletePerformanceProfileCalculator(
       completedWeeklyVolumes = completedWeeks,
       averageWeeklyDistanceLast4WeeksMeters = completedWeeks.map { it.distanceMeters }.average(),
       averageWeeklyDurationLast4WeeksSeconds = completedWeeks.map { it.durationSeconds }.average().toLong(),
-      longestRunLast28Days = longestRun(recent28, metricsByRun),
-      averageRunsPerWeek = recent28.size / 4.0,
-      currentRunningStreakWeeks = currentStreak(canonicalRuns, currentWeekStart),
+      longestRunLast28Days = longestRun(recentCapability, metricsByRun),
+      averageRunsPerWeek = recentSessions28.size / 4.0,
+      currentRunningStreakWeeks = currentStreak(sessions, currentWeekStart),
       consistency = consistency.first,
       consistencyReasons = consistency.second,
-      performanceBenchmarks = benchmarks(canonicalRuns, metricsByRun),
+      performanceBenchmarks = benchmarks(capabilityRuns, metricsByRun),
       recentPaceTrend = paceTrend(easyRuns),
       typicalEasyPace = baseline(easyPaces, "completed easy runs with valid pace"),
       typicalEasyHeartRate = baseline(easyHeartRates, "completed easy runs with heart-rate data"),
@@ -114,12 +128,13 @@ class AthletePerformanceProfileCalculator(
       vo2MaxTrend = fitnessTrend(vo2Values.map { it.second }),
       typicalEasyCadence = baseline(easyCadences, "completed easy runs with unified cadence data"),
       recentCadenceTrend = valueTrend(easyCadences, config.cadenceStableSpm),
-      feedback = feedbackAggregates(feedbackRecent, executionByRun),
+      feedback = feedbackAggregates(feedbackRecent, executionsByPhysical),
       calculatedAt = now,
       profileConfidence = confidence.first,
       confidenceReasons = confidence.second,
-      dataQualityNotes = dataQualityNotes(recent28, metricsByRun, feedbackByRun),
-      recentContinuity = continuitySummary(recent28, metricsByRun),
+      dataQualityNotes = dataQualityNotes(recentSessions28, metricsByRun, feedbackByRun) +
+        listOf("${canonicalRuns.size - sessions.size} active canonical recordings excluded from meaningful session frequency; actual volume and safety evidence are retained separately."),
+      recentContinuity = continuitySummary(recentCapability, metricsByRun),
     )
   }
 
@@ -139,21 +154,6 @@ class AthletePerformanceProfileCalculator(
       unknownRuns = evidence.count { it.second == RunContinuityEvidence.UNKNOWN },
       longestContinuousDistanceMeters = longestContinuous,
     )
-  }
-
-  private fun qualifiesAsEasy(
-    run: RunSummary,
-    metrics: RunMetrics?,
-    feedback: RunFeedback,
-    execution: WorkoutExecutionResult?,
-  ): Boolean {
-    val values = runValue(run, metrics)
-    return effectiveCompletion(feedback, execution) == CompletionStatus.COMPLETED &&
-      feedback.rpe <= 4 &&
-      feedback.cardioEffort in setOf(CardioEffort.EASY, CardioEffort.APPROPRIATE) &&
-      feedback.painLevel != PainLevel.SIGNIFICANT &&
-      values.durationSeconds > 0 && values.distanceMeters?.let { it.isFinite() && it > 0.0 } == true &&
-      values.paceSecondsPerKm?.let { it.isFinite() && it > 0.0 } == true
   }
 
   private fun benchmarks(
@@ -200,6 +200,7 @@ class AthletePerformanceProfileCalculator(
     start: LocalDate,
     runs: List<RunSummary>,
     metrics: Map<String, RunMetrics>,
+    sessions: List<RunSummary>,
   ): WeeklyTrainingVolume {
     val end = start.plusWeeks(1)
     val weekRuns = runs.filter {
@@ -208,7 +209,7 @@ class AthletePerformanceProfileCalculator(
     }
     return WeeklyTrainingVolume(
       start,
-      weekRuns.size,
+      weekRuns.count { run -> sessions.any { it.physicalRunId == run.physicalRunId } },
       weekRuns.sumOf { runValue(it, metrics[it.healthConnectRecordId]).distanceMeters ?: 0.0 },
       weekRuns.sumOf { runValue(it, metrics[it.healthConnectRecordId]).durationSeconds },
     )
@@ -269,7 +270,7 @@ class AthletePerformanceProfileCalculator(
       else -> ProfileConfidence.VERY_LOW
     }
     return level to listOf(
-      "$count runs available in the last 28 days",
+      "$count meaningful sessions available in the last 28 days",
       "$activeWeeks weeks represented in the last 8 weeks",
       "Feedback available for $feedbackCount of $count recent runs",
       "Heart rate available for $hrCount of $count recent runs",
@@ -291,7 +292,7 @@ class AthletePerformanceProfileCalculator(
         it.verification == MetricVerification.CONFLICT
       } ?: 0
     }
-    if (recentRuns.isEmpty()) add("No canonical runs are available in the last 28 days")
+    if (recentRuns.isEmpty()) add("No meaningful canonical sessions are available in the last 28 days")
     if (missingFeedback > 0) add("$missingFeedback recent runs have no post-run feedback")
     if (missingHeartRate > 0) add("$missingHeartRate recent runs have no average heart rate")
     if (missingPace > 0) add("$missingPace recent runs have no valid pace")
@@ -390,13 +391,16 @@ class AthletePerformanceProfileCalculator(
     null -> feedback.completionStatus
   }
 
-  private fun runValue(run: RunSummary, metrics: RunMetrics?) = RunValues(
-    durationSeconds = metrics?.durationSeconds?.value ?: run.durationSeconds,
-    distanceMeters = metrics?.distanceMeters?.value ?: run.distanceMeters,
-    paceSecondsPerKm = metrics?.averagePaceSecondsPerKm?.value ?: run.averagePaceSecondsPerKm,
-    averageHeartRate = metrics?.averageHeartRate?.value ?: run.averageHeartRate,
-    cadence = metrics?.movingAverageCadence?.value ?: metrics?.averageCadence?.value,
-  )
+  private fun runValue(run: RunSummary, metrics: RunMetrics?): RunValues {
+    val actual = RunActualResolver.resolve(run, metrics)
+    return RunValues(
+      durationSeconds = actual.durationSeconds,
+      distanceMeters = actual.distanceMeters,
+      paceSecondsPerKm = actual.averagePaceSecondsPerKm,
+      averageHeartRate = metrics?.averageHeartRate?.value ?: run.averageHeartRate,
+      cadence = metrics?.movingAverageCadence?.value ?: metrics?.averageCadence?.value,
+    )
+  }
 
   private fun List<RunSummary>.inWindow(start: Instant, end: Instant) = filter {
     !it.startTime.isBefore(start) && !it.startTime.isAfter(end)

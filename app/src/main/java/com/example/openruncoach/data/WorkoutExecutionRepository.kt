@@ -1,32 +1,38 @@
 package com.example.openruncoach.data
 
 import androidx.room.withTransaction
-import com.example.openruncoach.data.local.PlannedWorkoutRecord
 import com.example.openruncoach.data.local.OpenRunCoachDatabase
+import com.example.openruncoach.data.local.PlannedWorkoutRecord
 import com.example.openruncoach.data.local.WorkoutAdjustmentEntity
 import com.example.openruncoach.data.local.WorkoutExecutionEntity
 import com.example.openruncoach.data.local.WorkoutRunAssociationEntity
+import com.example.openruncoach.domain.RunActualResolver
 import com.example.openruncoach.domain.RunFeedback
 import com.example.openruncoach.domain.RunRelevance
 import com.example.openruncoach.domain.RunSummary
 import com.example.openruncoach.domain.workout.AdjustedWorkout
+import com.example.openruncoach.domain.workout.StructuredWorkout
 import com.example.openruncoach.domain.workout.WorkoutAdherenceEvaluator
+import com.example.openruncoach.domain.workout.WorkoutAssociationDecision
+import com.example.openruncoach.domain.workout.WorkoutAssociationEvidence
 import com.example.openruncoach.domain.workout.WorkoutComparisonBasis
+import com.example.openruncoach.domain.workout.WorkoutEstimateCalculator
 import com.example.openruncoach.domain.workout.WorkoutExecutionEvidence
 import com.example.openruncoach.domain.workout.WorkoutExecutionResult
 import com.example.openruncoach.domain.workout.WorkoutExecutionStatus
 import com.example.openruncoach.domain.workout.WorkoutLifecycleState
-import com.example.openruncoach.domain.workout.WorkoutEstimateCalculator
 import com.example.openruncoach.domain.workout.WorkoutType
-import com.example.openruncoach.domain.workout.WorkoutAssociationDecision
-import com.example.openruncoach.domain.workout.WorkoutAssociationEvidence
 import com.example.openruncoach.domain.workout.assessWorkoutAssociation
 import com.example.openruncoach.domain.workout.displayName
-import com.example.openruncoach.domain.workout.resolveWorkoutAssociation
 import com.example.openruncoach.domain.workout.hasUnambiguousRunDate
+import com.example.openruncoach.domain.workout.resolveWorkoutAssociation
+import com.example.openruncoach.domain.workout.withActualSummary
 import java.time.Clock
 import java.time.Instant
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 
 class WorkoutExecutionRepository(
@@ -38,10 +44,18 @@ class WorkoutExecutionRepository(
   private val dao = database.coachingWorkflowDao()
 
   fun observeForRun(runId: String): Flow<WorkoutExecutionResult?> =
-    dao.observeExecutionForRun(runId).map { it?.toDomain() }
+    observeActualExecution(dao.observeExecutionForRun(runId))
 
   fun observeForWorkout(workoutId: String): Flow<WorkoutExecutionResult?> =
-    dao.observeExecution(workoutId).map { it?.toDomain() }
+    observeActualExecution(dao.observeExecution(workoutId))
+
+  @OptIn(ExperimentalCoroutinesApi::class)
+  private fun observeActualExecution(records: Flow<WorkoutExecutionEntity?>): Flow<WorkoutExecutionResult?> =
+    records.flatMapLatest { execution ->
+      if (execution == null) flowOf(null) else database.runDao().observeActualRun(execution.physicalRunId).map { run ->
+        execution.toDomain().withActualSummary(run?.toActualSummary())
+      }
+    }
 
   /** Returns authoritative completed run associations with any persisted workout adjustment applied. */
   suspend fun getCompletedWorkoutTypesByRunId(): Map<String, WorkoutType> = buildMap {
@@ -57,13 +71,17 @@ class WorkoutExecutionRepository(
   }
 
   /** Returns the persisted prescription title for every currently associated canonical run. */
-  suspend fun getAssociatedWorkoutLabelsByRunId(): Map<String, String> = buildMap {
+  suspend fun getAssociatedWorkoutLabelsByRunId(): Map<String, String> =
+    getAssociatedWorkoutsByRunId().mapValues { (_, workout) -> workout.name.ifBlank { workout.type.displayName() } }
+
+  /** Read-only prescription metadata for History; association selection/writes are unchanged. */
+  suspend fun getAssociatedWorkoutsByRunId(): Map<String, StructuredWorkout> = buildMap {
     dao.getAllAssociations().forEach { association ->
       val record = dao.getWorkout(association.plannedWorkoutId) ?: return@forEach
       val workout = StructuredWorkoutPersistenceMapper.toDomain(record)
       val currentRunId = database.runDao().getCanonicalRunByPhysicalId(association.physicalRunId)
         ?.healthConnectRecordId ?: association.actualRunId
-      put(currentRunId, workout.name.ifBlank { workout.type.displayName() })
+      put(currentRunId, workout)
     }
   }
 
@@ -91,7 +109,7 @@ class WorkoutExecutionRepository(
       if (workoutRecord == null) return@withTransaction null
       val workout = StructuredWorkoutPersistenceMapper.toDomain(workoutRecord)
       val adjustment = dao.getAdjustment(workout.id)?.toAdjustedWorkout()
-      evaluator.evaluate(workout, adjustment, actualRun, feedback, evidence).also { result ->
+      evaluator.evaluate(workout, adjustment, resolvedActual(actualRun), feedback, evidence).also { result ->
         dao.upsertAssociation(result.toAssociation(association?.source ?: "AUTO", clock.millis()))
         dao.upsertExecution(result.toEntity())
         // In this lifecycle state, "completed" means an actual run has been attached. The
@@ -110,17 +128,17 @@ class WorkoutExecutionRepository(
   suspend fun reconcileExistingCheckouts(): Int {
     val created = database.withTransaction {
       val associatedPhysicalRunIds = dao.getAllExecutions().mapTo(mutableSetOf(), WorkoutExecutionEntity::physicalRunId)
-      val feedbackByRun = database.runFeedbackDao().getAllFeedback().associate { it.runId to it.toDomain() }
+      val feedbackByRun = RunFeedbackRepository(database).getAllFeedback().associateBy { it.runId }
       val runs = database.runDao().getCanonicalRuns()
         .map { it.toRunSummary() }
         .filterNot { it.physicalRunId in associatedPhysicalRunIds }
       var inserted = 0
       for (run in runs) {
-        val feedback = feedbackByRun[run.healthConnectRecordId] ?: continue
+        val feedback = feedbackByRun[run.physicalRunId] ?: continue
         val workoutRecord = findUnambiguousWorkout(run) ?: continue
         val workout = StructuredWorkoutPersistenceMapper.toDomain(workoutRecord)
         val adjustment = dao.getAdjustment(workout.id)?.toAdjustedWorkout()
-        val result = evaluator.evaluate(workout, adjustment, run, feedback)
+        val result = evaluator.evaluate(workout, adjustment, resolvedActual(run), feedback)
         dao.upsertAssociation(result.toAssociation("AUTO", clock.millis()))
         dao.upsertExecution(result.toEntity())
         dao.updateLifecycleState(workout.id, WorkoutLifecycleState.COMPLETED.name)
@@ -133,7 +151,8 @@ class WorkoutExecutionRepository(
   }
 
   private suspend fun findUnambiguousWorkout(actualRun: RunSummary): PlannedWorkoutRecord? {
-    val date = actualRun.startTime.atZone(clock.zone).toLocalDate()
+    val providerRun = database.runDao().getRun(actualRun.healthConnectRecordId)?.toRunSummary() ?: actualRun
+    val date = providerRun.startTime.atZone(clock.zone).toLocalDate()
     val canonicalRunsOnDate = database.runDao().getCanonicalRuns()
       .map { it.toRunSummary() }
       .filter { it.startTime.atZone(clock.zone).toLocalDate() == date }
@@ -142,7 +161,7 @@ class WorkoutExecutionRepository(
     // available and authoritative.
     if (!hasUnambiguousRunDate(canonicalRunsOnDate.map(RunSummary::physicalRunId), actualRun.physicalRunId)) return null
     val workouts = dao.getUnassociatedActivePlanWorkouts(date.toEpochDay())
-    val decisions = workouts.map { it to associationDecision(it, actualRun) }
+    val decisions = workouts.map { it to associationDecision(it, providerRun) }
     val selectedId = resolveWorkoutAssociation(decisions.map { it.first.workout.id to it.second }) ?: return null
     val selected = decisions.single { it.first.workout.id == selectedId }.first
     return selected
@@ -207,10 +226,10 @@ class WorkoutExecutionRepository(
           updatedAtEpochMillis = clock.millis(),
         )
       )
-      database.runFeedbackDao().getFeedbackForRun(actualRun.healthConnectRecordId)?.toDomain()?.let { feedback ->
+      RunFeedbackRepository(database).getFeedbackForRun(actualRun.physicalRunId)?.let { feedback ->
         val workout = StructuredWorkoutPersistenceMapper.toDomain(workoutRecord)
         val adjustment = dao.getAdjustment(plannedWorkoutId)?.toAdjustedWorkout()
-        dao.upsertExecution(evaluator.evaluate(workout, adjustment, actualRun, feedback).toEntity())
+        dao.upsertExecution(evaluator.evaluate(workout, adjustment, resolvedActual(actualRun), feedback).toEntity())
         dao.updateLifecycleState(plannedWorkoutId, WorkoutLifecycleState.COMPLETED.name)
       }
     }
@@ -226,6 +245,10 @@ class WorkoutExecutionRepository(
     }
     athleteProfileRepository?.recalculate()
   }
+
+  private suspend fun resolvedActual(run: RunSummary): RunSummary =
+    database.runDao().getActualRun(run.healthConnectRecordId)?.toActualSummary()
+      ?: RunActualResolver.resolve(run)
 
   private suspend fun associationDecision(
     record: PlannedWorkoutRecord,

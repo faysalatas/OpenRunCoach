@@ -5,6 +5,7 @@ import com.example.openruncoach.domain.CompletionStatus
 import com.example.openruncoach.domain.MuscleFatigue
 import com.example.openruncoach.domain.PainLevel
 import com.example.openruncoach.domain.RunFeedback
+import com.example.openruncoach.domain.belongsTo
 import com.example.openruncoach.domain.RunSummary
 import com.example.openruncoach.domain.RunRelevance
 import com.example.openruncoach.domain.workout.WorkoutExecutionResult
@@ -43,7 +44,7 @@ class CoachingEngine(private val clock: Clock = Clock.systemUTC()) {
       compareBy<RunSummary>({ it.startTime }, { it.healthConnectRecordId })
     )
     if (!latestRun.isCanonical || latestRun.relevance != RunRelevance.ACTIVE ||
-      feedback.runId != latestRun.healthConnectRecordId ||
+      !feedback.belongsTo(latestRun) ||
       newestCanonicalRun?.healthConnectRecordId != latestRun.healthConnectRecordId
     ) return null
     val score = completionScore(feedback.completionStatus, executionResult) +
