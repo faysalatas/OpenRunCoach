@@ -7,6 +7,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.example.openruncoach.data.local.*
 import com.example.openruncoach.domain.*
 import com.example.openruncoach.domain.metrics.*
+import com.example.openruncoach.domain.goal.*
+import com.example.openruncoach.domain.plan.*
+import com.example.openruncoach.domain.profile.ProfileConfidence
 import com.example.openruncoach.domain.profile.AthletePerformanceProfileCalculator
 import com.example.openruncoach.domain.route.*
 import com.example.openruncoach.domain.workout.*
@@ -23,6 +26,42 @@ import org.junit.runner.RunWith
 class PhysicalRunConsistencyTest {
   private val start = Instant.parse("2026-10-01T12:00:00Z")
   private val clock = Clock.fixed(start.plusSeconds(86400), ZoneOffset.UTC)
+
+  @Test fun planPresentationReadsOneCanonicalActualBeforeCheckoutAndKeepsPreviousPlanAccessible() = withDatabase { db ->
+    seedRuns(db)
+    val providerCopy = requireNotNull(db.runDao().getRun("strava"))
+    db.runDao().updateAll(listOf(providerCopy.copy(distanceMeters = 5_000.0, averagePaceSecondsPerKm = 400.0)))
+    val profiles = AthletePerformanceProfileRepository(db, AthletePerformanceProfileCalculator(clock, clock.zone))
+    val goal = TrainingGoalRepository(db, profiles, TrainingGoalFactory(clock))
+      .createGoal(TrainingGoalDraft(GoalDistance.FIVE_K, goalType = GoalType.COMPLETE_DISTANCE))
+    val date = start.atZone(clock.zone).toLocalDate()
+    val workout = simpleDurationWorkout("plan-easy", date, WorkoutType.EASY_RUN, 30, 3, 4, start, goalId = goal.id)
+    val week = TrainingWeek(0, date, listOf(PlannedWorkoutEntry(WeeklyWorkoutSlot.EARLY_WEEK, workout, "Aerobic work.")),
+      2_000.0, 1_800, WeekLoadClassification.NORMAL, "Build consistency.", listOf("Keep the effort easy."))
+    val plan = TrainingPlan("presentation-plan", goal.id, start, date, null, listOf(week), emptyList(), 1,
+      "Provisional plan.", ProfileConfidence.LOW, TrainingPlanStatus.ACTIVE)
+    val plans = TrainingPlanRepository(db)
+    plans.saveAsActive(plan)
+    db.coachingWorkflowDao().updateLifecycleState(workout.id, WorkoutLifecycleState.CHECK_IN_REQUIRED.name)
+    WorkoutExecutionRepository(db, clock).assignManually(requireNotNull(db.runDao().getRun("samsung")).toRunSummary(), workout.id)
+
+    val metadata = plans.observeWorkoutPresentation(plan.id).first()
+    assertEquals(1, metadata.size)
+    val presentation = requireNotNull(metadata[workout.id])
+    assertEquals("samsung", presentation.actual?.healthConnectRecordId)
+    assertEquals(1_952.169, requireNotNull(presentation.actual?.distanceMeters), 0.001)
+    assertEquals(WorkoutLifecycleState.CHECK_IN_REQUIRED, presentation.lifecycle)
+    assertTrue(db.coachingWorkflowDao().getAllExecutions().isEmpty())
+    assertTrue(plans.observePreviousPlans().first().isEmpty())
+
+    db.trainingPlanDao().updateStatus(plan.id, TrainingPlanStatus.SUPERSEDED.name)
+    val previous = plans.observePreviousPlans().first().single()
+    assertEquals(plan.id, previous.id)
+    assertEquals(1, previous.weekCount)
+    assertEquals(TrainingPlanStatus.SUPERSEDED, previous.status)
+    assertEquals(workout, plans.getPlanSnapshot(plan.id)?.weeks?.single()?.workouts?.single()?.workout)
+    assertTrue(db.coachingWorkflowDao().getAllExecutions().isEmpty())
+  }
 
   @Test fun soleNoncanonicalLegacyCheckoutResolvesAndMigratesOnlyOnExplicitEdit() = withDatabase { db ->
     seedRuns(db)

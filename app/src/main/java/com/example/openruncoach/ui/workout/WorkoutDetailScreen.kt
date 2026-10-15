@@ -129,7 +129,7 @@ private fun PlannedWorkoutHero(
         Text(formatUserDate(workout.date), style = MaterialTheme.typography.bodyMedium,
           color = Color.White.copy(alpha = 0.78f))
         OpenRunStatusChip(
-          text = executionStatus?.detailLabel() ?: "Scheduled",
+          text = executionStatus?.displayLabel() ?: "Scheduled",
           tone = if (executionStatus?.isCompletedStatus() == true) OpenRunStatusTone.POSITIVE else OpenRunStatusTone.NEUTRAL,
         )
       }
@@ -165,7 +165,7 @@ private fun PlannedOverview(workout: StructuredWorkout, state: WorkoutDetailUiSt
   }
   state.executionResult?.let { execution ->
     OpenRunSection("Recorded execution") {
-      OpenRunEvidenceRow("Status", execution.status.detailLabel())
+      OpenRunEvidenceRow("Status", execution.status.displayLabel())
       execution.actualDistanceMeters?.let { OpenRunEvidenceRow("Actual distance", formatDistance(it)) }
       OpenRunEvidenceRow("Actual duration", formatDuration(execution.actualDurationSeconds))
       state.actualRun?.averagePaceSecondsPerKm?.let {
@@ -249,26 +249,13 @@ private fun StructuredWorkout.conciseExplanation(): String {
   return normalized.take(257).trimEnd() + "…"
 }
 
-private fun intensityLabel(maximumRpe: Int): String = when (maximumRpe) {
-  in 1..4 -> "Easy"
-  in 5..6 -> "Moderate"
-  in 7..8 -> "Hard"
-  else -> "Very hard"
-}
+private fun intensityLabel(maximumRpe: Int): String = workoutIntensityLabel(maximumRpe)
 
 private fun GuidanceConfidence.confidenceLabel(): String = when (this) {
   GuidanceConfidence.LOW -> "Low"
   GuidanceConfidence.MEDIUM -> "Medium"
   GuidanceConfidence.HIGH -> "High"
   GuidanceConfidence.UNCALIBRATED -> "Uncalibrated"
-}
-
-private fun WorkoutExecutionStatus.detailLabel(): String = when (this) {
-  WorkoutExecutionStatus.COMPLETED_AS_PLANNED -> "Completed as planned"
-  WorkoutExecutionStatus.COMPLETED_WITH_MINOR_DEVIATION -> "Completed with minor deviation"
-  WorkoutExecutionStatus.COMPLETED_WITH_PRESCRIPTION_DEVIATION -> "Completed with prescription deviation"
-  WorkoutExecutionStatus.PARTIALLY_COMPLETED -> "Partially completed"
-  WorkoutExecutionStatus.ABORTED -> "Stopped"
 }
 
 private fun WorkoutExecutionStatus.isCompletedStatus(): Boolean = when (this) {

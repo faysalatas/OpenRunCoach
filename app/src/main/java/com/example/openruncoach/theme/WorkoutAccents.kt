@@ -3,7 +3,7 @@ package com.example.openruncoach.theme
 import androidx.compose.ui.graphics.Color
 import com.example.openruncoach.domain.workout.WorkoutType
 
-/** Low-saturation History-only scanning accents, never performance judgments. */
+/** Shared low-saturation workout scanning accents, never performance judgments. */
 object WorkoutAccents {
   private val Long = Color(0xFF8CA78C)
   private val Tempo = Color(0xFF9F947D)

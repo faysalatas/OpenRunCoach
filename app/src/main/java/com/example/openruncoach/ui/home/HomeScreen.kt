@@ -68,6 +68,7 @@ import com.example.openruncoach.ui.common.formatDistance
 import com.example.openruncoach.ui.common.formatPace
 import com.example.openruncoach.ui.common.formatUserDate
 import com.example.openruncoach.ui.components.OpenRunCard
+import com.example.openruncoach.ui.components.WorkoutIntensitySignal
 import com.example.openruncoach.ui.components.OpenRunInsightCard
 import com.example.openruncoach.ui.components.OpenRunTabs
 import com.example.openruncoach.ui.components.ScreenPadding
@@ -489,29 +490,10 @@ private fun HeroMetadata(workout: HomeWorkoutSummary) {
             tint = Color.White.copy(alpha = 0.86f),
             modifier = Modifier.size(18.dp),
           )
-          HeroMetadataKind.INTENSITY -> IntensitySignal(workout.intensity?.activeBars ?: 0)
+          HeroMetadataKind.INTENSITY -> WorkoutIntensitySignal(workout.intensity?.activeBars ?: 0)
         }
         Text(label, style = MaterialTheme.typography.labelMedium, color = Color.White)
       }
-    }
-  }
-}
-
-@Composable
-private fun IntensitySignal(activeBars: Int) {
-  Row(
-    modifier = Modifier.width(18.dp).height(16.dp),
-    horizontalArrangement = Arrangement.spacedBy(2.dp),
-    verticalAlignment = Alignment.Bottom,
-  ) {
-    repeat(4) { index ->
-      Box(
-        Modifier.weight(1f).height((5 + index * 3).dp).background(
-          if (index < activeBars) MaterialTheme.colorScheme.primary
-          else Color.White.copy(alpha = 0.24f),
-          OpenRunShapeTokens.Compact,
-        ),
-      )
     }
   }
 }

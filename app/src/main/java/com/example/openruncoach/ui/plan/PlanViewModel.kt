@@ -8,6 +8,8 @@ import com.example.openruncoach.data.CompletionScheduleUpdate
 import com.example.openruncoach.data.GoalCompletionRepository
 import com.example.openruncoach.data.TrainingGoalRepository
 import com.example.openruncoach.data.TrainingPlanRepository
+import com.example.openruncoach.data.PlanWorkoutPresentation
+import com.example.openruncoach.data.PreviousPlanSummary
 import com.example.openruncoach.domain.goal.TrainingGoal
 import com.example.openruncoach.domain.goal.CompletionDateSuggestion
 import com.example.openruncoach.domain.goal.CompletionDateAssessment
@@ -20,9 +22,16 @@ import com.example.openruncoach.domain.profile.AthletePerformanceProfile
 import java.time.Clock
 import java.time.LocalDate
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -37,8 +46,15 @@ data class PlanUiState(
   val completionDateAssessment: CompletionDateAssessment? = null,
   val showCompletionScheduler: Boolean = false,
   val errorMessage: String? = null,
+  val workoutMetadata: Map<String, PlanWorkoutPresentation> = emptyMap(),
+  val showPlanHistory: Boolean = false,
+  val historyLoading: Boolean = false,
+  val previousPlans: List<PreviousPlanSummary> = emptyList(),
+  val previousPlan: TrainingPlan? = null,
+  val previousWeekIndex: Int = 0,
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class PlanViewModel(
   private val planRepository: TrainingPlanRepository,
   private val goalRepository: TrainingGoalRepository,
@@ -50,6 +66,8 @@ class PlanViewModel(
 ) : ViewModel() {
   private val _uiState = MutableStateFlow(PlanUiState())
   val uiState = _uiState.asStateFlow()
+  private var historyJob: Job? = null
+  private var previousPlanJob: Job? = null
 
   init {
     viewModelScope.launch {
@@ -58,6 +76,7 @@ class PlanViewModel(
         planRepository.observeActivePlan(),
         profileRepository.observeProfile(),
       ) { goal, plan, profile -> Triple(goal, plan, profile) }
+        .catch { _uiState.update { it.copy(isLoading = false, errorMessage = "Could not load your training plan.") } }
         .collect { (goal, storedPlan, profile) ->
           val milestone = if (goal != null && profile != null) completionRepository.refreshReadiness(goal, profile) else null
           val plan = storedPlan?.takeIf { it.goalId == goal?.id }?.takeUnless { candidate ->
@@ -65,10 +84,7 @@ class PlanViewModel(
               candidate.weeks.flatMap { it.workouts }.any { it.workout.purpose == com.example.openruncoach.domain.workout.WorkoutPurpose.GOAL_COMPLETION }
           }
           _uiState.update { state ->
-            val currentWeek = plan?.weeks?.indexOfFirst { week ->
-              val today = LocalDate.now(clock)
-              !today.isBefore(week.startDate) && !today.isAfter(week.startDate.plusDays(6))
-            }?.takeIf { it >= 0 } ?: state.selectedWeekIndex.coerceIn(0, plan?.weeks?.lastIndex ?: 0)
+            val currentWeek = selectedPlanWeek(state.plan?.id, state.selectedWeekIndex, plan, LocalDate.now(clock))
             val prompt = milestone?.readiness == GoalCompletionReadiness.GOAL_COMPLETION_READY &&
               !milestone.promptDismissed &&
               (state.completionMilestone?.goalId != milestone.goalId ||
@@ -86,6 +102,61 @@ class PlanViewModel(
           }
         }
     }
+    viewModelScope.launch {
+      _uiState.map { it.previousPlan?.id ?: it.plan?.id }.distinctUntilChanged()
+        .flatMapLatest { id ->
+          if (id == null) flowOf(null to emptyMap<String, PlanWorkoutPresentation>())
+          else planRepository.observeWorkoutPresentation(id).map { id to it }
+        }
+        .catch { _uiState.update { it.copy(errorMessage = "Could not load workout status.") } }
+        .collect { (id, metadata) ->
+          _uiState.update { state ->
+            if ((state.previousPlan?.id ?: state.plan?.id) != id) state
+            else state.copy(workoutMetadata = metadata)
+          }
+        }
+    }
+  }
+
+  fun showPlanHistory() {
+    _uiState.update { it.copy(showPlanHistory = true) }
+    if (historyJob?.isActive == true) return
+    historyJob = viewModelScope.launch {
+      _uiState.update { it.copy(historyLoading = true) }
+      planRepository.observePreviousPlans()
+        .catch { _uiState.update { it.copy(historyLoading = false, errorMessage = "Could not load previous plans.") } }
+        .collect { plans -> _uiState.update { it.copy(previousPlans = plans, historyLoading = false) } }
+    }
+  }
+
+  fun hidePlanHistory() {
+    previousPlanJob?.cancel()
+    _uiState.update { it.copy(showPlanHistory = false, historyLoading = false) }
+  }
+
+  fun openPreviousPlan(id: String) {
+    if (_uiState.value.previousPlans.none { it.id == id }) return
+    previousPlanJob?.cancel()
+    previousPlanJob = viewModelScope.launch {
+      _uiState.update { it.copy(historyLoading = true) }
+      try {
+        val plan = planRepository.getPlanSnapshot(id) ?: error("Saved plan unavailable")
+        _uiState.update { it.copy(previousPlan = plan, previousWeekIndex = 0,
+          showPlanHistory = false, historyLoading = false, workoutMetadata = emptyMap()) }
+      } catch (exception: CancellationException) {
+        throw exception
+      } catch (_: Exception) {
+        _uiState.update { it.copy(historyLoading = false, errorMessage = "Could not open this previous plan.") }
+      }
+    }
+  }
+
+  fun closePreviousPlan() {
+    _uiState.update { it.copy(previousPlan = null, workoutMetadata = emptyMap()) }
+  }
+
+  fun selectPreviousWeek(index: Int) {
+    _uiState.update { it.copy(previousWeekIndex = index.coerceIn(0, it.previousPlan?.weeks?.lastIndex ?: 0)) }
   }
 
   fun selectWeek(index: Int) {
@@ -120,6 +191,8 @@ class PlanViewModel(
   }
 
   fun showCompletionScheduler() = _uiState.update { it.copy(showCompletionScheduler = true) }
+
+  fun hideCompletionScheduler() = _uiState.update { it.copy(showCompletionScheduler = false) }
 
   fun scheduleCompletion(date: LocalDate) = updateCompletionSchedule("schedule date=$date") { goal, profile ->
     if (_uiState.value.plan == null) planRepository.createWithCompletionDate(goal, profile, date)

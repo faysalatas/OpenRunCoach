@@ -440,17 +440,55 @@ Rules:
 
 ## 17. Training Plan rules
 
-The Plan screen should prioritize chronological scanability.
+The Plan screen should immediately explain the goal, the selected week's work and
+the existing coaching rationale. Use this order:
+
+1. Small Training Plan eyebrow and one compact goal/milestone hero.
+2. Local horizontal week selector with compact date ranges.
+3. One weekly summary above the chronological workout list.
+4. Compact Coach summary with detailed Why this week? collapsed initially.
+5. Secondary Plan details and Previous plans access.
+
+The hero groups goal title, week/horizon and genuine confidence. Completion Run is
+a plan milestone; never label its date Goal date or add a date to TrainingGoal.
+Readiness uses friendly factual wording, separate from plan confidence. Keep date
+selection/rescheduling in a secondary sheet using the existing scheduling actions.
+
+Week navigation stays local and retains selection across background updates and
+return from workout detail. Distinguish Past / Current / Upcoming with text and
+quiet styling; selected/current emphasis must not depend on color alone. Use
+locale-aware short date ranges, including both months/years when needed.
+
+Weekly summaries show genuine planned distance/duration and non-rest sessions.
+For current/past weeks with recorded associations, show actual/planned volume and
+completed-session counts separately. Partial/stopped volume still counts as actual
+training; only existing completion semantics increment completed sessions. Use
+canonical actual summaries through existing physical-run associations, never raw
+provider totals or a new UI deduplication policy. Unknown distance remains unknown.
+A small volume bar is appropriate only with real comparable values; no week score
+or invented percentage. Future weeks show planned values and a provisional label.
 
 Each row/card should expose only the most useful fields:
 
 - day/date
 - workout type
 - planned distance/duration
-- target pace when available
+- target pace when genuinely applicable to the whole continuous prescription
 - status
 
-Expanded detail is secondary.
+Use the shared workout accent palette as a slim scanning strip, the existing
+runner/pace icons and shared effort bars. Avoid large per-workout hero images.
+Keep prescription metadata compact and able to wrap. Repeated or multi-block work
+uses genuine repetition/work summaries and a Structured workout label; never
+present a unique work-segment pace as the entire run's target. Share prescription
+formatting with Home. Keep rationale to at most two short lines; full workout
+reasoning remains in the existing Planned Workout Detail → Coach.
+
+Today is a small explicit label. Surface actual lifecycle/check-in/adjustment and
+execution labels without inventing a missed/failed state from the date alone.
+Explicit rest entries remain compact; empty days need no fabricated rest cards.
+Completion Run gets a restrained milestone label/accent, not another generic Easy
+row. Every workout opens the existing detail implementation.
 
 Completed workouts may show actual values, but must never replace the immutable prescription.
 
@@ -464,6 +502,19 @@ Plan UI should visually distinguish:
 without using four loud colors.
 
 A vertical timeline or restrained list is preferred over a dense card grid.
+
+The Coach summary must only shorten existing week explanation/reasons; detailed
+week/block rationale stays under Why this week? and starts collapsed for each
+selected week. State once that future work is provisional/adaptive. Do not introduce
+new coaching, readiness or progression logic in presentation.
+
+Archive access lives inside Plan. Previous plans may use a small sheet and read-only
+week/workout view over existing saved records, with friendly Replaced plan / Archived
+plan labels. Do not add a bottom-navigation destination or active-plan switching action.
+Keep existing regeneration and milestone actions secondary, with their semantics intact.
+No-plan states retain the existing goal/scheduling path; loading uses lightweight text
+and surfaces. The normal top viewport should show hero, selector, summary and the start
+of the workout list. Allow scrolling and font scaling; never clip important values.
 
 ---
 

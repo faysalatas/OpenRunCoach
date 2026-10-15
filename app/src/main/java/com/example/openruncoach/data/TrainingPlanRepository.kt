@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 
 class TrainingPlanRepository(
   private val database: OpenRunCoachDatabase,
@@ -41,6 +42,31 @@ class TrainingPlanRepository(
 ) {
   private val dao = database.trainingPlanDao()
   private val workoutDao = database.coachingWorkflowDao()
+
+  /** Presentation reads reuse canonical actual resolution and authoritative associations. */
+  fun observeWorkoutPresentation(planId: String): Flow<Map<String, PlanWorkoutPresentation>> = combine(
+    dao.observeWorkoutMetadata(planId), database.runDao().observeCanonicalActualRuns(),
+  ) { metadata, actuals ->
+    val actualByPhysicalId = actuals.map { it.toActualSummary() }.associateBy { it.physicalRunId }
+    metadata.associate { record -> record.workoutId to PlanWorkoutPresentation(
+      lifecycle = WorkoutLifecycleState.valueOf(record.lifecycleState),
+      adjusted = record.adjusted,
+      actual = record.physicalRunId?.let(actualByPhysicalId::get),
+    ) }
+  }
+
+  fun observePreviousPlans(): Flow<List<PreviousPlanSummary>> = dao.observePreviousPlans().map { records ->
+    records.map { record -> PreviousPlanSummary(
+      id = record.id,
+      startDate = LocalDate.ofEpochDay(record.startDateEpochDay),
+      endDate = record.endDateEpochDay?.let(LocalDate::ofEpochDay),
+      status = TrainingPlanStatus.valueOf(record.status),
+      weekCount = record.weekCount,
+      distance = com.example.openruncoach.domain.goal.GoalDistance.valueOf(record.distance),
+      customDistanceMeters = record.customDistanceMeters,
+      goalType = com.example.openruncoach.domain.goal.GoalType.valueOf(record.goalType),
+    ) }
+  }
 
   fun observeActivePlan(): Flow<TrainingPlan?> = flow {
     executionRepository.reconcileExistingCheckouts()
@@ -219,6 +245,23 @@ class TrainingPlanRepository(
 data class CompletionScheduleUpdate(
   val milestone: com.example.openruncoach.domain.goal.GoalCompletionMilestone,
   val plan: TrainingPlan,
+)
+
+data class PlanWorkoutPresentation(
+  val lifecycle: WorkoutLifecycleState,
+  val adjusted: Boolean,
+  val actual: com.example.openruncoach.domain.RunSummary?,
+)
+
+data class PreviousPlanSummary(
+  val id: String,
+  val startDate: LocalDate,
+  val endDate: LocalDate?,
+  val status: TrainingPlanStatus,
+  val weekCount: Int,
+  val distance: com.example.openruncoach.domain.goal.GoalDistance,
+  val customDistanceMeters: Double?,
+  val goalType: com.example.openruncoach.domain.goal.GoalType,
 )
 
 internal data class TrainingPlanSnapshot(

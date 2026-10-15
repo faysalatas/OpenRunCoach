@@ -13,18 +13,13 @@ import com.example.openruncoach.domain.RunSummary
 import com.example.openruncoach.domain.aggregateActualPaceSecondsPerKm
 import com.example.openruncoach.domain.coaching.CoachingDecision
 import com.example.openruncoach.domain.coaching.CoachingEngine
-import com.example.openruncoach.domain.goal.GoalDistance
-import com.example.openruncoach.domain.goal.GoalType
 import com.example.openruncoach.domain.goal.TrainingGoal
 import com.example.openruncoach.domain.plan.TrainingPlan
-import com.example.openruncoach.domain.workout.PaceTarget
-import com.example.openruncoach.domain.workout.RpeTarget
-import com.example.openruncoach.domain.workout.StructuredWorkout
-import com.example.openruncoach.domain.workout.WorkoutDescriptionFormatter
-import com.example.openruncoach.domain.workout.WorkoutEstimateCalculator
 import com.example.openruncoach.domain.workout.WorkoutResponse
 import com.example.openruncoach.domain.workout.WorkoutType
 import com.example.openruncoach.domain.workout.displayName
+import com.example.openruncoach.ui.workout.listSummary
+import com.example.openruncoach.ui.workout.planTitle
 import java.time.Clock
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -215,64 +210,19 @@ private fun TrainingPlan?.upcomingWorkoutSummaries(today: LocalDate): List<HomeW
     .sortedWith(compareBy({ it.workout.date }, { it.workout.name }))
     .take(5)
     .map { entry ->
+      val prescription = entry.workout.listSummary()
       HomeWorkoutSummary(
         name = entry.workout.name,
         type = entry.workout.type,
         date = entry.workout.date,
         isToday = entry.workout.date == today,
-        details = entry.workout.homeDetails(),
-        distanceLabel = entry.workout.homeDistanceLabel(),
-        paceLabel = entry.workout.homePaceLabel(),
-        intensity = entry.workout.homeIntensity(),
+        details = listOfNotNull(prescription.repetitionLabel, prescription.distanceLabel,
+          prescription.paceLabel, prescription.rpeLabel, prescription.durationLabel).distinct().take(3),
+        distanceLabel = prescription.distanceLabel,
+        paceLabel = prescription.paceLabel,
+        intensity = HomeWorkoutIntensity.entries.firstOrNull { it.label == prescription.effortLabel },
       )
     }
-}
-
-private fun StructuredWorkout.homeDistanceLabel(): String? =
-  WorkoutEstimateCalculator.calculate(this).estimatedTotalDistanceMeters?.let(::formatMetricDistance)
-
-private fun StructuredWorkout.homePaceLabel(): String? {
-  val paceTargets = blocks.flatMap { it.segments }
-    .flatMap { listOf(it.primaryIntensity) + it.secondaryIntensities }
-    .filterIsInstance<PaceTarget>()
-    .distinct()
-  return paceTargets.singleOrNull()?.let {
-    WorkoutDescriptionFormatter.paceRange(it).replace(" min/km", " /km")
-  }
-}
-
-private fun StructuredWorkout.homeIntensity(): HomeWorkoutIntensity? {
-  val rpeTargets = blocks.flatMap { it.segments }
-    .flatMap { listOf(it.primaryIntensity) + it.secondaryIntensities }
-    .filterIsInstance<RpeTarget>()
-  val maximum = rpeTargets.maxOfOrNull(RpeTarget::maximum) ?: return null
-  return when (maximum) {
-    in 1..4 -> HomeWorkoutIntensity.EASY
-    in 5..6 -> HomeWorkoutIntensity.MODERATE
-    in 7..8 -> HomeWorkoutIntensity.HARD
-    else -> HomeWorkoutIntensity.VERY_HARD
-  }
-}
-
-private fun StructuredWorkout.homeDetails(): List<String> {
-  val estimate = WorkoutEstimateCalculator.calculate(this)
-  val targets = blocks.flatMap { it.segments }
-    .flatMap { listOf(it.primaryIntensity) + it.secondaryIntensities }
-  val paceTargets = targets.filterIsInstance<PaceTarget>().distinct()
-  val rpeTargets = targets.filterIsInstance<RpeTarget>().distinct()
-  return buildList {
-    estimate.estimatedTotalDistanceMeters?.let { add(formatMetricDistance(it)) }
-    paceTargets.singleOrNull()?.let {
-      add(WorkoutDescriptionFormatter.paceRange(it).replace(" min/km", " /km"))
-    }
-    rpeTargets.singleOrNull()?.let { add("RPE ${it.minimum}–${it.maximum}") }
-    if (size < 3) {
-      estimate.estimatedMinimumDurationSeconds?.let { minimum ->
-        val maximum = estimate.estimatedMaximumDurationSeconds ?: minimum
-        add(WorkoutDescriptionFormatter.durationRange(minimum, maximum))
-      }
-    }
-  }.distinct().take(3)
 }
 
 private fun buildWeekSummary(
@@ -438,12 +388,4 @@ private fun formatWeekRange(start: LocalDate, end: LocalDate, locale: Locale): S
   return "${start.format(formatter)} – ${end.format(formatter)}"
 }
 
-private fun TrainingGoal.toHomeSummary(): HomeGoalSummary {
-  val distanceLabel = if (distance == GoalDistance.CUSTOM) formatMetricDistance(distanceMeters) else distance.displayName
-  val label = when (goalType) {
-    GoalType.COMPLETE_DISTANCE -> "Complete $distanceLabel"
-    GoalType.IMPROVE_PERFORMANCE -> "Improve $distanceLabel performance"
-    GoalType.TARGET_TIME -> "$distanceLabel target time"
-  }
-  return HomeGoalSummary(label)
-}
+private fun TrainingGoal.toHomeSummary(): HomeGoalSummary = HomeGoalSummary(planTitle())

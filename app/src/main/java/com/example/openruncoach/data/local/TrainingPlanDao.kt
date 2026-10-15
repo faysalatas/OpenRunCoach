@@ -5,8 +5,44 @@ import androidx.room.Query
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 
+/** Read-only fields for Plan presentation; no additional persisted state. */
+data class PlanWorkoutMetadata(
+  val workoutId: String,
+  val lifecycleState: String,
+  val adjusted: Boolean,
+  val physicalRunId: String?,
+)
+
+data class PreviousPlanRecord(
+  val id: String,
+  val startDateEpochDay: Long,
+  val endDateEpochDay: Long?,
+  val status: String,
+  val weekCount: Int,
+  val distance: String,
+  val customDistanceMeters: Double?,
+  val goalType: String,
+)
+
 @Dao
 interface TrainingPlanDao {
+  @Query("""SELECT planned_workouts.id AS workoutId, planned_workouts.lifecycleState,
+    EXISTS(SELECT 1 FROM workout_adjustments WHERE plannedWorkoutId = planned_workouts.id) AS adjusted,
+    workout_run_associations.physicalRunId
+    FROM training_plan_workouts
+    INNER JOIN planned_workouts ON planned_workouts.id = training_plan_workouts.workoutId
+    LEFT JOIN workout_run_associations ON workout_run_associations.plannedWorkoutId = planned_workouts.id
+    WHERE training_plan_workouts.planId = :planId""")
+  fun observeWorkoutMetadata(planId: String): Flow<List<PlanWorkoutMetadata>>
+
+  @Query("""SELECT training_plans.id, training_plans.startDateEpochDay, training_plans.endDateEpochDay,
+    training_plans.status, training_goals.distance, training_goals.customDistanceMeters, training_goals.goalType,
+    (SELECT COUNT(*) FROM training_weeks WHERE planId = training_plans.id) AS weekCount
+    FROM training_plans INNER JOIN training_goals ON training_goals.id = training_plans.goalId
+    WHERE training_plans.status != 'ACTIVE' OR training_goals.status != 'ACTIVE'
+    ORDER BY training_plans.createdAtEpochMillis DESC, training_plans.id""")
+  fun observePreviousPlans(): Flow<List<PreviousPlanRecord>>
+
   @Query(
     """SELECT training_plans.* FROM training_plans
       INNER JOIN training_goals ON training_goals.id = training_plans.goalId
