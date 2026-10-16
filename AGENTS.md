@@ -61,7 +61,7 @@ OpenRunCoach is a native Android adaptive running coach.
 - Distinguish implemented code, passing automated checks and device verification. Mark device checks not required, pending, passed or failed with evidence.
 - Keep original prescriptions, effective adjustments and actual performance distinct when changing coaching behavior.
 - Do not close an issue until its acceptance criteria are satisfied; a partial implementation needs an explicit remaining-work list.
-- Never commit signing keys, tokens, SDK binaries, private health data or diagnostic dumps. Samsung SDK provisioning for CI is documented in docs/repository-workflow.md.
+- Never commit signing keys, tokens, SDK binaries, private health data or diagnostic dumps. CI must not require the owner to host or supply a proprietary SDK; SDK-independent checks and local Android verification are documented in docs/repository-workflow.md.
 - Use the PR template and update user-facing documentation when behavior or setup changes.
 
 ## UI / Design
