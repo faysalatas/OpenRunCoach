@@ -78,7 +78,8 @@ class WorkoutResponseEvaluatorTest {
     val run = run(5_000.0, 1_800, 360.0)
     val feedback = feedback(rpe = 9)
     val execution = adherenceEvaluator.evaluate(workout, null, run, feedback)
-    val rawMetrics = metrics(run, List(31) { index -> speedSample(index * 60L, 2.78) })
+    // A continuous-run control needs movement samples within the supported evidence gap.
+    val rawMetrics = metrics(run, List(181) { index -> speedSample(index * 10L, 2.78) })
     val metrics = rawMetrics.copy(series = rawMetrics.toSampleEntities().toTimeSeries())
 
     val response = responseEvaluator.evaluate(workout, null, execution, run, feedback, metrics)

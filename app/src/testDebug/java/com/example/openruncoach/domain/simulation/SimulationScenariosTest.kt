@@ -106,4 +106,16 @@ class SimulationScenariosTest {
       missing.copy(series = missing.toSampleEntities().toTimeSeries())
     ))
   }
+
+  @Test fun scenariosDEAndMRetainTheirContinuityThroughTheProductionMetricMapper() {
+    mapOf(
+      SimulationScenarioKey.HARD_CONTINUOUS_5K to RunContinuityEvidence.CONTINUOUS,
+      SimulationScenarioKey.HARD_5K_POOR_RESPONSE to RunContinuityEvidence.INTERRUPTED,
+      SimulationScenarioKey.LITTLE_EVIDENCE to RunContinuityEvidence.UNKNOWN,
+    ).forEach { (key, expected) ->
+      val metrics = SimulationScenarios.preset(key).sessions.single().run.toMetrics(clock)
+      val roundTrip = metrics.copy(series = metrics.toSampleEntities().toTimeSeries())
+      assertEquals(key.displayName, expected, continuityEvaluator.evaluate(roundTrip))
+    }
+  }
 }
