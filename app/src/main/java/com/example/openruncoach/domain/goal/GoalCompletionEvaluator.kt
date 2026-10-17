@@ -72,7 +72,7 @@ class GoalCompletionEvaluator {
         GoalCompletionStatus.CONTINUITY_NOT_DEMONSTRATED,
         target,
         observed,
-        "Continuous completion could not be verified because no usable speed or cadence samples were available.",
+        "Continuous completion could not be verified because speed or cadence evidence was insufficient.",
       )
       RunContinuityEvidence.CONTINUOUS -> Unit
     }

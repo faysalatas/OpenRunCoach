@@ -71,6 +71,24 @@ class GoalCompletionEvaluatorTest {
     assertTrue(result.reasons.any { it.contains("walking or stopped") })
   }
 
+  @Test fun fiveKWithSparseWalkingEveryTwentySecondsDoesNotCompleteContinuousDistanceGoal() {
+    val walkingSamples = (0L..600L step 20).map { seconds ->
+      TimedMetricSample(now.plusSeconds(seconds), 1.0)
+    }
+    val result = evaluator.evaluate(
+      goal(),
+      run(5_050.0, durationSeconds = 600),
+      metrics(5_050.0, durationSeconds = 600).copy(series = RunTimeSeries(speed = walkingSamples)),
+      WorkoutLifecycleState.COMPLETED,
+      feedback(),
+    )
+
+    assertEquals(5_050.0, result.observedDistanceMeters!!, 0.0)
+    assertFalse(result.completed)
+    assertEquals(GoalCompletionStatus.CONTINUITY_NOT_DEMONSTRATED, result.status)
+    assertTrue(result.reasons.any { it.contains("evidence was insufficient") })
+  }
+
   @Test fun qualifyingRunCompletesGoalRegardlessOfWorkoutName() {
     val result = evaluator.evaluate(goal(), run(5_010.0), metrics(5_010.0), WorkoutLifecycleState.COMPLETED, feedback())
     assertTrue(result.completed)
@@ -106,25 +124,25 @@ class GoalCompletionEvaluatorTest {
     assessmentAtCreation = GoalAssessment(GoalAssessmentLevel.LIMITED_DATA, listOf("Fixture")),
   )
 
-  private fun run(distance: Double) = RunSummary(
+  private fun run(distance: Double, durationSeconds: Long = 2_100) = RunSummary(
     healthConnectRecordId = "run",
     startTime = now,
-    endTime = now.plusSeconds(2_100),
-    durationSeconds = 2_100,
+    endTime = now.plusSeconds(durationSeconds),
+    durationSeconds = durationSeconds,
     distanceMeters = distance,
     averageHeartRate = null,
     maxHeartRate = null,
-    averagePaceSecondsPerKm = 2_100_000.0 / distance,
+    averagePaceSecondsPerKm = durationSeconds * 1_000.0 / distance,
   )
 
-  private fun metrics(distance: Double) = RunMetrics(
+  private fun metrics(distance: Double, durationSeconds: Long = 2_100) = RunMetrics(
     runId = "run",
     startTime = now,
-    endTime = now.plusSeconds(2_100),
-    durationSeconds = MetricValue(2_100L, MetricSource.HEALTH_CONNECT, MetricConfidence.HIGH),
+    endTime = now.plusSeconds(durationSeconds),
+    durationSeconds = MetricValue(durationSeconds, MetricSource.HEALTH_CONNECT, MetricConfidence.HIGH),
     distanceMeters = MetricValue(distance, MetricSource.HEALTH_CONNECT, MetricConfidence.HIGH),
-    averagePaceSecondsPerKm = MetricValue(2_100_000.0 / distance, MetricSource.DERIVED, MetricConfidence.HIGH),
-    series = RunTimeSeries(speed = (0L..2_100L step 10).map { seconds ->
+    averagePaceSecondsPerKm = MetricValue(durationSeconds * 1_000.0 / distance, MetricSource.DERIVED, MetricConfidence.HIGH),
+    series = RunTimeSeries(speed = (0L..durationSeconds step 10).map { seconds ->
       TimedMetricSample(now.plusSeconds(seconds), 2.4)
     }),
     generatedAt = now,

@@ -15,6 +15,7 @@ import com.example.openruncoach.domain.coaching.CoachingDecision
 import com.example.openruncoach.domain.coaching.CoachingEngine
 import com.example.openruncoach.domain.goal.TrainingGoal
 import com.example.openruncoach.domain.plan.TrainingPlan
+import com.example.openruncoach.domain.workout.WorkoutEstimateCalculator
 import com.example.openruncoach.domain.workout.WorkoutResponse
 import com.example.openruncoach.domain.workout.WorkoutType
 import com.example.openruncoach.domain.workout.displayName
