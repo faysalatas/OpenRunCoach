@@ -84,7 +84,6 @@ class RunMetricsAutoRefreshCoordinator(
   private val metricsRepository: RunMetricsRepository,
   private val routeRepository: RunRouteRepository? = null,
   private val routeSplitDeriver: RouteSplitDeriver = RouteSplitDeriver(),
-  private val athleteProfileRepository: AthletePerformanceProfileRepository? = null,
   private val freshnessPolicy: RunMetricsFreshnessPolicy = RunMetricsFreshnessPolicy(),
 ) : RunMetricsRefresher {
   private val mutex = Mutex()
@@ -148,7 +147,6 @@ class RunMetricsAutoRefreshCoordinator(
           val result = routeSplitDeriver.derive(route, run.distanceMeters, metrics)
           routeRepository?.saveForPhysicalRun(result.route, result.splits, run.physicalRunId)
         }
-        athleteProfileRepository?.recalculate()
       },
     )
     // Saved routes may predate split derivation, even when metrics are already fresh.
@@ -162,9 +160,9 @@ class RunMetricsAutoRefreshCoordinator(
     fun create(
       context: Context,
       database: OpenRunCoachDatabase,
-      athleteProfileRepository: AthletePerformanceProfileRepository? = null,
+      clock: Clock = Clock.systemDefaultZone(),
     ): RunMetricsAutoRefreshCoordinator {
-      val metricsRepository = RunMetricsRepository(database.runMetricsDao())
+      val metricsRepository = RunMetricsRepository(database, clock)
       val samsungDataSource = SamsungHealthDataSource(context)
       return RunMetricsAutoRefreshCoordinator(
         healthConnectReader = HealthConnectRunDataReader(context),
@@ -177,7 +175,6 @@ class RunMetricsAutoRefreshCoordinator(
         samsungMetricsEnricher = SamsungHealthRunMetricsEnricher(),
         metricsRepository = metricsRepository,
         routeRepository = RunRouteRepository(database.runRouteDao()),
-        athleteProfileRepository = athleteProfileRepository,
       )
     }
   }

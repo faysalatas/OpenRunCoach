@@ -56,6 +56,7 @@ fun HistoryScreen(onRunClick: (String) -> Unit, modifier: Modifier = Modifier) {
         HealthConnectRepository(context),
         settingsRepository,
         clock = environment.clock,
+        postRunReconciler = environment.postRunReconciler(),
       ),
       RunRouteRepository(database.runRouteDao()),
       WorkoutExecutionRepository(database, environment.clock),

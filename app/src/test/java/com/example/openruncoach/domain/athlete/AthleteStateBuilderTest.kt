@@ -29,6 +29,18 @@ class AthleteStateBuilderTest {
   private val calculator = AthletePerformanceProfileCalculator(Clock.fixed(now, ZoneOffset.UTC), ZoneOffset.UTC)
   private val builder = AthleteStateBuilder()
 
+  @Test fun providerRepresentationChangesKeepOnePhysicalResponseContributor() {
+    val current = run("current-provider", 5_000.0, 0).copy(physicalRunId = "physical")
+    val currentResponse = response(current, WorkoutPurpose.AEROBIC_BASE, 3, SessionCost.NORMAL)
+      .copy(physicalRunId = "physical")
+    val oldRepresentation = currentResponse.copy(runId = "older-provider")
+    val result = state(listOf(current), listOf(currentResponse, oldRepresentation))
+
+    assertEquals(1, result.recentResponseCount)
+    assertEquals(1, result.toleratedSessionCount)
+    assertEquals(5_000.0, result.longestCompletedDistanceMeters!!, 0.0)
+  }
+
   @Test fun hardFirstFiveKDemonstratesPerformanceWithoutClaimingComfortableTolerance() {
     val run = run("hard-5k", 5_000.0, 0)
     val state = state(listOf(run), listOf(response(run, WorkoutPurpose.GOAL_COMPLETION, 9, SessionCost.HIGH)))

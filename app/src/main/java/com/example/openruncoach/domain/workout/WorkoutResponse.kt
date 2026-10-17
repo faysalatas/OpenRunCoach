@@ -63,9 +63,11 @@ data class WorkoutResponse(
   val reportedRpe: Int,
   val qualityWorkCompletionFraction: Double?,
   val reasons: List<String>,
+  /** Stable training-session identity; runId identifies the current canonical evidence record. */
+  val physicalRunId: String = runId,
 ) {
   init {
-    require(runId.isNotBlank() && plannedWorkoutId.isNotBlank())
+    require(runId.isNotBlank() && plannedWorkoutId.isNotBlank() && physicalRunId.isNotBlank())
     require(actualDistanceMeters == null || actualDistanceMeters.isFinite() && actualDistanceMeters >= 0.0)
     require(actualDurationSeconds > 0L)
     require(actualPaceSecondsPerKm == null || actualPaceSecondsPerKm.isFinite() && actualPaceSecondsPerKm > 0.0)
@@ -180,6 +182,7 @@ class WorkoutResponseEvaluator(
       reportedRpe = feedback.rpe,
       qualityWorkCompletionFraction = execution.qualityWorkCompletionFraction,
       reasons = reasons,
+      physicalRunId = actualRun.physicalRunId,
     )
   }
 

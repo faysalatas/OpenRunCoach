@@ -57,10 +57,10 @@ class AthleteStateBuilder {
       .filter { it.isCanonical && it.relevance == com.example.openruncoach.domain.RunRelevance.ACTIVE }
       .filter { !it.startTime.isAfter(profile.calculatedAt) }
       .distinctBy(RunSummary::physicalRunId)
-      .associateBy(RunSummary::healthConnectRecordId)
+      .associateBy(RunSummary::physicalRunId)
     val responses = workoutResponses.asSequence()
-      .distinctBy { it.runId to it.plannedWorkoutId }
-      .mapNotNull { response -> runsById[response.runId]?.let { response to it } }
+      .distinctBy { it.physicalRunId }
+      .mapNotNull { response -> runsById[response.physicalRunId]?.let { response to it } }
       .sortedWith(compareBy<Pair<WorkoutResponse, RunSummary>> { it.second.startTime }.thenBy { it.first.runId })
       .toList()
     fun evidence(run: RunSummary, response: WorkoutResponse?) = TrainingEvidencePolicy.evaluate(
@@ -164,7 +164,7 @@ class AthleteStateBuilder {
     recentCanonicalRunCount: Int,
     profileSummary: RecentContinuitySummary,
   ): RecentContinuitySummary {
-    val responsesByRun = recentResponses.distinctBy { it.first.runId }
+    val responsesByRun = recentResponses.distinctBy { it.first.physicalRunId }
     if (responsesByRun.size != recentCanonicalRunCount) return profileSummary
     return RecentContinuitySummary(
       continuousRuns = responsesByRun.count { it.first.continuity == RunContinuityEvidence.CONTINUOUS },

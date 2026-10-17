@@ -4,6 +4,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import com.example.openruncoach.data.AthletePerformanceProfileRepository
 import com.example.openruncoach.data.AthleteStateRepository
 import com.example.openruncoach.data.GoalStrategyRepository
+import com.example.openruncoach.data.PostRunReconciler
 import com.example.openruncoach.data.TrainingGoalRepository
 import com.example.openruncoach.data.local.OpenRunCoachDatabase
 import com.example.openruncoach.domain.profile.AthletePerformanceProfileCalculator
@@ -21,6 +22,8 @@ data class OpenRunCoachEnvironment(
   )
 
   fun athleteStateRepository() = AthleteStateRepository(database, profileRepository())
+
+  fun postRunReconciler() = PostRunReconciler(database, clock, profileRepository())
 
   fun goalStrategyRepository() = GoalStrategyRepository(
     TrainingGoalRepository(database, profileRepository()),

@@ -79,20 +79,9 @@ interface RunDao {
   @Query("UPDATE runs SET relevance = :relevance WHERE physicalRunId = :physicalRunId")
   suspend fun updateRelevance(physicalRunId: String, relevance: String)
 
-  @Query("UPDATE planned_workouts SET lifecycleState = 'PLANNED' WHERE id IN (SELECT plannedWorkoutId FROM workout_run_associations WHERE physicalRunId = :physicalRunId)")
-  suspend fun resetAssociatedWorkout(physicalRunId: String)
-
-  @Query("DELETE FROM workout_executions WHERE physicalRunId = :physicalRunId")
-  suspend fun deletePhysicalRunExecution(physicalRunId: String)
-
-  @Query("DELETE FROM workout_run_associations WHERE physicalRunId = :physicalRunId")
-  suspend fun deletePhysicalRunAssociation(physicalRunId: String)
-
   @Transaction
   suspend fun ignorePhysicalRun(physicalRunId: String) {
-    resetAssociatedWorkout(physicalRunId)
-    deletePhysicalRunExecution(physicalRunId)
-    deletePhysicalRunAssociation(physicalRunId)
+    // Retain assignment and checkout as restoration inputs. Reconciliation invalidates execution.
     updateRelevance(physicalRunId, "IGNORED")
   }
 

@@ -69,6 +69,7 @@ fun CoachDetailScreen(runId: String, onBack: () -> Unit, modifier: Modifier = Mo
         HealthConnectRepository(context),
         settingsRepository,
         clock = environment.clock,
+        postRunReconciler = environment.postRunReconciler(),
       ),
       RunFeedbackRepository(database, environment.clock),
       workoutResponseRepository,

@@ -55,8 +55,6 @@ import com.example.openruncoach.data.RunMetricsRepository
 import com.example.openruncoach.data.RunRouteRepository
 import com.example.openruncoach.data.RunMetricsAutoRefreshCoordinator
 import com.example.openruncoach.data.RunSettingsRepository
-import com.example.openruncoach.data.GoalCompletionRepository
-import com.example.openruncoach.data.TrainingGoalRepository
 import com.example.openruncoach.data.WorkoutExecutionRepository
 import com.example.openruncoach.data.WorkoutAssignmentState
 import com.example.openruncoach.data.WorkoutResponseRepository
@@ -122,7 +120,7 @@ fun RunDetailScreen(
     val settingsRepository = RunSettingsRepository(context)
     val profileRepository = environment.profileRepository()
     val metricsRefresher = if (environment.isSimulation) null else {
-      RunMetricsAutoRefreshCoordinator.create(context, database, profileRepository)
+      RunMetricsAutoRefreshCoordinator.create(context, database, environment.clock)
     }
     RunDetailViewModel(
       runId,
@@ -131,14 +129,12 @@ fun RunDetailScreen(
         HealthConnectRepository(context),
         settingsRepository,
         clock = environment.clock,
-        athleteProfileRepository = profileRepository,
+        postRunReconciler = environment.postRunReconciler(),
       ),
       RunFeedbackRepository(database, environment.clock, athleteProfileRepository = profileRepository),
       RunMetricsRepository(database.runMetricsDao()),
       RunRouteRepository(database.runRouteDao()),
       metricsRefresher,
-      TrainingGoalRepository(database, profileRepository),
-      GoalCompletionRepository(database, environment.clock),
       WorkoutExecutionRepository(database, environment.clock, athleteProfileRepository = profileRepository),
       WorkoutResponseRepository(database),
       CoachingEngine(environment.clock),

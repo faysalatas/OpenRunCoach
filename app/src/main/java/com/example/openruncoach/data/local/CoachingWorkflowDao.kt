@@ -30,6 +30,13 @@ data class PlannedWorkoutRecord(
 
 @Dao
 interface CoachingWorkflowDao {
+  /** Unfiltered rows are needed to remove obsolete or ignored interpretations during recovery. */
+  @Query("SELECT * FROM workout_executions")
+  suspend fun getStoredExecutions(): List<WorkoutExecutionEntity>
+
+  @Query("SELECT * FROM workout_executions WHERE physicalRunId = :physicalRunId ORDER BY plannedWorkoutId")
+  suspend fun getStoredExecutionsForPhysicalRun(physicalRunId: String): List<WorkoutExecutionEntity>
+
   @Transaction
   @Query("SELECT * FROM planned_workouts WHERE isPreview = 0 ORDER BY dateEpochDay DESC, createdAtEpochMillis DESC LIMIT 1")
   fun observeLatestPlannedWorkout(): Flow<PlannedWorkoutRecord?>

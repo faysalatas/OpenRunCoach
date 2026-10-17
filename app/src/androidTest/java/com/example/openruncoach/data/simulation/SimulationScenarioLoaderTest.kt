@@ -8,6 +8,7 @@ import com.example.openruncoach.data.AthletePerformanceProfileRepository
 import com.example.openruncoach.data.AthleteStateRepository
 import com.example.openruncoach.data.HealthConnectRepository
 import com.example.openruncoach.data.RunMetricsRepository
+import com.example.openruncoach.data.PostRunReconciler
 import com.example.openruncoach.data.RunRepository
 import com.example.openruncoach.data.RunSettingsRepository
 import com.example.openruncoach.data.WorkoutResponseRepository
@@ -93,6 +94,7 @@ class SimulationScenarioLoaderTest {
         clock = CLOCK,
         runMetricsRepository = null,
         runMetricsRefresher = null,
+        postRunReconciler = PostRunReconciler(database, CLOCK),
       )
 
       repository.refreshCanonicalSelection(preferredSourcePackage = null)

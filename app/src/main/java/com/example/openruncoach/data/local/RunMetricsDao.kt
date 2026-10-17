@@ -45,6 +45,8 @@ interface RunMetricsDao {
     """SELECT run_metrics.* FROM run_metrics
       INNER JOIN runs ON runs.healthConnectRecordId = run_metrics.runId
       WHERE runs.isCanonical = 1 AND runs.relevance = 'ACTIVE'
+        AND run_metrics.startTimeEpochMillis = runs.startTimeEpochMillis
+        AND run_metrics.endTimeEpochMillis = runs.endTimeEpochMillis
       ORDER BY run_metrics.startTimeEpochMillis ASC"""
   )
   suspend fun getCanonicalRunMetrics(): List<RunMetricsWithValues>
@@ -53,6 +55,8 @@ interface RunMetricsDao {
     """SELECT run_metrics.runId FROM run_metrics
       INNER JOIN runs ON runs.healthConnectRecordId = run_metrics.runId
       WHERE runs.isCanonical = 1 AND runs.relevance = 'ACTIVE'
+        AND run_metrics.startTimeEpochMillis = runs.startTimeEpochMillis
+        AND run_metrics.endTimeEpochMillis = runs.endTimeEpochMillis
       ORDER BY run_metrics.startTimeEpochMillis ASC"""
   )
   suspend fun getCanonicalRunMetricIds(): List<String>
