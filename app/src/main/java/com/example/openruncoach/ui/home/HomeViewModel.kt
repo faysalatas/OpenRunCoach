@@ -63,6 +63,7 @@ data class HomeWorkoutSummary(
   val distanceLabel: String?,
   val paceLabel: String?,
   val intensity: HomeWorkoutIntensity?,
+  val adaptationReason: String? = null,
 )
 
 enum class HomeWorkoutIntensity(val label: String, val activeBars: Int) {
@@ -207,7 +208,8 @@ class HomeViewModel(
 private fun TrainingPlan?.upcomingWorkoutSummaries(today: LocalDate): List<HomeWorkoutSummary> {
   this ?: return emptyList()
   return weeks.flatMap { it.workouts }
-    .filter { it.workout.type != WorkoutType.REST && it.executionResult == null && !it.workout.date.isBefore(today) }
+    .filter { (it.workout.type != WorkoutType.REST || it.originalWorkout.type != WorkoutType.REST) &&
+      it.executionResult == null && !it.workout.date.isBefore(today) }
     .sortedWith(compareBy({ it.workout.date }, { it.workout.name }))
     .take(5)
     .map { entry ->
@@ -222,6 +224,7 @@ private fun TrainingPlan?.upcomingWorkoutSummaries(today: LocalDate): List<HomeW
         distanceLabel = prescription.distanceLabel,
         paceLabel = prescription.paceLabel,
         intensity = HomeWorkoutIntensity.entries.firstOrNull { it.label == prescription.effortLabel },
+        adaptationReason = entry.adjustmentReasons.joinToString(" ").takeIf(String::isNotBlank),
       )
     }
 }

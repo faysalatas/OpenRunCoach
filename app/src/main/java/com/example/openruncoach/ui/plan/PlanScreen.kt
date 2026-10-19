@@ -60,7 +60,7 @@ fun PlanScreen(onOpenGoal: () -> Unit, onOpenWorkout: (String) -> Unit, modifier
     val completion = GoalCompletionRepository(database, environment.clock)
     PlanViewModel(
       TrainingPlanRepository(database, generator = TrainingPlanGenerator(environment.clock),
-        completionRepository = completion),
+        completionRepository = completion, clock = environment.clock),
       TrainingGoalRepository(database, profiles, TrainingGoalFactory(environment.clock)),
       profiles, completion, environment.clock,
     )
@@ -291,7 +291,12 @@ private fun PlanWorkoutRow(entry: PlannedWorkoutEntry, metadata: PlanWorkoutPres
     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClickLabel = "Open rest day") { onOpen(workout.id) },
       horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
       Text(date, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-      Text(workout.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+      Column(Modifier.weight(1f)) {
+        Text(workout.name, style = MaterialTheme.typography.bodyMedium)
+        entry.adjustmentReasons.forEach {
+          Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+      }
       if (workout.date == today) Text("TODAY", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
     }
     return
@@ -337,6 +342,9 @@ private fun PlanWorkoutRow(entry: PlannedWorkoutEntry, metadata: PlanWorkoutPres
           style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
         if (entry.generationReason.isNotBlank()) Text(concisePlanText(entry.generationReason), maxLines = 2, overflow = TextOverflow.Ellipsis,
           style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        entry.adjustmentReasons.forEach {
+          Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
       }
     }
   }

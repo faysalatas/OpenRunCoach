@@ -19,6 +19,8 @@ data class StructuredWorkoutDetails(
   val executionResult: WorkoutExecutionResult?,
   val actualRun: RunSummary? = null,
   val feedback: RunFeedback? = null,
+  val originalWorkout: StructuredWorkout = workout,
+  val adjustmentReasons: List<String> = emptyList(),
 )
 
 class StructuredWorkoutRepository(database: OpenRunCoachDatabase) {
@@ -33,21 +35,26 @@ class StructuredWorkoutRepository(database: OpenRunCoachDatabase) {
   fun observeWorkoutDetails(workoutId: String): Flow<StructuredWorkoutDetails?> = combine(
     dao.observeWorkout(workoutId),
     dao.observeExecution(workoutId),
-  ) { workout, execution -> workout to execution }
-    .flatMapLatest { (workout, execution) ->
+    dao.observeAdjustment(workoutId),
+  ) { workout, execution, adjustment -> Triple(workout, execution, adjustment) }
+    .flatMapLatest { (workout, execution, adjustment) ->
       if (workout == null) flowOf(null)
       else if (execution == null) {
-        flowOf(StructuredWorkoutDetails(StructuredWorkoutPersistenceMapper.toDomain(workout), null))
+        val original = StructuredWorkoutPersistenceMapper.toDomain(workout)
+        flowOf(StructuredWorkoutDetails(original.withEffectiveAdjustment(adjustment), null,
+          originalWorkout = original, adjustmentReasons = adjustment?.adjustmentReasons().orEmpty()))
       } else combine(
         runDao.observeActualRun(execution.actualRunId),
         feedbackRepository.observeFeedbackForRun(execution.physicalRunId),
       ) { run, feedback ->
         val actual = run?.toActualSummary()
         StructuredWorkoutDetails(
-          workout = StructuredWorkoutPersistenceMapper.toDomain(workout),
+          workout = StructuredWorkoutPersistenceMapper.toDomain(workout).withEffectiveAdjustment(adjustment),
           executionResult = execution.toDomain().withActualSummary(actual),
           actualRun = actual,
           feedback = feedback,
+          originalWorkout = StructuredWorkoutPersistenceMapper.toDomain(workout),
+          adjustmentReasons = adjustment?.adjustmentReasons().orEmpty(),
         )
       }
   }

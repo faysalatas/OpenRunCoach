@@ -192,9 +192,11 @@ class WorkoutExecutionRepository(
   ): WorkoutAssociationDecision {
     val workout = StructuredWorkoutPersistenceMapper.toDomain(record)
     val adjustment = dao.getAdjustment(workout.id)?.toAdjustedWorkout()
-    val estimate = WorkoutEstimateCalculator.calculate(workout)
-    val intendedDistance = if (adjustment == null) estimate.estimatedTotalDistanceMeters else null
-    val intendedDuration = adjustment?.durationMinutes?.times(60L) ?: estimate.estimatedTotalDurationSeconds
+    val effective = adjustment?.structuredWorkout ?: workout
+    val estimate = WorkoutEstimateCalculator.calculate(effective)
+    val intendedDistance = if (adjustment == null || adjustment.structuredWorkout != null) estimate.estimatedTotalDistanceMeters else null
+    val intendedDuration = if (adjustment?.structuredWorkout != null) estimate.estimatedTotalDurationSeconds
+      else adjustment?.durationMinutes?.times(60L) ?: estimate.estimatedTotalDurationSeconds
     val actualDistance = actualRun.distanceMeters
     return assessWorkoutAssociation(
       WorkoutAssociationEvidence(
@@ -270,4 +272,6 @@ internal fun WorkoutAdjustmentEntity.toAdjustedWorkout() = AdjustedWorkout(
   durationMinutes = adjustedDurationMinutes,
   targetRpeMin = adjustedTargetRpeMin,
   targetRpeMax = adjustedTargetRpeMax,
+  structuredWorkout = AdaptationAdjustmentCodec.effective(this),
+  isUnchanged = adjustments.startsWith(AdaptationAdjustmentCodec.KEEP_PREFIX),
 )

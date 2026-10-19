@@ -80,7 +80,7 @@ class SimulationScenarioLoader(
         id = "simulation-workout:${session.run.id}",
       )
     }
-    TrainingPlanRepository(database).saveAsActive(plan(goal.id, sessionWorkouts, clock))
+    TrainingPlanRepository(database, clock = clock).saveAsActive(plan(goal.id, sessionWorkouts, clock))
 
     val runDataSource = SimulationRunDataSource(database)
     runDataSource.persist(scenario.sessions.map { it.run }, clock)

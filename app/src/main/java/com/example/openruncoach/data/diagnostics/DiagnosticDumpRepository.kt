@@ -386,7 +386,8 @@ class DiagnosticDumpRepository(context: Context, private val environment: OpenRu
     archive.optional("resolved/goal_strategy") { archive.json("resolved/goal_strategy.json", if (goal != null && state != null) GoalStrategyResolver().resolve(goal, state) else null) }
     val today = LocalDate.now(snapshotClock)
     val upcoming = plan?.weeks.orEmpty().flatMap { it.workouts }
-      .filter { it.workout.type != WorkoutType.REST && it.executionResult == null && !it.workout.date.isBefore(today) }
+      .filter { (it.workout.type != WorkoutType.REST || it.originalWorkout.type != WorkoutType.REST) &&
+        it.executionResult == null && !it.workout.date.isBefore(today) }
       .sortedWith(compareBy({ it.workout.date }, { it.workout.name }))
     archive.optional("resolved/current_home_state") {
       val latest = runs.filter { it.relevance == com.example.openruncoach.domain.RunRelevance.ACTIVE }

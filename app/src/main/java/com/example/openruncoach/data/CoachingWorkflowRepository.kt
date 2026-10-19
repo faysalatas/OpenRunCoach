@@ -181,16 +181,10 @@ private fun WorkoutAdjustmentDecision.toEntity() = WorkoutAdjustmentEntity(
 
 private fun WorkoutAdjustmentEntity.toDomain(baseline: PlannedWorkout) = WorkoutAdjustmentDecision(
   baseline,
-  AdjustedWorkout(
-    baseline.id,
-    WorkoutType.valueOf(adjustedType),
-    adjustedDurationMinutes,
-    adjustedTargetRpeMin,
-    adjustedTargetRpeMax,
-  ),
+  toAdjustedWorkout(),
   ReadinessStatus.valueOf(readinessStatus),
   reasons.splitStoredValues(),
-  adjustments.splitStoredValues(),
+  if (AdaptationAdjustmentCodec.owns(this)) reasons.splitStoredValues() else adjustments.splitStoredValues(),
   Instant.ofEpochMilli(generatedAtEpochMillis),
 )
 

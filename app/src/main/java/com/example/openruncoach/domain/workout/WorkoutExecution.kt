@@ -95,27 +95,29 @@ class WorkoutAdherenceEvaluator(private val clock: Clock = Clock.systemUTC()) {
     require(feedback.belongsTo(actualRun)) { "Feedback must belong to the actual run." }
     require(plannedWorkout.type != WorkoutType.REST) { "A rest day cannot be associated with a completed run." }
 
-    val estimate = WorkoutEstimateCalculator.calculate(plannedWorkout)
-    val intendedDistance = if (adjustedWorkout == null) estimate.estimatedTotalDistanceMeters else null
-    val intendedDuration = adjustedWorkout?.durationMinutes?.times(60L)
-      ?: estimate.estimatedTotalDurationSeconds
+    val effective = adjustedWorkout?.structuredWorkout ?: plannedWorkout
+    val estimate = WorkoutEstimateCalculator.calculate(effective)
+    val intendedDistance = (if (adjustedWorkout == null || adjustedWorkout.structuredWorkout != null) estimate.estimatedTotalDistanceMeters else null)?.takeIf { it > 0 }
+    val intendedDuration = (if (adjustedWorkout?.structuredWorkout != null) estimate.estimatedTotalDurationSeconds
+      else adjustedWorkout?.durationMinutes?.times(60L) ?: estimate.estimatedTotalDurationSeconds)?.takeIf { it > 0 }
     val completionFraction = completionFraction(
       intendedDistance,
       intendedDuration,
       actual.distanceMeters,
       actual.durationSeconds,
     )
-    val qualityPurpose = plannedWorkout.purpose.requiresQualityEvidence()
+    val qualityPurpose = effective.purpose.requiresQualityEvidence()
     val qualityFraction = evidence.qualityWorkCompletionFraction
-    val effortDeviation = effortDiffersMaterially(plannedWorkout, adjustedWorkout, actual, feedback)
+    val effortDeviation = effortDiffersMaterially(effective, adjustedWorkout, actual, feedback)
     val comparisonUnavailable = completionFraction == null && (intendedDistance != null || intendedDuration != null)
 
     val status = when {
       feedback.completionStatus == CompletionStatus.ABORTED -> WorkoutExecutionStatus.ABORTED
       feedback.completionStatus == CompletionStatus.PARTIAL -> WorkoutExecutionStatus.PARTIALLY_COMPLETED
+      effective.type == WorkoutType.REST -> WorkoutExecutionStatus.COMPLETED_WITH_PRESCRIPTION_DEVIATION
       qualityPurpose && qualityFraction != null && qualityFraction < WorkoutAdherencePolicy.QUALITY_MINIMUM_COMPLETION_FRACTION ->
         WorkoutExecutionStatus.PARTIALLY_COMPLETED
-      completionFraction != null && completionFraction < WorkoutAdherencePolicy.minimumCompletionFraction(plannedWorkout.purpose) ->
+      completionFraction != null && completionFraction < WorkoutAdherencePolicy.minimumCompletionFraction(effective.purpose) ->
         WorkoutExecutionStatus.PARTIALLY_COMPLETED
       effortDeviation -> WorkoutExecutionStatus.COMPLETED_WITH_PRESCRIPTION_DEVIATION
       qualityPurpose && qualityFraction == null -> WorkoutExecutionStatus.COMPLETED_WITH_MINOR_DEVIATION
@@ -133,7 +135,7 @@ class WorkoutAdherenceEvaluator(private val clock: Clock = Clock.systemUTC()) {
       plannedWorkoutId = plannedWorkout.id,
       actualRunId = actualRun.healthConnectRecordId,
       status = status,
-      comparisonBasis = if (adjustedWorkout == null) {
+      comparisonBasis = if (adjustedWorkout == null || adjustedWorkout.isUnchanged) {
         WorkoutComparisonBasis.ORIGINAL_PRESCRIPTION
       } else {
         WorkoutComparisonBasis.ADJUSTED_PRESCRIPTION
@@ -143,7 +145,8 @@ class WorkoutAdherenceEvaluator(private val clock: Clock = Clock.systemUTC()) {
       actualDistanceMeters = actual.distanceMeters,
       actualDurationSeconds = actual.durationSeconds,
       qualityWorkCompletionFraction = qualityFraction,
-      explanation = explanation(plannedWorkout, status, completionFraction, qualityFraction, comparisonUnavailable),
+      explanation = if (effective.type == WorkoutType.REST) "Running was recorded against a recovery-day prescription. Actual training still counts."
+        else explanation(effective, status, completionFraction, qualityFraction, comparisonUnavailable),
       evaluatedAt = clock.instant(),
       physicalRunId = actualRun.physicalRunId,
     )

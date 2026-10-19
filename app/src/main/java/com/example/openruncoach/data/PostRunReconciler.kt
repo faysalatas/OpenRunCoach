@@ -18,8 +18,8 @@ import com.example.openruncoach.domain.workout.WorkoutResponse
 import java.time.Clock
 
 /**
- * The post-run commit boundary and input seam for later training adaptation. No next workout is
- * generated here. Responses and AthleteState remain rebuildable projections, not duplicate rows.
+ * The post-run commit boundary for evidence, goal completion, and upcoming adaptation. No new
+ * workout is generated here. Responses and AthleteState remain rebuildable projections.
  */
 data class PostRunReconciliationResult(
   val physicalRunId: String,
@@ -125,7 +125,7 @@ class PostRunReconciler(
       runs.getActualRun(it.healthConnectRecordId)?.toActualSummary()
     }
     val allResponses = responses.getAll()
-    val athleteState = AthleteStateBuilder().build(profile, canonicalRuns, allResponses)
+    val athleteState = AthleteStateBuilder().build(profile.copy(calculatedAt = clock.instant()), canonicalRuns, allResponses)
     val completion = GoalCompletionRepository(database, clock)
     val results = ids.map { id ->
       val canonical = runs.getActualRun(id)?.toActualSummary()
@@ -144,6 +144,7 @@ class PostRunReconciler(
         ) else null)
     }
     database.trainingGoalDao().getActiveGoal()?.toDomain()?.let { completion.refreshReadiness(it, profile) }
+    TrainingAdaptationRepository(database, clock).reconcile(athleteState, canonicalRuns, allResponses)
     return results
   }
 

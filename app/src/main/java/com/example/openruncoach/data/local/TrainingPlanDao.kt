@@ -26,8 +26,12 @@ data class PreviousPlanRecord(
 
 @Dao
 interface TrainingPlanDao {
+  @Query("SELECT * FROM workout_adjustments WHERE plannedWorkoutId IN (SELECT workoutId FROM training_plan_workouts INNER JOIN training_plans ON training_plans.id = training_plan_workouts.planId WHERE training_plans.status = 'ACTIVE')")
+  fun observeActivePlanAdjustmentRevision(): Flow<List<WorkoutAdjustmentEntity>>
+
   @Query("""SELECT planned_workouts.id AS workoutId, planned_workouts.lifecycleState,
-    EXISTS(SELECT 1 FROM workout_adjustments WHERE plannedWorkoutId = planned_workouts.id) AS adjusted,
+    EXISTS(SELECT 1 FROM workout_adjustments WHERE plannedWorkoutId = planned_workouts.id
+      AND substr(adjustments, 1, 19) != 'ADAPTATION_KEEP_V1:') AS adjusted,
     workout_run_associations.physicalRunId
     FROM training_plan_workouts
     INNER JOIN planned_workouts ON planned_workouts.id = training_plan_workouts.workoutId

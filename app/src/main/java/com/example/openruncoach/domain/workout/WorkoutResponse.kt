@@ -92,15 +92,17 @@ class WorkoutResponseEvaluator(
     require(feedback.belongsTo(actualRun))
     require(metrics == null || metrics.runId == actualRun.healthConnectRecordId)
 
-    val targetSegments = plannedWorkout.responseTargetSegments()
+    val effective = adjustedWorkout?.structuredWorkout ?: plannedWorkout
+    val targetSegments = effective.responseTargetSegments()
     val targets = targetSegments
       .flatMap { listOf(it.primaryIntensity) + it.secondaryIntensities }
     val plannedPace = targets.filterIsInstance<PaceTarget>().firstOrNull()
-      ?.takeIf { adjustedWorkout == null }
+      ?.takeIf { adjustedWorkout == null || adjustedWorkout.structuredWorkout != null }
     val plannedRpeTargets = targets.filterIsInstance<RpeTarget>()
-    val plannedRpeMinimum = adjustedWorkout?.targetRpeMin?.takeIf { it > 0 }
+    val scalarAdjustment = adjustedWorkout?.takeIf { it.structuredWorkout == null }
+    val plannedRpeMinimum = scalarAdjustment?.targetRpeMin?.takeIf { it > 0 }
       ?: plannedRpeTargets.minOfOrNull(RpeTarget::minimum)
-    val plannedRpeMaximum = adjustedWorkout?.targetRpeMax?.takeIf { it > 0 }
+    val plannedRpeMaximum = scalarAdjustment?.targetRpeMax?.takeIf { it > 0 }
       ?: plannedRpeTargets.maxOfOrNull(RpeTarget::maximum)
     val actual = RunActualResolver.resolve(actualRun, metrics)
     val actualDistance = actual.distanceMeters
@@ -111,18 +113,19 @@ class WorkoutResponseEvaluator(
     val plannedDuration = execution.intendedDurationSeconds
     val completion = execution.status.toCompletionOutcome()
     val volumeCompletion = volumeCompletion(
-      plannedWorkout.purpose,
+      effective.purpose,
       actualDistance,
       plannedDistance,
       actualDuration,
       plannedDuration,
     )
     val effortResponse = effortResponse(feedback.rpe, plannedRpeMinimum, plannedRpeMaximum)
-    val paceResponse = paceResponse(plannedWorkout.purpose, actualPace, plannedPace, adjustedWorkout)
+    val paceResponse = paceResponse(effective.purpose, actualPace, plannedPace,
+      adjustedWorkout?.takeIf { it.structuredWorkout == null })
     val continuity = continuityEvaluator.evaluate(metrics)
     val paceStability = paceStability(metrics)
     val adherence = adherence(
-      plannedWorkout.purpose,
+      effective.purpose,
       execution,
       feedback.rpe,
       plannedRpeMinimum,
@@ -130,7 +133,7 @@ class WorkoutResponseEvaluator(
       paceResponse,
     )
     val sessionCost = sessionCost(
-      plannedWorkout.purpose,
+      effective.purpose,
       feedback,
       effortResponse,
       continuity,
@@ -138,7 +141,7 @@ class WorkoutResponseEvaluator(
     )
     val confidence = confidence(actualDistance, actualDuration, plannedPace, continuity, execution)
     val reasons = reasons(
-      plannedWorkout,
+      effective,
       completion,
       volumeCompletion,
       effortResponse,
@@ -159,7 +162,7 @@ class WorkoutResponseEvaluator(
     return WorkoutResponse(
       runId = actualRun.healthConnectRecordId,
       plannedWorkoutId = plannedWorkout.id,
-      purpose = plannedWorkout.purpose,
+      purpose = effective.purpose,
       completion = completion,
       adherence = adherence,
       volumeCompletion = volumeCompletion,
