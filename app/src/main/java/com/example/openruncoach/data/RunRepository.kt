@@ -31,8 +31,8 @@ class RunRepository(
   private val clock: Clock = Clock.systemUTC(),
   private val runMetricsRepository: RunMetricsRepository? = null,
   private val healthConnectMetricsProvider: HealthConnectRunMetricsProvider = HealthConnectRunMetricsProvider(clock),
-  private val athleteProfileRepository: AthletePerformanceProfileRepository? = null,
   private val runMetricsRefresher: RunMetricsRefresher? = null,
+  private val postRunReconciler: PostRunReconciler,
 ) {
   val recentRuns: Flow<List<RunSummary>> =
     runDao.observeRecentActualRuns().map { runs -> runs.map { it.toActualSummary() } }
@@ -68,48 +68,58 @@ class RunRepository(
   suspend fun getProviderRun(runId: String): RunSummary? = runDao.getRun(runId)?.toRunSummary()
 
   suspend fun syncRuns(): Int {
-    val runs = healthConnectRepository.runningWorkoutsLast90Days()
+    val imported = healthConnectRepository.runningWorkoutsLast90Days()
     val importedAt = clock.millis()
-    val existingById = runDao.getAllRuns().associateBy(RunEntity::healthConnectRecordId)
-    runDao.upsertAll(runs.map { run ->
-      val incoming = run.toRunEntity(importedAt)
-      existingById[incoming.healthConnectRecordId]?.let { existing ->
-        incoming.copy(
-          physicalRunId = existing.physicalRunId,
-          relevance = existing.relevance,
-          duplicateGroupId = existing.duplicateGroupId,
-          isCanonical = existing.isCanonical,
-          canonicalSelectionReason = existing.canonicalSelectionReason,
-          canonicalMatchDecision = existing.canonicalMatchDecision,
-        )
-      } ?: incoming
-    })
-    for (savedRun in runDao.getRunsMissingSourceMetadata()) {
+    // Provider reads stay outside Room. Re-read local identity/relevance when applying results.
+    val sourceRepairs = runDao.getRunsMissingSourceMetadata().mapNotNull { savedRun ->
       val source = try {
         healthConnectRepository.runningWorkoutSourceById(savedRun.healthConnectRecordId)
       } catch (exception: CancellationException) {
         throw exception
-      } catch (exception: Exception) {
-        // The old Health Connect record may be gone or outside the current access window.
-        null
+      } catch (_: Exception) { null }
+      source?.takeIf { it.sourcePackageName.isNotBlank() }?.let { savedRun.healthConnectRecordId to it }
+    }.toMap()
+    suspend fun persistCurrentInputs(): Map<String, String> {
+      val existingById = runDao.getAllRuns().associateBy(RunEntity::healthConnectRecordId)
+      runDao.upsertAll(imported.map { run ->
+        val incoming = run.toRunEntity(importedAt)
+        existingById[incoming.healthConnectRecordId]?.let { existing ->
+          incoming.copy(
+            physicalRunId = existing.physicalRunId,
+            relevance = existing.relevance,
+            duplicateGroupId = existing.duplicateGroupId,
+            isCanonical = existing.isCanonical,
+            canonicalSelectionReason = existing.canonicalSelectionReason,
+            canonicalMatchDecision = existing.canonicalMatchDecision,
+          )
+        } ?: incoming
+      })
+      sourceRepairs.forEach { (id, source) ->
+        runDao.getRun(id)?.let { current ->
+          runDao.upsertAll(listOf(current.copy(
+            sourcePackageName = source.sourcePackageName,
+            sourceAppName = source.sourceAppName,
+            sourceDeviceManufacturer = source.sourceDeviceManufacturer,
+            sourceDeviceModel = source.sourceDeviceModel,
+            sourceDeviceType = source.sourceDeviceType?.name,
+            sourceRecordLastModifiedTimeEpochMillis = source.sourceRecordLastModifiedTime.toEpochMilli(),
+            importedAtEpochMillis = importedAt,
+          )))
+        }
       }
-      if (source != null && source.sourcePackageName.isNotBlank()) {
-        runDao.upsertAll(listOf(savedRun.copy(
-          sourcePackageName = source.sourcePackageName,
-          sourceAppName = source.sourceAppName,
-          sourceDeviceManufacturer = source.sourceDeviceManufacturer,
-          sourceDeviceModel = source.sourceDeviceModel,
-          sourceDeviceType = source.sourceDeviceType?.name,
-          sourceRecordLastModifiedTimeEpochMillis = source.sourceRecordLastModifiedTime.toEpochMilli(),
-          importedAtEpochMillis = importedAt,
-        )))
-      }
+      return selectCurrentCanonical(settingsRepository.preferredSourcePackage.first())
     }
-    refreshCanonicalSelection(settingsRepository.preferredSourcePackage.first())
-    return runs.size
+    val previous = postRunReconciler.updateInputs { persistCurrentInputs() }
+    refreshCanonicalMetrics(previous)
+    return imported.size
   }
 
   suspend fun refreshCanonicalSelection(preferredSourcePackage: String?) {
+    val previous = postRunReconciler.updateInputs { selectCurrentCanonical(preferredSourcePackage) }
+    refreshCanonicalMetrics(previous)
+  }
+
+  private suspend fun selectCurrentCanonical(preferredSourcePackage: String?): Map<String, String> {
     val entities = runDao.getAllRuns()
     val previousCanonicalByPhysicalRunId = entities.filter(RunEntity::isCanonical)
       .associate { it.physicalRunId to it.healthConnectRecordId }
@@ -133,6 +143,10 @@ class RunRepository(
     selections.values.filter(CanonicalRunSelection::isCanonical).forEach { selection ->
       runDao.repointPhysicalRunReferences(selection.physicalRunId, selection.runId)
     }
+    return previousCanonicalByPhysicalRunId
+  }
+
+  private suspend fun refreshCanonicalMetrics(previousCanonicalByPhysicalRunId: Map<String, String>) {
     val canonicalEntities = runDao.getCanonicalRuns()
     if (runMetricsRefresher != null) {
       canonicalEntities.forEach { entity ->
@@ -157,13 +171,11 @@ class RunRepository(
         }
       }
     }
-    athleteProfileRepository?.recalculate()
+    postRunReconciler.reconcileAll()
   }
 
   suspend fun setRunIgnored(run: RunSummary, ignored: Boolean) {
-    if (ignored) runDao.ignorePhysicalRun(run.physicalRunId)
-    else runDao.updateRelevance(run.physicalRunId, RunRelevance.ACTIVE.name)
-    athleteProfileRepository?.recalculate()
+    postRunReconciler.setRelevance(run.physicalRunId, ignored)
   }
 }
 

@@ -38,7 +38,6 @@ class TrainingPlanRepository(
   private val generator: TrainingPlanGenerator = TrainingPlanGenerator(),
   private val completionRepository: GoalCompletionRepository = GoalCompletionRepository(database),
   private val completionService: GoalCompletionMilestoneService = GoalCompletionMilestoneService(),
-  private val executionRepository: WorkoutExecutionRepository = WorkoutExecutionRepository(database),
 ) {
   private val dao = database.trainingPlanDao()
   private val workoutDao = database.coachingWorkflowDao()
@@ -69,7 +68,6 @@ class TrainingPlanRepository(
   }
 
   fun observeActivePlan(): Flow<TrainingPlan?> = flow {
-    executionRepository.reconcileExistingCheckouts()
     emitAll(combine(
       dao.observeActivePlan(),
       dao.observeActivePlanExecutionRevision(),
@@ -78,7 +76,6 @@ class TrainingPlanRepository(
   }
 
   suspend fun getActivePlan(): TrainingPlan? {
-    executionRepository.reconcileExistingCheckouts()
     return dao.getActivePlan()?.let { loadPlan(it) }
   }
 

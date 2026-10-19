@@ -1,5 +1,6 @@
 package com.example.openruncoach.data
 
+import androidx.room.withTransaction
 import com.example.openruncoach.data.local.AthletePerformanceProfileDao
 import com.example.openruncoach.data.local.AthletePerformanceProfileEntity
 import com.example.openruncoach.data.local.AthletePerformanceProfileSnapshot
@@ -28,22 +29,19 @@ import java.time.Instant
 import java.time.LocalDate
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 
 class AthletePerformanceProfileRepository(
   private val database: OpenRunCoachDatabase,
   private val calculator: AthletePerformanceProfileCalculator = AthletePerformanceProfileCalculator(),
 ) {
   private val dao: AthletePerformanceProfileDao = database.athletePerformanceProfileDao()
-  private val recalculationMutex = Mutex()
 
   fun observeProfile(): Flow<AthletePerformanceProfile?> =
     dao.observeProfile().map { it?.toDomain() }
 
   suspend fun getProfile(): AthletePerformanceProfile? = dao.getProfile()?.toDomain()
 
-  suspend fun recalculate(): AthletePerformanceProfile = recalculationMutex.withLock {
+  suspend fun recalculate(): AthletePerformanceProfile = database.withTransaction {
     val runs = database.runDao().getCanonicalRuns().map { it.toRunSummary() }
     val profile = calculator.calculate(
       runs = runs,
@@ -56,8 +54,12 @@ class AthletePerformanceProfileRepository(
         }
       }.toMap(),
     )
-    dao.replace(profile.toSnapshot())
-    profile
+    val previous = dao.getProfile()?.toDomain()
+    if (previous != null && profile.copy(calculatedAt = previous.calculatedAt) == previous) previous
+    else {
+      dao.replace(profile.toSnapshot())
+      profile
+    }
   }
 }
 

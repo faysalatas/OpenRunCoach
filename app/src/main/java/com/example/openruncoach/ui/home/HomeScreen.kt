@@ -98,13 +98,13 @@ fun HomeScreen(
     val completion = com.example.openruncoach.data.GoalCompletionRepository(database, environment.clock)
     val executions = WorkoutExecutionRepository(database, environment.clock)
     HomeViewModel(
-      RunRepository(database.runDao(), HealthConnectRepository(context), settingsRepository, clock = environment.clock),
+      RunRepository(database.runDao(), HealthConnectRepository(context), settingsRepository, clock = environment.clock,
+        postRunReconciler = environment.postRunReconciler()),
       RunFeedbackRepository(database, environment.clock),
       TrainingPlanRepository(
         database,
         generator = TrainingPlanGenerator(environment.clock),
         completionRepository = completion,
-        executionRepository = executions,
       ),
       TrainingGoalRepository(database, profiles),
       WorkoutResponseRepository(database),

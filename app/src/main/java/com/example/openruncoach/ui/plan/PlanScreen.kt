@@ -60,7 +60,7 @@ fun PlanScreen(onOpenGoal: () -> Unit, onOpenWorkout: (String) -> Unit, modifier
     val completion = GoalCompletionRepository(database, environment.clock)
     PlanViewModel(
       TrainingPlanRepository(database, generator = TrainingPlanGenerator(environment.clock),
-        completionRepository = completion, executionRepository = WorkoutExecutionRepository(database, environment.clock)),
+        completionRepository = completion),
       TrainingGoalRepository(database, profiles, TrainingGoalFactory(environment.clock)),
       profiles, completion, environment.clock,
     )

@@ -1,12 +1,11 @@
 package com.example.openruncoach.data.simulation
 
-import com.example.openruncoach.data.GoalCompletionRepository
 import com.example.openruncoach.data.RunFeedbackRepository
+import com.example.openruncoach.data.PostRunReconciler
 import com.example.openruncoach.data.RunMetricsRepository
 import com.example.openruncoach.data.RunRouteRepository
 import com.example.openruncoach.data.TrainingGoalRepository
 import com.example.openruncoach.data.TrainingPlanRepository
-import com.example.openruncoach.data.WorkoutExecutionRepository
 import com.example.openruncoach.data.toSampleEntities
 import com.example.openruncoach.data.local.OpenRunCoachDatabase
 import com.example.openruncoach.data.local.RunEntity
@@ -84,8 +83,8 @@ class SimulationScenarioLoader(
     TrainingPlanRepository(database).saveAsActive(plan(goal.id, sessionWorkouts, clock))
 
     val runDataSource = SimulationRunDataSource(database)
-    val sessionRuns = runDataSource.persist(scenario.sessions.map { it.run }, clock)
-    val metricsRepository = RunMetricsRepository(database.runMetricsDao())
+    runDataSource.persist(scenario.sessions.map { it.run }, clock)
+    val metricsRepository = RunMetricsRepository(database, clock)
     val routeRepository = RunRouteRepository(database.runRouteDao())
     scenario.sessions.forEach { session -> persistMetrics(session.run, metricsRepository, routeRepository) }
 
@@ -99,7 +98,7 @@ class SimulationScenarioLoader(
         profileRepository,
         idProvider = { "feedback:${checkoutInput.runId}" },
       )
-      val feedback = feedbackRepository.saveFeedback(
+      feedbackRepository.saveFeedback(
         RunFeedbackDraft(
           runId = checkoutInput.runId,
           rpe = checkoutInput.rpe,
@@ -111,18 +110,6 @@ class SimulationScenarioLoader(
           notes = "Deterministic debug simulation checkout.",
         )
       )
-      val actual = requireNotNull(sessionRuns.singleOrNull { it.healthConnectRecordId == checkoutInput.runId })
-      WorkoutExecutionRepository(database, clock, athleteProfileRepository = profileRepository)
-        .recordForAssociatedWorkout(actual, feedback)
-
-      if (isPrimary && scenario.evaluateGoalCompletion) {
-        GoalCompletionRepository(database, clock).evaluateObservedRun(
-          goal,
-          actual,
-          metricsRepository.getRunMetrics(actual.healthConnectRecordId),
-          feedback,
-        )
-      }
     }
 
     // Persist spontaneous runs after authoritative workout associations. A later same-day run
@@ -131,7 +118,7 @@ class SimulationScenarioLoader(
       runDataSource.persist(scenario.unrelatedRuns, clock)
       scenario.unrelatedRuns.forEach { persistMetrics(it, metricsRepository, routeRepository) }
     }
-    profileRepository.recalculate()
+    PostRunReconciler(database, clock, profileRepository).reconcileAll()
     scenario.allRuns.forEach { run ->
       SimulationPersistenceTrace.updateAfterLoad(
         run.id,

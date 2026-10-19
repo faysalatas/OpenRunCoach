@@ -106,9 +106,14 @@ class RunFeedbackRepository(
           updatedAtEpochMillis = now,
         )
       if (existing == null) dao.insertFeedback(entity) else dao.updateFeedback(entity)
+      if (resolution.authoritativeFeedback == null) {
+        WorkoutExecutionRepository(database, clock).selectAutomaticAssociation(resolution.physicalRunId)
+      }
+      val reconciler = athleteProfileRepository?.let { PostRunReconciler(database, clock, it) }
+        ?: PostRunReconciler(database, clock)
+      reconciler.reconcilePhysicalRun(resolution.physicalRunId)
       entity.toDomain().copy(runId = resolution.physicalRunId)
     }
-    athleteProfileRepository?.recalculate()
     return saved
   }
 }

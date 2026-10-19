@@ -14,11 +14,30 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import com.example.openruncoach.theme.OpenRunCoachTheme
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+
+    // Explicit recovery on process/activity creation and environment changes, never recomposition.
+    lifecycleScope.launch {
+      AppEnvironmentController.environment(applicationContext).collectLatest { environment ->
+        try {
+          withContext(Dispatchers.IO) { environment.postRunReconciler().reconcileAll() }
+        } catch (cancelled: CancellationException) {
+          throw cancelled
+        } catch (_: Exception) {
+          android.util.Log.e("PostRunReconciliation", "Startup reconciliation failed; retry on next input update or restart.")
+        }
+      }
+    }
 
     enableEdgeToEdge()
     setContent {

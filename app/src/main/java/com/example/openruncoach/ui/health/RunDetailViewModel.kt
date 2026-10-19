@@ -7,8 +7,6 @@ import com.example.openruncoach.data.RunRepository
 import com.example.openruncoach.data.RunMetricsRepository
 import com.example.openruncoach.data.RunRouteRepository
 import com.example.openruncoach.data.RunMetricsRefresher
-import com.example.openruncoach.data.GoalCompletionRepository
-import com.example.openruncoach.data.TrainingGoalRepository
 import com.example.openruncoach.data.WorkoutExecutionRepository
 import com.example.openruncoach.data.WorkoutAssignmentCandidate
 import com.example.openruncoach.data.WorkoutResponseRepository
@@ -96,8 +94,6 @@ class RunDetailViewModel(
   runMetricsRepository: RunMetricsRepository,
   runRouteRepository: RunRouteRepository,
   private val runMetricsRefresher: RunMetricsRefresher?,
-  private val goalRepository: TrainingGoalRepository? = null,
-  private val goalCompletionRepository: GoalCompletionRepository? = null,
   private val workoutExecutionRepository: WorkoutExecutionRepository? = null,
   private val workoutResponseRepository: WorkoutResponseRepository? = null,
   private val coachingEngine: CoachingEngine = CoachingEngine(),
@@ -412,11 +408,6 @@ class RunDetailViewModel(
       _uiState.update { it.copy(isSaving = true, error = null, saved = false) }
       try {
         val saved = feedbackRepository.saveFeedback(draft)
-        val execution = workoutExecutionRepository?.recordForAssociatedWorkout(state.run, saved)
-        val activeGoal = goalRepository?.getActiveGoal()
-        if (activeGoal != null && state.run.isCanonical) {
-          goalCompletionRepository?.evaluateObservedRun(activeGoal, state.run, state.metrics, saved)
-        }
         _uiState.update { it.copy(
           feedback = saved,
           form = saved.toForm(),
@@ -424,7 +415,6 @@ class RunDetailViewModel(
           isSaving = false,
           saved = true,
           isEditingFeedback = false,
-          workoutExecution = execution ?: it.workoutExecution,
         ).withDerivedState() }
       } catch (exception: CancellationException) {
         throw exception

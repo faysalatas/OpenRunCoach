@@ -99,7 +99,8 @@ fun HealthDataInspectorScreen(runId: String, onBack: () -> Unit, modifier: Modif
     val samsungPermissionManager = SamsungHealthPermissionManager(samsungDataSource)
     HealthDataInspectorViewModel(
       runId,
-      RunRepository(database.runDao(), HealthConnectRepository(context), settings),
+      RunRepository(database.runDao(), HealthConnectRepository(context), settings,
+        postRunReconciler = environment.postRunReconciler()),
       HealthConnectDataInspector(context),
       SamsungHealthExerciseInspector(samsungDataSource, samsungPermissionManager),
       samsungPermissionManager,

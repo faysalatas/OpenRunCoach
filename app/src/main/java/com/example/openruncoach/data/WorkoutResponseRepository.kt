@@ -1,7 +1,9 @@
 package com.example.openruncoach.data
 
+import androidx.room.withTransaction
 import com.example.openruncoach.data.local.OpenRunCoachDatabase
 import com.example.openruncoach.domain.workout.WorkoutResponse
+import com.example.openruncoach.domain.RunActualResolver
 import com.example.openruncoach.domain.RunRelevance
 import com.example.openruncoach.domain.workout.WorkoutResponseEvaluator
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -17,7 +19,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
  * completion record; stable run/workout identities keep re-analysis idempotent.
  */
 class WorkoutResponseRepository(
-  database: OpenRunCoachDatabase,
+  private val database: OpenRunCoachDatabase,
   private val evaluator: WorkoutResponseEvaluator = WorkoutResponseEvaluator(),
 ) {
   private val workflowDao = database.coachingWorkflowDao()
@@ -26,41 +28,29 @@ class WorkoutResponseRepository(
   private val metricsDao = database.runMetricsDao()
 
   /** Same source predicates and evaluator as observeForRun, without observing a Flow or writing. */
-  internal suspend fun getForRun(runId: String): WorkoutResponse? {
+  internal suspend fun getForRun(runId: String): WorkoutResponse? = database.withTransaction {
     val physicalId = runDao.getRun(runId)?.physicalRunId ?: runId
-    val run = runDao.getCanonicalRunByPhysicalId(physicalId) ?: return null
-    if (run.relevance != RunRelevance.ACTIVE.name) return null
-    val feedback = feedbackRepository.getFeedbackForRun(run.physicalRunId) ?: return null
-    val execution = workflowDao.getExecutionForRun(run.healthConnectRecordId) ?: return null
-    val workout = workflowDao.getWorkout(execution.plannedWorkoutId) ?: return null
-    return evaluator.evaluate(
+    val run = runDao.getCanonicalRunByPhysicalId(physicalId) ?: return@withTransaction null
+    if (run.relevance != RunRelevance.ACTIVE.name) return@withTransaction null
+    val feedback = feedbackRepository.getFeedbackForRun(run.physicalRunId) ?: return@withTransaction null
+    val execution = workflowDao.getExecutionForPhysicalRun(physicalId) ?: return@withTransaction null
+    if (execution.actualRunId != run.healthConnectRecordId) return@withTransaction null
+    val workout = workflowDao.getWorkout(execution.plannedWorkoutId) ?: return@withTransaction null
+    val metrics = metricsDao.getRunMetrics(run.healthConnectRecordId)?.toDomain().forCanonicalRun(run.toRunSummary())
+    if (RunActualResolver.resolve(run.toRunSummary(), metrics).durationSeconds <= 0L) return@withTransaction null
+    evaluator.evaluate(
       plannedWorkout = StructuredWorkoutPersistenceMapper.toDomain(workout),
       adjustedWorkout = workflowDao.getAdjustment(execution.plannedWorkoutId)?.toAdjustedWorkout(),
       execution = execution.toDomain(),
       actualRun = run.toRunSummary(),
       feedback = feedback,
-      metrics = metricsDao.getRunMetrics(run.healthConnectRecordId)?.toDomain(),
+      metrics = metrics,
     )
   }
 
-  suspend fun getAll(): List<WorkoutResponse> {
-    val runsById = runDao.getCanonicalRuns().associateBy { it.healthConnectRecordId }
-    val feedbackByRun = feedbackRepository.getAllFeedback().associateBy { it.runId }
-    val executions = workflowDao.getAllExecutions()
-    val metricsByRun = RunMetricsRepository(metricsDao).getAllRunMetrics().associateBy { it.runId }
-    return executions.mapNotNull { executionEntity ->
-      val run = runsById[executionEntity.actualRunId] ?: return@mapNotNull null
-      val feedback = feedbackByRun[run.physicalRunId] ?: return@mapNotNull null
-      val workout = workflowDao.getWorkout(executionEntity.plannedWorkoutId) ?: return@mapNotNull null
-      evaluator.evaluate(
-        plannedWorkout = StructuredWorkoutPersistenceMapper.toDomain(workout),
-        adjustedWorkout = workflowDao.getAdjustment(executionEntity.plannedWorkoutId)?.toAdjustedWorkout(),
-        execution = executionEntity.toDomain(),
-        actualRun = run.toRunSummary(),
-        feedback = feedback,
-        metrics = metricsByRun[executionEntity.actualRunId],
-      )
-    }.sortedBy(WorkoutResponse::runId)
+  suspend fun getAll(): List<WorkoutResponse> = database.withTransaction {
+    runDao.getCanonicalRuns().distinctBy { it.physicalRunId }
+      .mapNotNull { getForRun(it.physicalRunId) }.sortedBy(WorkoutResponse::physicalRunId)
   }
 
   @OptIn(ExperimentalCoroutinesApi::class)
@@ -72,34 +62,11 @@ class WorkoutResponseRepository(
       feedbackRepository.observeFeedbackForRun(canonical.physicalRunId),
       metricsDao.observeRunMetrics(canonical.healthConnectRecordId),
       workflowDao.observeExecutionForRun(canonical.healthConnectRecordId),
-    ) { feedback, metrics, execution -> ResponseSource(canonical, feedback, metrics, execution) }.flatMapLatest { source ->
-      val run = source.run
-      val feedback = source.feedback
-      val execution = source.execution
-      if (run == null || !run.isCanonical || run.relevance != RunRelevance.ACTIVE.name || feedback == null || execution == null) {
-        flowOf(null)
-      } else combine(
+    ) { _, _, execution -> execution }.flatMapLatest { execution ->
+      if (execution == null) flowOf(null) else combine(
         workflowDao.observeWorkout(execution.plannedWorkoutId),
         workflowDao.observeAdjustment(execution.plannedWorkoutId),
-      ) { workout, adjustment ->
-        workout?.let {
-          evaluator.evaluate(
-            plannedWorkout = StructuredWorkoutPersistenceMapper.toDomain(it),
-            adjustedWorkout = adjustment?.toAdjustedWorkout(),
-            execution = execution.toDomain(),
-            actualRun = run.toRunSummary(),
-            feedback = feedback,
-            metrics = source.metrics?.toDomain(),
-          )
-        }
-      }
+      ) { _, _ -> getForRun(canonical.physicalRunId) }
     }
   }
-
-  private data class ResponseSource(
-    val run: com.example.openruncoach.data.local.RunEntity?,
-    val feedback: com.example.openruncoach.domain.RunFeedback?,
-    val metrics: com.example.openruncoach.data.local.RunMetricsWithValues?,
-    val execution: com.example.openruncoach.data.local.WorkoutExecutionEntity?,
-  )
 }

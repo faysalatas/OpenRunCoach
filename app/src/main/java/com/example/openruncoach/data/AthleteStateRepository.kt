@@ -47,12 +47,14 @@ class AthleteStateRepository(
 
   suspend fun rebuildWithTrace(): AthleteStateRebuildResult {
     val profile = profileRepository.recalculate()
-    val runs = database.runDao().getCanonicalRuns().map { it.toRunSummary() }
+    val runs = database.runDao().getCanonicalRuns().mapNotNull {
+      database.runDao().getActualRun(it.healthConnectRecordId)?.toActualSummary()
+    }
     val metricsDao = database.runMetricsDao()
     val responseRepository = WorkoutResponseRepository(database)
     val metricsRepository = RunMetricsRepository(metricsDao)
     val responses = responseRepository.getAll()
-    val responsesByRun = responses.associateBy { it.runId }
+    val responsesByRun = responses.associateBy { it.physicalRunId }
     val metricsByRun = metricsRepository.getCanonicalRunMetrics()
       .associateBy { it.runId }
     val trace = mutableListOf<AthleteStateContinuityTrace>()
@@ -62,7 +64,7 @@ class AthleteStateRepository(
       .distinctBy(RunSummary::healthConnectRecordId)
       .sortedBy(RunSummary::startTime)
       .forEach { run ->
-        val response = responsesByRun[run.healthConnectRecordId]
+        val response = responsesByRun[run.physicalRunId]
         val rawSpeedSampleCount = metricsDao.countSamples(
           run.healthConnectRecordId,
           com.example.openruncoach.domain.metrics.RunSampleMetricType.SPEED.name,

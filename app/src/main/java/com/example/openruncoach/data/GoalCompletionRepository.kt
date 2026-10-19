@@ -79,7 +79,7 @@ class GoalCompletionRepository(
     return GoalCompletionWriteResult(postponed, persist(activePlan, postponed))
   }
 
-  suspend fun evaluateObservedRun(
+  internal suspend fun evaluateObservedRun(
     goal: TrainingGoal,
     canonicalRun: RunSummary,
     metrics: RunMetrics?,

@@ -1,5 +1,7 @@
 package com.example.openruncoach.data
 
+import androidx.room.withTransaction
+import com.example.openruncoach.data.local.OpenRunCoachDatabase
 import com.example.openruncoach.data.local.RunMetricValueEntity
 import com.example.openruncoach.data.local.RunMetricSampleEntity
 import com.example.openruncoach.data.local.RunMetricsDao
@@ -15,11 +17,22 @@ import com.example.openruncoach.domain.metrics.RunTimeSeries
 import com.example.openruncoach.domain.metrics.RunMetrics
 import com.example.openruncoach.domain.metrics.TimedMetricSample
 import com.example.openruncoach.domain.metrics.metricValues
+import com.example.openruncoach.domain.RunSummary
 import java.time.Instant
+import java.time.Clock
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-class RunMetricsRepository(private val dao: RunMetricsDao) {
+/** DAO-only instances expose raw snapshots; application input writers use the database constructor. */
+class RunMetricsRepository(
+  private val dao: RunMetricsDao,
+  private val database: OpenRunCoachDatabase? = null,
+  private val clock: Clock = Clock.systemDefaultZone(),
+) {
+  /** Production input writer: snapshot replacement and downstream reconciliation are atomic. */
+  constructor(database: OpenRunCoachDatabase, clock: Clock = Clock.systemDefaultZone()) :
+    this(database.runMetricsDao(), database, clock)
+
   fun observeActualRunMetrics(runId: String): Flow<RunMetrics?> =
     dao.observeActualRunMetrics(runId).map { it?.toDomain() }
 
@@ -37,6 +50,14 @@ class RunMetricsRepository(private val dao: RunMetricsDao) {
   }
 
   suspend fun save(metrics: RunMetrics) {
+    val owner = database
+    if (owner == null) persist(metrics) else owner.withTransaction {
+      persist(metrics)
+      PostRunReconciler(owner, clock).reconcilePhysicalRun(metrics.runId)
+    }
+  }
+
+  private suspend fun persist(metrics: RunMetrics) {
     dao.replace(
       RunMetricsEntity(
         runId = metrics.runId,
@@ -53,6 +74,11 @@ class RunMetricsRepository(private val dao: RunMetricsDao) {
       metrics.toSampleEntities(),
     )
   }
+}
+
+/** Old-window enrichment is retained as provider evidence, but cannot prove current-run continuity. */
+internal fun RunMetrics?.forCanonicalRun(run: RunSummary): RunMetrics? = this?.takeIf {
+  it.runId == run.healthConnectRecordId && it.startTime == run.startTime && it.endTime == run.endTime
 }
 
 private fun MetricValue<out Number>.toEntity(runId: String, key: RunMetricKey) = RunMetricValueEntity(

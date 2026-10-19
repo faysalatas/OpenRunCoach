@@ -114,7 +114,9 @@ class PhysicalRunConsistencyTest {
     val runs = RunRepository(db.runDao(), HealthConnectRepository(context), RunSettingsRepository(context), clock,
       runMetricsRefresher = RunMetricsRefresher { summary, _ ->
         RunMetricsRefreshOutcome(metrics(summary), refreshed = false)
-      })
+      },
+      postRunReconciler = PostRunReconciler(db, clock),
+    )
     val feedbackRepository = RunFeedbackRepository(db, clock)
     val before = feedbackRepository.getFeedbackForRun("samsung")
     val rawBefore = db.runFeedbackDao().getAllFeedback()
@@ -228,6 +230,7 @@ class PhysicalRunConsistencyTest {
     val routes = RunRouteRepository(db.runRouteDao())
     routes.save(route(4680.438), emptyList())
     val storedPoints = db.runRouteDao().getRoute("samsung")!!.points
+    db.runFeedbackDao().insertFeedback(feedback("checkout", "samsung", null))
     val workout = StructuredWorkoutSamples.easyRun()
     db.coachingWorkflowDao().replaceWorkout(StructuredWorkoutPersistenceMapper.toRecord(workout, "COMPLETED"))
     db.coachingWorkflowDao().upsertAssociation(WorkoutRunAssociationEntity(workout.id, "samsung", "samsung", "MANUAL", clock.millis()))
@@ -244,7 +247,9 @@ class PhysicalRunConsistencyTest {
           movingAverageCadence = MetricValue(165.0, MetricSource.SAMSUNG_HEALTH, MetricConfidence.HIGH))
         measurements.save(enriched)
         RunMetricsRefreshOutcome(enriched, refreshed = true)
-      })
+      },
+      postRunReconciler = PostRunReconciler(db, clock),
+    )
     for (source in listOf("com.strava", "com.sec.android.app.shealth", "com.strava")) {
       runs.refreshCanonicalSelection(source)
       val actual = runs.canonicalRuns.first().single()
@@ -260,10 +265,10 @@ class PhysicalRunConsistencyTest {
       val details = StructuredWorkoutRepository(db).observeWorkoutDetails(workout.id).first()!!
       assertEquals(actual, details.actualRun)
       assertEquals(actual.distanceMeters, details.executionResult!!.actualDistanceMeters)
-      assertEquals(WorkoutExecutionStatus.COMPLETED_AS_PLANNED, details.executionResult!!.status)
+      assertEquals(WorkoutExecutionStatus.COMPLETED_WITH_MINOR_DEVIATION, details.executionResult!!.status)
       val execution = WorkoutExecutionRepository(db).observeForRun("strava").first()!!
       assertEquals(actual.distanceMeters, execution.actualDistanceMeters)
-      assertEquals(4755.3, db.coachingWorkflowDao().getExecutionForPhysicalRun("samsung")!!.actualDistanceMeters!!, 0.0)
+      assertEquals(expectedDistance, db.coachingWorkflowDao().getExecutionForPhysicalRun("samsung")!!.actualDistanceMeters!!, 0.0)
       val data = routes.get(actual.healthConnectRecordId)!!
       val pacing = RunPacingSummaryCalculator.summarize(actual, data)
       assertEquals(actual.averagePaceSecondsPerKm, pacing.wholeRunAveragePaceSecondsPerKm)
@@ -286,7 +291,9 @@ class PhysicalRunConsistencyTest {
     routes.save(route(1952.169), emptyList())
     val context = ApplicationProvider.getApplicationContext<Context>()
     // No optional metrics repository is required for History/Home to receive the same fallback.
-    val runs = RunRepository(db.runDao(), HealthConnectRepository(context), RunSettingsRepository(context), clock)
+    val runs = RunRepository(db.runDao(), HealthConnectRepository(context), RunSettingsRepository(context), clock,
+      postRunReconciler = PostRunReconciler(db, clock),
+    )
     val before = changes(db)
     val history = runs.canonicalRuns.first().single()
     assertEquals(1952.169, history.distanceMeters!!, 0.000001)

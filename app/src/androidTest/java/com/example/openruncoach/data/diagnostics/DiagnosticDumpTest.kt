@@ -10,6 +10,7 @@ import com.example.openruncoach.data.RunMetricsRepository
 import com.example.openruncoach.data.RunRouteRepository
 import com.example.openruncoach.data.StructuredWorkoutPersistenceMapper
 import com.example.openruncoach.data.WorkoutResponseRepository
+import com.example.openruncoach.data.PostRunReconciler
 import com.example.openruncoach.data.WorkoutExecutionRepository
 import com.example.openruncoach.data.TrainingGoalRepository
 import com.example.openruncoach.data.TrainingPlanRepository
@@ -273,8 +274,12 @@ class DiagnosticDumpTest {
         assertEquals("pending-workout", home["nextWorkout"].asJsonObject["workout"].asJsonObject["id"].asString)
         assertEquals("PLANNED", json(zip, "resolved/workouts/${archiveId(workout.id)}.json").asJsonObject["lifecycleState"].asString)
       }
-      // Prove the fixture would cause a mutation if the normal active-plan getter were used.
-      assertEquals(1, WorkoutExecutionRepository(database, environment.clock).reconcileExistingCheckouts())
+      // Passive getters are observers too; the explicit input operation owns association/recovery.
+      TrainingPlanRepository(database).getActivePlan()
+      assertEquals(before, storedState(raw))
+      WorkoutExecutionRepository(database, environment.clock).selectAutomaticAssociation(runId)
+      PostRunReconciler(database, environment.clock).reconcilePhysicalRun(runId)
+      assertEquals(1, database.coachingWorkflowDao().getAllExecutions().size)
     } finally { database.close(); scratch.deleteRecursively() }
   }
 

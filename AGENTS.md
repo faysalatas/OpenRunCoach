@@ -31,6 +31,8 @@ OpenRunCoach is a native Android adaptive running coach.
 - A training goal's distance does not make every workout that distance.
 - Hard workouts require explicit eligibility based on available training evidence.
 - Generated plan workouts must use the shared structured workout model.
+- Reconcile post-run derived training state through one shared physical-run workflow after authoritative inputs change. Missing checkout must remain unknown; provider copies must not create independent training responses.
+- Diagnostic exports are observers and must never trigger reconciliation or other application-data writes.
 
 ## Health data
 

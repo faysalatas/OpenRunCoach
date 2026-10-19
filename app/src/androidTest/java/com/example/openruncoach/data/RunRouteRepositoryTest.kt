@@ -95,6 +95,7 @@ class RunRouteRepositoryTest {
           refreshed = true,
         )
       },
+      postRunReconciler = PostRunReconciler(database),
     )
     for (source in listOf("com.strava", "com.sec.android.app.shealth", "com.strava")) {
       repository.refreshCanonicalSelection(source)
@@ -118,6 +119,7 @@ class RunRouteRepositoryTest {
     val repository = RunRepository(
       database.runDao(), HealthConnectRepository(context), RunSettingsRepository(context),
       runMetricsRefresher = RunMetricsRefresher { _, _ -> error("Samsung temporarily unavailable") },
+      postRunReconciler = PostRunReconciler(database),
     )
 
     repository.refreshCanonicalSelection("com.sec.android.app.shealth")

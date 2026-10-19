@@ -48,14 +48,13 @@ fun SettingsScreen(
     val healthConnectRepository = HealthConnectRepository(context)
     val settingsRepository = RunSettingsRepository(context)
     val database = environment.database
-    val profileRepository = environment.profileRepository()
     val metricsRefresher = if (environment.isSimulation) null else {
-      RunMetricsAutoRefreshCoordinator.create(context, database, profileRepository)
+      RunMetricsAutoRefreshCoordinator.create(context, database, environment.clock)
     }
     // Simulation metrics are authoritative synthetic inputs. Supplying a repository without a
     // provider-aware refresher would activate RunRepository's legacy scalar-only fallback.
     val metricsRepository = if (environment.isSimulation) null else {
-      RunMetricsRepository(database.runMetricsDao())
+      RunMetricsRepository(database, environment.clock)
     }
     SettingsViewModel(
       healthConnectRepository,
@@ -64,9 +63,9 @@ fun SettingsScreen(
         healthConnectRepository,
         settingsRepository,
         runMetricsRepository = metricsRepository,
-        athleteProfileRepository = profileRepository,
         runMetricsRefresher = metricsRefresher,
         clock = environment.clock,
+        postRunReconciler = environment.postRunReconciler(),
       ),
       settingsRepository,
     )
