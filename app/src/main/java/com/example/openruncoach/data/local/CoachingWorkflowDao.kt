@@ -95,7 +95,7 @@ interface CoachingWorkflowDao {
       INNER JOIN training_goals ON training_goals.id = training_plans.goalId
       LEFT JOIN workout_run_associations ON workout_run_associations.plannedWorkoutId = planned_workouts.id
       WHERE training_plans.status = 'ACTIVE' AND training_goals.status = 'ACTIVE' AND planned_workouts.isPreview = 0
-        AND planned_workouts.type != 'REST' AND workout_run_associations.plannedWorkoutId IS NULL
+        AND workout_run_associations.plannedWorkoutId IS NULL
       ORDER BY planned_workouts.dateEpochDay, planned_workouts.createdAtEpochMillis DESC"""
   )
   suspend fun getAllUnassociatedActivePlanWorkouts(): List<PlannedWorkoutRecord>

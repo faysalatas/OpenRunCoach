@@ -91,7 +91,12 @@ fun WorkoutDetailScreen(workoutId: String, onBack: () -> Unit, modifier: Modifie
           )
           when (selectedTab) {
             PlannedWorkoutTab.OVERVIEW -> PlannedOverview(workout, state)
-            PlannedWorkoutTab.STRUCTURE -> PlannedStructure(workout)
+            PlannedWorkoutTab.STRUCTURE -> {
+              OpenRunSection("Effective prescription") { PlannedStructure(workout) }
+              state.originalWorkout?.takeIf { it.blocks != workout.blocks || it.type != workout.type }?.let { original ->
+                OpenRunSection("Original prescription") { PlannedStructure(original) }
+              }
+            }
             PlannedWorkoutTab.COACH -> PlannedCoach(workout)
           }
         }
@@ -162,6 +167,9 @@ private fun PlannedOverview(workout: StructuredWorkout, state: WorkoutDetailUiSt
   }
   OpenRunSection("Workout description") {
     Text(workout.conciseExplanation())
+  }
+  if (state.adjustmentReasons.isNotEmpty()) OpenRunSection("Training decision") {
+    state.adjustmentReasons.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
   }
   state.executionResult?.let { execution ->
     OpenRunSection("Recorded execution") {

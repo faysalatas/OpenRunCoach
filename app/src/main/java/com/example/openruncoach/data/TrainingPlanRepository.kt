@@ -38,6 +38,7 @@ class TrainingPlanRepository(
   private val generator: TrainingPlanGenerator = TrainingPlanGenerator(),
   private val completionRepository: GoalCompletionRepository = GoalCompletionRepository(database),
   private val completionService: GoalCompletionMilestoneService = GoalCompletionMilestoneService(),
+  private val clock: java.time.Clock = java.time.Clock.systemDefaultZone(),
 ) {
   private val dao = database.trainingPlanDao()
   private val workoutDao = database.coachingWorkflowDao()
@@ -72,7 +73,8 @@ class TrainingPlanRepository(
       dao.observeActivePlan(),
       dao.observeActivePlanExecutionRevision(),
       database.runDao().observeCanonicalActualRuns(),
-    ) { entity, _, _ -> entity?.let { loadPlan(it) } })
+      dao.observeActivePlanAdjustmentRevision(),
+    ) { entity, _, _, _ -> entity?.let { loadPlan(it) } })
   }
 
   suspend fun getActivePlan(): TrainingPlan? {
@@ -103,7 +105,8 @@ class TrainingPlanRepository(
       completionMilestone = milestone,
     )
     saveAsActive(plan)
-    return plan
+    PostRunReconciler(database, clock).reconcileAll()
+    return getActivePlan() ?: plan
   }
 
   suspend fun createWithCompletionDate(
@@ -198,10 +201,11 @@ class TrainingPlanRepository(
   }
 
   suspend fun saveAsActive(plan: TrainingPlan) = database.withTransaction {
-    val records = plan.weeks.flatMap { week -> week.workouts.map { it.workout } }
+    val records = plan.weeks.flatMap { week -> week.workouts.map { it.originalWorkout } }
     records.forEach { workout ->
+      val lifecycle = workoutDao.getLifecycleState(workout.id) ?: WorkoutLifecycleState.PLANNED.name
       workoutDao.replaceWorkout(
-        StructuredWorkoutPersistenceMapper.toRecord(workout, WorkoutLifecycleState.PLANNED.name, isPreview = false)
+        StructuredWorkoutPersistenceMapper.toRecord(workout, lifecycle, isPreview = false)
       )
     }
     dao.supersedeActivePlans()
@@ -213,7 +217,7 @@ class TrainingPlanRepository(
     dao.upsertWorkoutReferences(snapshot.workouts)
   }
 
-  private suspend fun loadPlan(entity: TrainingPlanEntity): TrainingPlan {
+  private suspend fun loadPlan(entity: TrainingPlanEntity): TrainingPlan = database.withTransaction {
     val planId = entity.id
     val references = dao.getWorkoutReferences(planId)
     val workouts = references.associate { reference ->
@@ -225,7 +229,7 @@ class TrainingPlanRepository(
       execution.plannedWorkoutId to execution.toDomain().withActualSummary(
         database.runDao().getActualRun(execution.physicalRunId)?.toActualSummary())
     }
-    return TrainingPlanPersistenceMapper.toDomain(
+    val originalPlan = TrainingPlanPersistenceMapper.toDomain(
       TrainingPlanSnapshot(
         entity,
         dao.getWeeks(planId),
@@ -236,6 +240,13 @@ class TrainingPlanRepository(
       workouts.mapValues { StructuredWorkoutPersistenceMapper.toDomain(it.value) },
       executions,
     )
+    originalPlan.copy(weeks = originalPlan.weeks.map { week ->
+      week.copy(workouts = week.workouts.map { entry ->
+        val adjustment = workoutDao.getAdjustment(entry.workout.id)
+        entry.copy(workout = entry.originalWorkout.withEffectiveAdjustment(adjustment),
+          adjustmentReasons = adjustment?.adjustmentReasons().orEmpty())
+      })
+    })
   }
 }
 

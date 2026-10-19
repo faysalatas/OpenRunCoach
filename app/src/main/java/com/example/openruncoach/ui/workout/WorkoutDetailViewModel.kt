@@ -18,6 +18,8 @@ data class WorkoutDetailUiState(
   val executionResult: WorkoutExecutionResult? = null,
   val actualRun: RunSummary? = null,
   val feedback: RunFeedback? = null,
+  val originalWorkout: StructuredWorkout? = null,
+  val adjustmentReasons: List<String> = emptyList(),
   val isLoading: Boolean = true,
   val errorMessage: String? = null,
 )
@@ -37,6 +39,8 @@ class WorkoutDetailViewModel(workoutId: String, repository: StructuredWorkoutRep
               executionResult = details?.executionResult,
               actualRun = details?.actualRun,
               feedback = details?.feedback,
+              originalWorkout = details?.originalWorkout,
+              adjustmentReasons = details?.adjustmentReasons.orEmpty(),
               isLoading = false,
             )
           }

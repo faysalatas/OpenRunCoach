@@ -244,7 +244,19 @@ data class PreRunCheckIn(
 
 enum class ReadinessStatus { GREEN, YELLOW, RED }
 
-data class AdjustedWorkout(val originalWorkoutId: String, val type: WorkoutType, val durationMinutes: Int, val targetRpeMin: Int, val targetRpeMax: Int)
+data class AdjustedWorkout(
+  val originalWorkoutId: String,
+  val type: WorkoutType,
+  val durationMinutes: Int,
+  val targetRpeMin: Int,
+  val targetRpeMax: Int,
+  val structuredWorkout: StructuredWorkout? = null,
+  val isUnchanged: Boolean = false,
+) {
+  init {
+    require(structuredWorkout == null || structuredWorkout.id == originalWorkoutId && structuredWorkout.type == type)
+  }
+}
 
 data class WorkoutAdjustmentDecision(
   val originalWorkout: PlannedWorkout,

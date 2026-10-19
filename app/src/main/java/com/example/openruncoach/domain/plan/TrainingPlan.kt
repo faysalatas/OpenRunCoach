@@ -20,6 +20,8 @@ data class PlannedWorkoutEntry(
   val workout: StructuredWorkout,
   val generationReason: String,
   val executionResult: WorkoutExecutionResult? = null,
+  val originalWorkout: StructuredWorkout = workout,
+  val adjustmentReasons: List<String> = emptyList(),
 )
 
 data class TrainingWeek(

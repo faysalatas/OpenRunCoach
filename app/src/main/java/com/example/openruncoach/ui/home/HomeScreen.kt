@@ -105,6 +105,7 @@ fun HomeScreen(
         database,
         generator = TrainingPlanGenerator(environment.clock),
         completionRepository = completion,
+        clock = environment.clock,
       ),
       TrainingGoalRepository(database, profiles),
       WorkoutResponseRepository(database),
@@ -236,6 +237,9 @@ private fun UpcomingWorkoutRow(workout: HomeWorkoutSummary) {
     )
     Column(Modifier.weight(0.78f), verticalArrangement = Arrangement.spacedBy(OpenRunSpacing.Micro)) {
       Text(workout.name, style = MaterialTheme.typography.titleSmall)
+      workout.adaptationReason?.let {
+        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+      }
       Text(
         (listOf(formatUserDate(workout.date)) + workout.details.take(1)).joinToString(" · "),
         style = MaterialTheme.typography.bodySmall,
@@ -378,7 +382,7 @@ private fun WorkoutHero(workout: HomeWorkoutSummary?, hasActivePlan: Boolean, on
         )))
       }
       Column(
-        Modifier.matchParentSize().padding(
+        Modifier.fillMaxWidth().padding(
           start = OpenRunSpacing.Standard,
           top = OpenRunSpacing.Compact,
           end = OpenRunSpacing.Standard,
@@ -407,7 +411,11 @@ private fun WorkoutHero(workout: HomeWorkoutSummary?, hasActivePlan: Boolean, on
             style = MaterialTheme.typography.bodySmall,
             color = Color.White.copy(alpha = 0.78f),
           )
-          Spacer(Modifier.weight(1f))
+          workout.adaptationReason?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.84f),
+              modifier = Modifier.padding(end = 40.dp))
+          }
+          Spacer(Modifier.height(OpenRunSpacing.Small))
           HeroMetadata(workout)
         } else {
           Text(
@@ -420,7 +428,7 @@ private fun WorkoutHero(workout: HomeWorkoutSummary?, hasActivePlan: Boolean, on
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
-          Spacer(Modifier.weight(1f))
+          Spacer(Modifier.height(OpenRunSpacing.Small))
           Text("View plan ›", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         }
       }
