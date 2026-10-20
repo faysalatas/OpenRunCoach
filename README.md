@@ -530,9 +530,9 @@ See the [Goal Strategy verification checklist](docs/goal-strategy-verification.m
 - ADB for installing and debugging builds
 - An Android phone with Health Connect for real workout import testing
 
-### Optional Samsung Health Data SDK setup
+### Required Samsung Health Data SDK for the current app build
 
-The proprietary Samsung SDK binary is intentionally not stored in this repository and Gradle does not download it. Developers who want to build the Samsung diagnostic integration must:
+The proprietary Samsung SDK binary is intentionally not stored in this repository and Gradle does not download it. The current app module directly references SDK classes, so compiling the app requires this AAR even when Samsung is not used at runtime. Developers must:
 
 1. Download the SDK through the [Samsung Health Data SDK app creation page](https://developer.samsung.com/health/data/process.html) after accepting Samsung's SDK terms.
 2. Copy its API AAR to `app/libs/samsung-health-data-api.aar`.
@@ -553,3 +553,5 @@ The debug APK is generated at `app/build/outputs/apk/debug/app-debug.apk`.
 ### Repository instructions
 
 [`AGENTS.md`](AGENTS.md) defines the project's architecture, health-data, development, and Git rules. Codex and other automated contributors should read and follow it before changing the project.
+
+The [repository workflow](docs/repository-workflow.md) describes issue-linked branches/PRs, the PR template, separate device verification, and SDK-independent Core CI. CI compiles real domain sources and runs pure domain tests through `./gradlew -p ci/core-tests test`, without Samsung SDK files, private downloads or secrets. Two suites with data-layer dependencies remain in the local app suite. Full Android builds, UI/data-layer tests and device checks remain local and must be reported separately; Core CI does not verify them. No SDK binary or APK is published by the workflow.

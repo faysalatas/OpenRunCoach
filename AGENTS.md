@@ -57,6 +57,14 @@ OpenRunCoach is a native Android adaptive running coach.
 
 - Never commit secrets or API keys.
 - Keep changes focused.
+- Read the linked issue and its acceptance criteria before implementation; verify the current code rather than assuming a reported issue is still present.
+- Use a focused branch and pull request per task. Link the issue and preserve unrelated local changes. Do not merge into main unless explicitly requested.
+- Record exact verification commands, actual results and blockers. Never claim a check passed if it was not run successfully.
+- Distinguish implemented code, passing automated checks and device verification. Mark device checks not required, pending, passed or failed with evidence.
+- Keep original prescriptions, effective adjustments and actual performance distinct when changing coaching behavior.
+- Do not close an issue until its acceptance criteria are satisfied; a partial implementation needs an explicit remaining-work list.
+- Never commit signing keys, tokens, SDK binaries, private health data or diagnostic dumps. CI must not require the owner to host or supply a proprietary SDK; SDK-independent checks and local Android verification are documented in docs/repository-workflow.md.
+- Use the PR template and update user-facing documentation when behavior or setup changes.
 
 ## UI / Design
 
