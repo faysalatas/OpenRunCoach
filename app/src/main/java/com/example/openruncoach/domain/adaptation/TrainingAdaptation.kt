@@ -70,7 +70,7 @@ class TrainingAdaptationPlanner {
         !it.date.isBefore(today.minusDays(27)) && !it.date.isAfter(today) &&
           it.pain == PainLevel.NONE && !it.recoveryConcern && !it.recoveryPriority && it.response?.isPositive(original.purpose) == true &&
           it.capabilityEligible && (capability != TrainingCapability.CONTINUOUS_RUNNING ||
-            it.response?.continuity == com.example.openruncoach.domain.metrics.RunContinuityEvidence.CONTINUOUS)
+            it.response.continuity == com.example.openruncoach.domain.metrics.RunContinuityEvidence.CONTINUOUS)
       }
       val decision = when {
         !inWindow -> keep("The prescription is outside the next seven days; its original structure is retained.")

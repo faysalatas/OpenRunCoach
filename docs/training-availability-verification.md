@@ -34,11 +34,30 @@ Generated plans previously used fixed day offsets without an athlete-owned avail
 
 Automatic horizon replenishment, event triggers, continuation persistence/idempotency and progression across extensions remain [#4](https://github.com/faysalatas/OpenRunCoach/issues/4). That implementation must read current availability once per explicit continuation transaction and pass retained prescriptions plus the milestone to `TrainingSchedulePolicy.schedule`; do not create another weekday scheduler. Reachable pre-run check-in remains #6 and must not change these settings implicitly.
 
-Room's version-19 exported schema JSON is pending the first owner-run Android compilation because Gradle execution was explicitly prohibited. Review and retain the generated `app/schemas/com.example.openruncoach.data.local.OpenRunCoachDatabase/19.json` after compilation; no guessed identity hash is supplied here. The migration test uses that generated schema. This issue must remain open until the outstanding runtime integration and verification criteria are satisfied.
+The owner's Android compilation has generated `app/schemas/com.example.openruncoach.data.local.OpenRunCoachDatabase/19.json`; it is currently untracked and preserved without modification. Schema review and migration verification remain pending. The migration test uses that generated schema. This issue must remain open until the outstanding runtime integration and verification criteria are satisfied.
 
 ## Automated verification
 
 **Implementation is present; tests and builds were not run, by explicit user instruction.** No Gradle, compiler, test runner, ADB, install/uninstall, or device command was executed. Source inspection and `git diff --check` are the only local verification, with no compilation or runtime claim.
+
+Owner-reported results before the follow-up correction: `./gradlew test` failed with 540 tests and one failure, `TrainingSchedulePolicyTest.completionDateIsPinnedAndProtectedAcrossTheWeekBoundary`; `./gradlew assembleDebug` reported BUILD SUCCESSFUL. These results apply to the preceding implementation, not the unverified follow-up edits. Device verification remains pending.
+
+The failure at test line 102 came from a contradictory fixture: Sunday-only athlete availability excluded the explicitly selected Monday Completion Run, even though it was outside the week being scheduled. Production correctly surfaced that conflict. The corrected fixture uses Monday/Sunday availability consistently and expects the new preceding long run to move to the prior Monday, seven days before Completion, rather than become rest. The Completion date stays pinned. An additional regression preserves the original Sunday-only case as an expected explicit conflict across the week boundary. No scheduling production rules changed. A separate trivial cleanup removes the unnecessary safe call after the existing positive-response guard in `TrainingAdaptation.kt`.
+
+Follow-up verification is **not run**. First run:
+
+```bash
+./gradlew :app:testDebugUnitTest --tests 'com.example.openruncoach.domain.plan.TrainingSchedulePolicyTest'
+```
+
+Then run the full checks:
+
+```bash
+./gradlew test
+./gradlew assembleDebug
+```
+
+Expected: both boundary scenarios pass (valid Monday remains pinned; unavailable Monday explicitly conflicts), the full test suite passes, Debug builds, and the line-73 unnecessary-safe-call warning is absent. No passing result is claimed for these edits.
 
 Run these yourself from the repository root with JDK 17:
 

@@ -92,16 +92,29 @@ class TrainingSchedulePolicyTest {
 
   @Test fun completionDateIsPinnedAndProtectedAcrossTheWeekBoundary() {
     val date = monday
+    val availability = TrainingAvailability(setOf(DayOfWeek.MONDAY, DayOfWeek.SUNDAY))
     val completion = entry("completion", 0, WorkoutType.LONG_RUN).let {
       val workout = it.workout.copy(purpose = WorkoutPurpose.GOAL_COMPLETION)
       it.copy(workout = workout, originalWorkout = workout)
     }
     val result = policy.schedule(monday, listOf(completion, entry("easy", 1, WorkoutType.EASY_RUN)),
-      TrainingAvailability(DayOfWeek.entries.toSet()), completionDate = date)
+      availability, completionDate = date)
     assertEquals(date, result.workouts.single().workout.date)
     val preceding = policy.schedule(monday.minusWeeks(1), listOf(entry("preceding-long", -1, WorkoutType.LONG_RUN)),
-      TrainingAvailability(setOf(DayOfWeek.SUNDAY)), completionDate = date)
-    assertEquals(WorkoutType.REST, preceding.workouts.single().workout.type)
+      availability, completionDate = date)
+    // Monday is available in both weeks: move the new long run away from the day before Completion.
+    assertEquals(WorkoutType.LONG_RUN, preceding.workouts.single().workout.type)
+    assertEquals(monday.minusWeeks(1), preceding.workouts.single().workout.date)
+    assertTrue(ChronoUnit.DAYS.between(preceding.workouts.single().workout.date, date) >= 3)
+    assertEquals(date, result.workouts.single().workout.date)
+  }
+
+  @Test fun unavailableCompletionDateStillConflictsWhenSchedulingThePrecedingWeek() {
+    val exception = assertThrows(CompletionAvailabilityConflict::class.java) {
+      policy.schedule(monday.minusWeeks(1), listOf(entry("preceding-long", -1, WorkoutType.LONG_RUN)),
+        TrainingAvailability(setOf(DayOfWeek.SUNDAY)), completionDate = monday)
+    }
+    assertEquals(monday, exception.date)
   }
 
   @Test fun unavailableCompletionDateSurfacesConflictInsteadOfMovingIt() {
