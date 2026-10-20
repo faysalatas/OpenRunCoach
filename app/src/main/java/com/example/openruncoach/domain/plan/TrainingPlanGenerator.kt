@@ -100,9 +100,11 @@ class TrainingPlanGenerator(
     runMetricsHistory: List<RunMetrics> = emptyList(),
     completedAssessmentAttempts: Int = 0,
     completionMilestone: GoalCompletionMilestone? = null,
+    availability: TrainingAvailability? = null,
   ): TrainingPlan {
     val createdAt = clock.instant()
     val startDate = LocalDate.now(clock.withZone(zoneId))
+    availability.requireCompletionDateAvailable(completionMilestone?.scheduledDate?.takeUnless { it.isBefore(startDate) })
     val planId = "plan:${goal.id}:${createdAt.toEpochMilli()}"
     val sufficiency = sufficiencyEvaluator.evaluate(
       profile = profile,
@@ -112,7 +114,7 @@ class TrainingPlanGenerator(
       completedAssessmentAttempts = completedAssessmentAttempts,
     )
     if (!sufficiency.canGenerateNormalPlan) {
-      return assessmentPlan(planId, goal, profile, sufficiency, startDate, createdAt, completionMilestone)
+      return assessmentPlan(planId, goal, profile, sufficiency, startDate, createdAt, completionMilestone, availability)
     }
     val scheduledCompletionDate = completionMilestone
       ?.scheduledDate
@@ -138,6 +140,8 @@ class TrainingPlanGenerator(
       blockType(goal, profile, weekIndex, recoveryWeek(goal, weekIndex, completionWeek))
     }
 
+    val retainedSchedule = mutableListOf<com.example.openruncoach.domain.workout.StructuredWorkout>()
+    val schedulePolicy = TrainingSchedulePolicy(config.minimumHardSessionSpacingDays)
     val weeks = (0 until weekCount).map { weekIndex ->
       val recovery = recoveryWeek(goal, weekIndex, completionWeek)
       val frequency = frequencyForWeek(startingFrequency, profile, weekIndex)
@@ -168,12 +172,21 @@ class TrainingPlanGenerator(
       val qualityType = if (goalSession == null) {
         qualityWorkout(goal, profile, eligibility, weekIndex, recovery || frequencyIncreased, frequency)
       } else null
-      val workouts = buildWorkouts(
+      val proposals = buildWorkouts(
         planId, goal, profile, weekIndex, startDate.plusWeeks(weekIndex.toLong()), frequency,
         qualityType, longRun, plannedDistance, recovery, currentBlock, goalSession,
-        scheduledCompletionDate.takeIf { goalSession == GoalSessionKind.COMPLETION }, createdAt,
+        scheduledCompletionDate.takeIf { goalSession != null && weekIndex == completionWeek }, createdAt,
       )
-      if (goalSession != null) goalSessionScheduled = true
+      val scheduled = schedulePolicy.schedule(
+        weekStart = startDate.plusWeeks(weekIndex.toLong()), proposals = proposals,
+        availability = availability, retainedWorkouts = if (availability == null) emptyList() else retainedSchedule,
+        completionDate = scheduledCompletionDate,
+      )
+      val workouts = scheduled.workouts
+      retainedSchedule += workouts.map { it.workout }
+      if (goalSession != null && workouts.any { it.workout.purpose in setOf(WorkoutPurpose.GOAL_COMPLETION, WorkoutPurpose.RACE_SPECIFIC) }) {
+        goalSessionScheduled = true
+      }
       val estimates = workouts.map { WorkoutEstimateCalculator.calculate(it.workout) }
       val prescribedDistance = estimates.sumOf { it.knownDistanceMeters }.takeIf { it > 0.0 }
       val expectedDuration = estimates.map { it.estimatedTotalDurationSeconds }
@@ -181,12 +194,13 @@ class TrainingPlanGenerator(
         ?.sumOf { requireNotNull(it) }
       val reasons = weekReasons(
         goal, profile, frequency, frequencyIncreased, longRun, recovery, qualityType, eligibility, goalSession,
-      )
+      ) + scheduled.reasons
       TrainingWeek(
         weekIndex = weekIndex,
         startDate = startDate.plusWeeks(weekIndex.toLong()),
         workouts = workouts,
-        targetDistanceMeters = prescribedDistance ?: plannedDistance,
+        targetDistanceMeters = if (workouts.all { it.workout.type == WorkoutType.REST }) 0.0
+          else prescribedDistance ?: plannedDistance?.takeIf { availability == null },
         targetDurationSeconds = expectedDuration,
         loadClassification = when {
           recovery -> WeekLoadClassification.RECOVERY
@@ -851,6 +865,7 @@ class TrainingPlanGenerator(
     startDate: LocalDate,
     createdAt: Instant,
     completionMilestone: GoalCompletionMilestone?,
+    availability: TrainingAvailability?,
   ): TrainingPlan {
     val assessmentType = requireNotNull(sufficiency.recommendedAssessment)
     val id = "$planId:assessment"
@@ -889,15 +904,20 @@ class TrainingPlanGenerator(
       goalId = goal.id,
       origin = WorkoutOrigin.GENERATED,
     )
+    val proposals = listOf(PlannedWorkoutEntry(WeeklyWorkoutSlot.EARLY_WEEK, workout, sufficiency.reasons.last()))
+    val scheduled = TrainingSchedulePolicy(
+      config.minimumHardSessionSpacingDays,
+    ).schedule(startDate, proposals, availability,
+      completionDate = completionMilestone?.scheduledDate?.takeUnless { it.isBefore(startDate) })
     val week = TrainingWeek(
       weekIndex = 0,
       startDate = startDate,
-      workouts = listOf(PlannedWorkoutEntry(WeeklyWorkoutSlot.EARLY_WEEK, workout, sufficiency.reasons.last())),
-      targetDistanceMeters = distance,
-      targetDurationSeconds = if (distance == null) 20 * 60L else null,
+      workouts = scheduled.workouts,
+      targetDistanceMeters = if (scheduled.workouts.all { it.workout.type == WorkoutType.REST }) 0.0 else distance,
+      targetDurationSeconds = if (scheduled.workouts.all { it.workout.type == WorkoutType.REST }) 0L else if (distance == null) 20 * 60L else null,
       loadClassification = WeekLoadClassification.NORMAL,
       explanation = "Assessment Phase: collect a comfortable baseline before normal training prescriptions.",
-      reasons = sufficiency.reasons,
+      reasons = sufficiency.reasons + scheduled.reasons,
     )
     return TrainingPlan(
       id = planId,
