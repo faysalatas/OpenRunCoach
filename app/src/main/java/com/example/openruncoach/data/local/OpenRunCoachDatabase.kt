@@ -38,8 +38,9 @@ import androidx.sqlite.execSQL
     RunRouteEntity::class,
     RunRoutePointEntity::class,
     RunSplitEntity::class,
+    TrainingAvailabilityEntity::class,
   ],
-  version = 18,
+  version = 19,
   exportSchema = true,
 )
 abstract class OpenRunCoachDatabase : RoomDatabase() {
@@ -51,6 +52,7 @@ abstract class OpenRunCoachDatabase : RoomDatabase() {
   abstract fun athletePerformanceProfileDao(): AthletePerformanceProfileDao
   abstract fun trainingGoalDao(): TrainingGoalDao
   abstract fun trainingPlanDao(): TrainingPlanDao
+  abstract fun trainingAvailabilityDao(): TrainingAvailabilityDao
 
   companion object {
     @Volatile private var instance: OpenRunCoachDatabase? = null
@@ -405,6 +407,14 @@ abstract class OpenRunCoachDatabase : RoomDatabase() {
       }
     }
 
+    val MIGRATION_18_19 = object : Migration(18, 19) {
+      override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL(
+          """CREATE TABLE IF NOT EXISTS `training_availability` (`id` INTEGER NOT NULL, `availableDaysMask` INTEGER NOT NULL, `preferredDaysMask` INTEGER NOT NULL, PRIMARY KEY(`id`))"""
+        )
+      }
+    }
+
     fun getInstance(context: Context): OpenRunCoachDatabase =
       instance ?: synchronized(this) {
         instance
@@ -439,6 +449,7 @@ abstract class OpenRunCoachDatabase : RoomDatabase() {
               MIGRATION_15_16,
               MIGRATION_16_17,
               MIGRATION_17_18,
+              MIGRATION_18_19,
             ).build()
   }
 }

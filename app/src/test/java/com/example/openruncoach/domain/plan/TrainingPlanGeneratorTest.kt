@@ -30,6 +30,7 @@ import com.example.openruncoach.domain.workout.WorkoutPurpose
 import com.example.openruncoach.domain.workout.WorkoutType
 import com.example.openruncoach.domain.workout.prescribedRunningDistanceMeters
 import java.time.Clock
+import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -43,6 +44,80 @@ import org.junit.Test
 class TrainingPlanGeneratorTest {
   private val now = Instant.parse("2026-09-24T12:00:00Z")
   private val generator = TrainingPlanGenerator(Clock.fixed(now, ZoneOffset.UTC), ZoneOffset.UTC)
+
+  @Test fun availabilityConstrainsEveryGeneratedWeekAndPreservesStructuredPrescriptions() {
+    listOf(
+      setOf(DayOfWeek.TUESDAY, DayOfWeek.SATURDAY),
+      setOf(DayOfWeek.MONDAY, DayOfWeek.WEDNESDAY, DayOfWeek.SATURDAY),
+      setOf(DayOfWeek.MONDAY, DayOfWeek.WEDNESDAY, DayOfWeek.FRIDAY, DayOfWeek.SUNDAY),
+      setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY),
+    ).forEach { days ->
+      val selectedGoal = goal(GoalDistance.FIVE_K, GoalType.IMPROVE_PERFORMANCE)
+      val plan = generator.generate(selectedGoal, establishedProfile(), availability = TrainingAvailability(days))
+      assertEquals(plan, generator.generate(selectedGoal, establishedProfile(), availability = TrainingAvailability(days)))
+      plan.weeks.forEach { week ->
+        val running = week.workouts.filter { it.workout.type != WorkoutType.REST }
+        assertTrue(running.size <= days.size)
+        assertTrue(running.all { it.workout.date.dayOfWeek in days })
+        assertEquals(running.size, running.map { it.workout.date }.distinct().size)
+        assertTrue(running.all { it.workout.blocks.isNotEmpty() && it.originalWorkout == it.workout })
+        assertEquals(week.targetDistanceMeters!!, running.sumOf { WorkoutEstimateCalculator.calculate(it.workout).knownDistanceMeters }, 0.001)
+      }
+      plan.weeks.flatMap { it.workouts }.map { it.workout }.filter { it.isDemandingForScheduling() }
+        .sortedBy { it.date }.zipWithNext().forEach { (first, second) ->
+          assertTrue(java.time.temporal.ChronoUnit.DAYS.between(first.date, second.date) >= 2)
+        }
+      assertTrue(TrainingPlanValidator().validate(plan, selectedGoal).isValid)
+    }
+  }
+
+  @Test fun explicitNoRunningDaysProducesZeroVolumeRestWeeks() {
+    val plan = generator.generate(goal(), profile(), availability = TrainingAvailability(emptySet()))
+    assertTrue(plan.weeks.all { week -> week.workouts.all { it.workout.type == WorkoutType.REST } })
+    assertTrue(plan.weeks.all { it.targetDistanceMeters == 0.0 && it.targetDurationSeconds == 0L })
+    assertTrue(TrainingPlanValidator().validate(plan, goal()).isValid)
+  }
+
+  @Test fun assessmentUsesTheSameAvailabilityPolicyWithoutInventingPaceOrDistance() {
+    val days = TrainingAvailability(setOf(DayOfWeek.MONDAY))
+    val plan = generator.generate(goal(), profile(totalRuns = 0, runs = 0, averageRuns = 0.0,
+      confidence = ProfileConfidence.VERY_LOW, easyPace = null), availability = days)
+    val workout = plan.weeks.single().workouts.single().workout
+    assertEquals(WorkoutType.ASSESSMENT, workout.type)
+    assertEquals(DayOfWeek.MONDAY, workout.date.dayOfWeek)
+    assertNull(plan.weeks.single().targetDistanceMeters)
+    assertEquals(1_200L, plan.weeks.single().targetDurationSeconds)
+  }
+
+  @Test fun constrainedCompletionRunKeepsExplicitDateAndRecoveryRules() {
+    val date = LocalDate.parse("2026-10-18")
+    val selectedGoal = goal(GoalDistance.FIVE_K)
+    val plan = generator.generate(selectedGoal, profile(), completionMilestone = scheduledMilestone(date),
+      availability = TrainingAvailability(setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)))
+    val completion = plan.weeks.flatMap { it.workouts }.single { it.workout.purpose == WorkoutPurpose.GOAL_COMPLETION }
+    assertEquals(date, completion.workout.date)
+    assertEquals(date, plan.completionMilestone?.scheduledDate)
+    assertEquals(completion.workout.id, plan.completionMilestone?.workoutId)
+    assertTrue(TrainingPlanValidator().validate(plan, selectedGoal, true).isValid)
+  }
+
+  @Test fun unavailableCompletionIsRejectedEvenForAnAssessmentPlan() {
+    val date = LocalDate.parse("2026-10-18")
+    val conflict = org.junit.Assert.assertThrows(CompletionAvailabilityConflict::class.java) {
+      generator.generate(goal(), profile(totalRuns = 0, runs = 0, confidence = ProfileConfidence.VERY_LOW),
+        completionMilestone = scheduledMilestone(date), availability = TrainingAvailability(setOf(DayOfWeek.MONDAY)))
+    }
+    assertEquals(date, conflict.date)
+  }
+
+  @Test fun performanceGoalMilestoneAlsoKeepsItsExplicitAvailableDate() {
+    val date = LocalDate.parse("2026-10-18")
+    val plan = generator.generate(goal(GoalDistance.FIVE_K, GoalType.TARGET_TIME, 1_800), establishedProfile(),
+      completionMilestone = scheduledMilestone(date),
+      availability = TrainingAvailability(setOf(DayOfWeek.MONDAY, DayOfWeek.WEDNESDAY, DayOfWeek.SUNDAY)))
+    val milestoneId = requireNotNull(plan.completionMilestone?.workoutId)
+    assertEquals(date, plan.weeks.flatMap { it.workouts }.single { it.workout.id == milestoneId }.workout.date)
+  }
 
   @Test fun noRunsStartsWithOneAssessmentWithoutInventedPace() {
     val plan = generator.generate(goal(), profile(totalRuns = 0, runs = 0, averageRuns = 0.0, confidence = ProfileConfidence.VERY_LOW, easyPace = null))

@@ -95,7 +95,7 @@ class TrainingPlanValidator(
         plan.weeks.filter { it.loadClassification == WeekLoadClassification.RECOVERY }.forEach { recoveryWeek ->
           val previous = plan.weeks.getOrNull(recoveryWeek.weekIndex - 1)?.targetDistanceMeters
           val recovery = recoveryWeek.targetDistanceMeters
-          if (previous != null && recovery != null && recovery >= previous) {
+          if (previous != null && recovery != null && recovery > 0.0 && recovery >= previous) {
             add("Week ${recoveryWeek.weekIndex + 1}: recovery load must be lower than the preceding week.")
           }
         }

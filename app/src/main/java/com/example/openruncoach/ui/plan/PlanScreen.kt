@@ -62,7 +62,7 @@ fun PlanScreen(onOpenGoal: () -> Unit, onOpenWorkout: (String) -> Unit, modifier
       TrainingPlanRepository(database, generator = TrainingPlanGenerator(environment.clock),
         completionRepository = completion, clock = environment.clock),
       TrainingGoalRepository(database, profiles, TrainingGoalFactory(environment.clock)),
-      profiles, completion, environment.clock,
+      profiles, completion, TrainingAvailabilityRepository(database), environment.clock,
     )
   }
   val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -93,6 +93,7 @@ fun PlanScreen(onOpenGoal: () -> Unit, onOpenWorkout: (String) -> Unit, modifier
         PlanHero(goalTitle ?: "Training plan", plan,
           if (previous != null) previous.completionMilestone else state.completionMilestone,
           selected, if (previous == null) viewModel::showCompletionScheduler else null)
+        if (previous == null) state.availabilityConflict?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         PlanWeekSelector(plan, selected, today,
           if (previous != null) viewModel::selectPreviousWeek else viewModel::selectWeek)
         val week = plan.weeks[selected.coerceIn(plan.weeks.indices)]
@@ -144,6 +145,7 @@ fun PlanScreen(onOpenGoal: () -> Unit, onOpenWorkout: (String) -> Unit, modifier
           state.completionDateSuggestions, state.completionDateAssessment, true,
           viewModel::showCompletionScheduler, viewModel::scheduleCompletion, viewModel::postponeCompletion,
           state.isGenerating, today)
+        state.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
       }
     }
   }

@@ -91,4 +91,4 @@ fun activateTrainingPlan(existing: List<TrainingPlan>, newPlan: TrainingPlan): L
   existing.map { if (it.status == TrainingPlanStatus.ACTIVE) it.copy(status = TrainingPlanStatus.SUPERSEDED) else it } +
     newPlan.copy(status = TrainingPlanStatus.ACTIVE)
 
-const val TRAINING_PLAN_GENERATOR_VERSION = 4
+const val TRAINING_PLAN_GENERATOR_VERSION = 5
