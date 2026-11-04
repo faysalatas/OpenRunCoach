@@ -77,13 +77,7 @@ class RunFeedbackRepositoryTest {
     legacy.version = 1
     legacy.close()
 
-    val database = Room.databaseBuilder(context, OpenRunCoachDatabase::class.java, databaseName)
-      .addMigrations(
-        OpenRunCoachDatabase.MIGRATION_1_2,
-        OpenRunCoachDatabase.MIGRATION_2_3,
-        OpenRunCoachDatabase.MIGRATION_3_4,
-      )
-      .build()
+    val database = OpenRunCoachDatabase.createIsolated(context, databaseName)
     try {
       assertEquals("run-1", database.runDao().observeRun("run-1").first()?.healthConnectRecordId)
       assertEquals("", database.runDao().observeRun("run-1").first()?.sourcePackageName)
@@ -116,9 +110,7 @@ class RunFeedbackRepositoryTest {
     legacy.version = 2
     legacy.close()
 
-    val database = Room.databaseBuilder(context, OpenRunCoachDatabase::class.java, databaseName)
-      .addMigrations(OpenRunCoachDatabase.MIGRATION_2_3, OpenRunCoachDatabase.MIGRATION_3_4)
-      .build()
+    val database = OpenRunCoachDatabase.createIsolated(context, databaseName)
     try {
       val run = database.runDao().observeRun("run-1").first()
       assertEquals("", run?.sourcePackageName)
@@ -150,9 +142,7 @@ class RunFeedbackRepositoryTest {
     legacy.version = 3
     legacy.close()
 
-    val database = Room.databaseBuilder(context, OpenRunCoachDatabase::class.java, databaseName)
-      .addMigrations(OpenRunCoachDatabase.MIGRATION_3_4)
-      .build()
+    val database = OpenRunCoachDatabase.createIsolated(context, databaseName)
     try {
       val run = database.runDao().observeRun("run-1").first()
       assertEquals(true, run?.isCanonical)
