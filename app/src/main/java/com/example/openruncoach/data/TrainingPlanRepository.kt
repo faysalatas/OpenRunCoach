@@ -87,6 +87,38 @@ class TrainingPlanRepository(
 
   internal suspend fun getPlanSnapshot(planId: String): TrainingPlan? = dao.getPlan(planId)?.let { loadPlan(it) }
 
+  /** Explicit reconciliation write, never called by a plan getter or diagnostic export.
+   * Room serializes reload/decision/append across repository instances and rolls back together
+   * with the authoritative evidence update. Retained rows are never replaced.
+   */
+  internal suspend fun extendForecast(profile: AthletePerformanceProfile) = database.withTransaction {
+    val entity = dao.getActivePlan() ?: return@withTransaction
+    val goal = database.trainingGoalDao().getActiveGoal()?.toDomain() ?: return@withTransaction
+    if (goal.id != entity.goalId) return@withTransaction
+    val previous = loadPlan(entity)
+    val extended = TrainingPlanGenerator(clock).extend(
+      previous, goal, profile,
+      runMetricsHistory = RunMetricsRepository(database.runMetricsDao()).getCanonicalRunMetrics(),
+      completedAssessmentAttempts = workoutDao.completedAssessmentCount(goal.id),
+      availability = availabilityRepository.get(),
+    )
+    if (extended.weeks.size == previous.weeks.size) return@withTransaction
+    val firstNewWeek = previous.weeks.size
+    val added = extended.weeks.drop(firstNewWeek)
+    added.flatMap { it.workouts }.forEach { entry ->
+      check(workoutDao.getWorkout(entry.originalWorkout.id) == null) { "Continuation workout identity already exists." }
+      workoutDao.replaceWorkout(StructuredWorkoutPersistenceMapper.toRecord(
+        entry.originalWorkout, WorkoutLifecycleState.PLANNED.name, isPreview = false,
+      ))
+    }
+    val snapshot = TrainingPlanPersistenceMapper.toSnapshot(extended)
+    dao.upsertWeeks(snapshot.weeks.filter { it.weekIndex >= firstNewWeek })
+    dao.upsertReasons(snapshot.reasons.filter { it.weekIndex >= firstNewWeek })
+    dao.upsertBlocks(snapshot.blocks.drop(previous.blocks.size))
+    dao.upsertWorkoutReferences(snapshot.workouts.filter { it.weekIndex >= firstNewWeek })
+    dao.upsertPlan(snapshot.plan)
+  }
+
   suspend fun generate(goal: TrainingGoal, profile: AthletePerformanceProfile): TrainingPlan {
     val milestone = completionRepository.refreshReadiness(goal, profile)
     return generate(goal, profile, milestone)

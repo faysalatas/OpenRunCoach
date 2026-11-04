@@ -3,6 +3,7 @@ package com.example.openruncoach.domain.plan
 import com.example.openruncoach.domain.goal.GoalDistance
 import com.example.openruncoach.domain.goal.GoalCompletionMilestone
 import com.example.openruncoach.domain.goal.GoalCompletionReadiness
+import com.example.openruncoach.domain.goal.GoalStatus
 import com.example.openruncoach.domain.goal.GoalType
 import com.example.openruncoach.domain.goal.TrainingGoal
 import com.example.openruncoach.domain.metrics.RunMetrics
@@ -101,11 +102,49 @@ class TrainingPlanGenerator(
     completedAssessmentAttempts: Int = 0,
     completionMilestone: GoalCompletionMilestone? = null,
     availability: TrainingAvailability? = null,
+  ): TrainingPlan = buildForecast(goal, profile, runMetricsHistory, completedAssessmentAttempts,
+    completionMilestone, availability)
+
+  /** Append only unfilled weeks. Existing prescriptions (including adjustments) are constraints.
+   * Week indices continue the training cycle; elapsed inactivity never creates backdated sessions.
+   * Current observed evidence anchors load, rather than treating the old forecast as performed work.
+   */
+  fun extend(
+    plan: TrainingPlan,
+    goal: TrainingGoal,
+    profile: AthletePerformanceProfile,
+    runMetricsHistory: List<RunMetrics> = emptyList(),
+    completedAssessmentAttempts: Int = 0,
+    availability: TrainingAvailability? = null,
+  ): TrainingPlan {
+    if (goal.status != GoalStatus.ACTIVE || plan.status != TrainingPlanStatus.ACTIVE || plan.goalId != goal.id) return plan
+    val horizon = LocalDate.now(clock.withZone(zoneId)).plusWeeks(config.defaultDetailedWeeks.toLong()).minusDays(1)
+    if (!plan.weeks.last().startDate.plusDays(6).isBefore(horizon)) return plan
+    return buildForecast(goal, profile, runMetricsHistory, completedAssessmentAttempts,
+      plan.completionMilestone, availability, plan)
+  }
+
+  private fun buildForecast(
+    goal: TrainingGoal,
+    profile: AthletePerformanceProfile,
+    runMetricsHistory: List<RunMetrics>,
+    completedAssessmentAttempts: Int,
+    completionMilestone: GoalCompletionMilestone?,
+    availability: TrainingAvailability?,
+    previousPlan: TrainingPlan? = null,
   ): TrainingPlan {
     val createdAt = clock.instant()
-    val startDate = LocalDate.now(clock.withZone(zoneId))
-    availability.requireCompletionDateAvailable(completionMilestone?.scheduledDate?.takeUnless { it.isBefore(startDate) })
-    val planId = "plan:${goal.id}:${createdAt.toEpochMilli()}"
+    val today = LocalDate.now(clock.withZone(zoneId))
+    val startDate = previousPlan?.weeks?.last()?.startDate?.plusWeeks(1)?.coerceAtLeast(today) ?: today
+    val firstWeekIndex = previousPlan?.weeks?.size ?: 0
+    val continuationWeeks = ((ChronoUnit.DAYS.between(startDate,
+      today.plusWeeks(config.defaultDetailedWeeks.toLong())) + 6) / 7).toInt().coerceAtLeast(1)
+    // A saved milestone is immutable, even when availability has since changed. New scheduling
+    // still uses the shared availability contract; it must not move or recreate a retained attempt.
+    if (previousPlan == null) {
+      availability.requireCompletionDateAvailable(completionMilestone?.scheduledDate?.takeUnless { it.isBefore(startDate) })
+    }
+    val planId = previousPlan?.id ?: "plan:${goal.id}:${createdAt.toEpochMilli()}"
     val sufficiency = sufficiencyEvaluator.evaluate(
       profile = profile,
       goal = goal,
@@ -114,16 +153,38 @@ class TrainingPlanGenerator(
       completedAssessmentAttempts = completedAssessmentAttempts,
     )
     if (!sufficiency.canGenerateNormalPlan) {
-      return assessmentPlan(planId, goal, profile, sufficiency, startDate, createdAt, completionMilestone, availability)
+      if (previousPlan == null) return assessmentPlan(planId, goal, profile, sufficiency, startDate,
+        createdAt, completionMilestone, availability)
+      val weeks = (0 until continuationWeeks).map { offset ->
+        assessmentPlan(planId, goal, profile, sufficiency, startDate.plusWeeks(offset.toLong()),
+          createdAt, completionMilestone, availability, firstWeekIndex + offset,
+          previousPlan.weeks.flatMap { it.workouts }.map { it.originalWorkout },
+          retainedCompletion = true).weeks.single().copy(weekIndex = firstWeekIndex + offset)
+      }
+      return previousPlan.copy(
+        endDate = weeks.last().startDate.plusDays(6), weeks = previousPlan.weeks + weeks,
+        confidence = profile.profileConfidence,
+        blocks = previousPlan.blocks + TrainingBlock(TrainingBlockType.FOUNDATION, firstWeekIndex,
+          firstWeekIndex + weeks.lastIndex, "Establish a safe baseline.", "Reassess after observed running and checkout."),
+      )
     }
-    val scheduledCompletionDate = completionMilestone
-      ?.scheduledDate
-      ?.takeUnless { it.isBefore(startDate) }
+    val completionConflict = previousPlan != null && completionMilestone?.scheduledDate?.let {
+      !it.isBefore(startDate) && availability != null && it.dayOfWeek !in availability.availableDays
+    } == true
+    val scheduledCompletionDate = completionMilestone?.scheduledDate?.takeUnless {
+      it.isBefore(startDate) || completionConflict || previousPlan?.completionMilestone?.workoutId != null
+    }
+    val retainedCompletionDate = previousPlan?.completionMilestone?.scheduledDate
+    val scheduleCompletionDate = scheduledCompletionDate ?: retainedCompletionDate?.takeIf {
+      !it.plusDays(6).isBefore(startDate)
+    }
     val scheduledCompletionWeek = scheduledCompletionDate?.let {
-      (ChronoUnit.DAYS.between(startDate, it) / 7).toInt()
+      firstWeekIndex + (ChronoUnit.DAYS.between(startDate, it) / 7).toInt()
     }
     val normalWeekCount = config.defaultDetailedWeeks
-    val weekCount = if (scheduledCompletionWeek != null) {
+    val weekCount = if (previousPlan != null) {
+      continuationWeeks
+    } else if (scheduledCompletionWeek != null) {
       scheduledCompletionWeek + 1
     } else {
       normalWeekCount
@@ -132,22 +193,29 @@ class TrainingPlanGenerator(
     val eligibility = qualityEligibility(profile)
     val volumeProgression = progressionFor(profile.profileConfidence)
     var progressiveWeek = 0
-    var previousDistance = baselineDistance(profile)
+    var previousDistance = if (previousPlan == null) baselineDistance(profile) else
+      listOfNotNull(baselineDistance(profile), previousPlan.weeks.last().targetDistanceMeters).minOrNull()
     var previousLongRun = profile.longestRunLast28Days?.distanceMeters?.takeIf { it > 0.0 }
-    var goalSessionScheduled = false
+    var goalSessionScheduled = previousPlan?.weeks.orEmpty().flatMap { it.workouts }.any {
+      it.originalWorkout.purpose in setOf(WorkoutPurpose.GOAL_COMPLETION, WorkoutPurpose.RACE_SPECIFIC)
+    }
     val completionWeek = scheduledCompletionWeek
-    val blockTypes = (0 until weekCount).map { weekIndex ->
+    val blockTypes = (firstWeekIndex until firstWeekIndex + weekCount).map { weekIndex ->
       blockType(goal, profile, weekIndex, recoveryWeek(goal, weekIndex, completionWeek))
     }
 
-    val retainedSchedule = mutableListOf<com.example.openruncoach.domain.workout.StructuredWorkout>()
+    val retainedSchedule = previousPlan?.weeks.orEmpty().flatMap { it.workouts }
+      .map { it.originalWorkout }.toMutableList()
     val schedulePolicy = TrainingSchedulePolicy(config.minimumHardSessionSpacingDays)
-    val weeks = (0 until weekCount).map { weekIndex ->
+    val weeks = (0 until weekCount).map { windowIndex ->
+      val weekIndex = firstWeekIndex + windowIndex
       val recovery = recoveryWeek(goal, weekIndex, completionWeek)
       val frequency = frequencyForWeek(startingFrequency, profile, weekIndex)
       val frequencyIncreased = frequency > frequencyForWeek(startingFrequency, profile, weekIndex - 1)
       if (!recovery) progressiveWeek++
       val progressionSteps = (progressiveWeek - 1 - if (frequencyIncreased) 1 else 0).coerceAtLeast(0)
+        // Extension does not earn load increases by merely reaching a new forecast boundary.
+        .let { if (previousPlan == null) it else 0 }
       val buildFactor = 1.0 + volumeProgression * progressionSteps
       val plannedDistance = baselineDistance(profile)?.let { baseline ->
         if (recovery) (previousDistance ?: baseline) * config.recoveryVolumeFactor else baseline * buildFactor
@@ -157,7 +225,7 @@ class TrainingPlanGenerator(
           min(distance, preGoalDistanceLimit(goal.distanceMeters))
         } else distance
       }
-      val currentBlock = blockTypes[weekIndex]
+      val currentBlock = blockTypes[windowIndex]
       val goalSession = if (weekIndex == completionWeek) {
         when (goal.goalType) {
           GoalType.COMPLETE_DISTANCE -> GoalSessionKind.COMPLETION
@@ -167,20 +235,25 @@ class TrainingPlanGenerator(
       } else if (goal.goalType == GoalType.COMPLETE_DISTANCE) {
         null
       } else {
-        goalSessionFor(goal, profile, weekIndex, weekCount, recovery, currentBlock, goalSessionScheduled)
+        if (previousPlan == null) goalSessionFor(goal, profile, weekIndex, weekCount, recovery, currentBlock, goalSessionScheduled)
+        else null
       }
       val qualityType = if (goalSession == null) {
         qualityWorkout(goal, profile, eligibility, weekIndex, recovery || frequencyIncreased, frequency)
       } else null
-      val proposals = buildWorkouts(
-        planId, goal, profile, weekIndex, startDate.plusWeeks(weekIndex.toLong()), frequency,
+      val requested = buildWorkouts(
+        planId, goal, profile, weekIndex, startDate.plusWeeks(windowIndex.toLong()), frequency,
         qualityType, longRun, plannedDistance, recovery, currentBlock, goalSession,
         scheduledCompletionDate.takeIf { goalSession != null && weekIndex == completionWeek }, createdAt,
       )
+      val proposals = if (previousPlan != null && recovery && plannedDistance != null) {
+        limitRecoveryLoad(requested, plannedDistance)
+      } else requested
       val scheduled = schedulePolicy.schedule(
-        weekStart = startDate.plusWeeks(weekIndex.toLong()), proposals = proposals,
-        availability = availability, retainedWorkouts = if (availability == null) emptyList() else retainedSchedule,
-        completionDate = scheduledCompletionDate,
+        weekStart = startDate.plusWeeks(windowIndex.toLong()), proposals = proposals,
+        availability = availability, retainedWorkouts = if (previousPlan == null && availability == null) emptyList() else retainedSchedule,
+        completionDate = scheduleCompletionDate,
+        retainedCompletion = previousPlan != null,
       )
       val workouts = scheduled.workouts
       retainedSchedule += workouts.map { it.workout }
@@ -194,10 +267,17 @@ class TrainingPlanGenerator(
         ?.sumOf { requireNotNull(it) }
       val reasons = weekReasons(
         goal, profile, frequency, frequencyIncreased, longRun, recovery, qualityType, eligibility, goalSession,
-      ) + scheduled.reasons
+      ) + scheduled.reasons + (if (requested != proposals) listOf(
+        "Recovery sessions that exceed the reduced volume budget are replaced by rest; omitted distance is not redistributed."
+      ) else emptyList()) + if (previousPlan != null) listOf(
+        "Rolling continuation retains saved prescriptions and training-cycle position. New load uses current observed evidence; an unperformed forecast does not earn progression."
+      ) else emptyList()
+      val conflictReasons = if (completionConflict) listOf(
+        "The saved Completion Run date is unavailable. It is retained without creating or moving an attempt; explicitly resolve the date or availability."
+      ) else emptyList()
       TrainingWeek(
         weekIndex = weekIndex,
-        startDate = startDate.plusWeeks(weekIndex.toLong()),
+        startDate = startDate.plusWeeks(windowIndex.toLong()),
         workouts = workouts,
         targetDistanceMeters = if (workouts.all { it.workout.type == WorkoutType.REST }) 0.0
           else prescribedDistance ?: plannedDistance?.takeIf { availability == null },
@@ -209,7 +289,7 @@ class TrainingPlanGenerator(
           else -> WeekLoadClassification.NORMAL
         },
         explanation = focusFor(currentBlock, goal),
-        reasons = reasons,
+        reasons = reasons + conflictReasons,
       ).also { week ->
         previousDistance = week.targetDistanceMeters ?: previousDistance
         if (!recovery) previousLongRun = longRun ?: previousLongRun
@@ -218,18 +298,20 @@ class TrainingPlanGenerator(
     val plan = TrainingPlan(
       id = planId,
       goalId = goal.id,
-      createdAt = createdAt,
-      startDate = startDate,
+      createdAt = previousPlan?.createdAt ?: createdAt,
+      startDate = previousPlan?.startDate ?: startDate,
       endDate = weeks.last().startDate.plusDays(6),
-      weeks = weeks,
-      blocks = buildBlocks(blockTypes),
+      weeks = previousPlan?.weeks.orEmpty() + weeks,
+      blocks = previousPlan?.blocks.orEmpty() + buildBlocks(blockTypes).map {
+        it.copy(startWeek = it.startWeek + firstWeekIndex, endWeek = it.endWeek + firstWeekIndex)
+      },
       generationVersion = TRAINING_PLAN_GENERATOR_VERSION,
-      explanation = planExplanation(goal, profile, startingFrequency, eligibility, completionMilestone),
+      explanation = previousPlan?.explanation ?: planExplanation(goal, profile, startingFrequency, eligibility, completionMilestone),
       confidence = profile.profileConfidence,
       status = TrainingPlanStatus.ACTIVE,
       completionMilestone = completionMilestone?.copy(
         planId = planId,
-        workoutId = weeks.flatMap { it.workouts }.map { it.workout }
+        workoutId = previousPlan?.completionMilestone?.workoutId ?: weeks.flatMap { it.workouts }.map { it.workout }
           .singleOrNull { workout ->
             workout.date == scheduledCompletionDate && workout.purpose in setOf(
               WorkoutPurpose.GOAL_COMPLETION,
@@ -238,7 +320,17 @@ class TrainingPlanGenerator(
           }?.id,
       ),
     )
-    validator.requireValid(plan, goal, requireGoalDistanceSession = goalSessionScheduled)
+    // Validate the new window against current evidence without reinterpreting historical
+    // prescriptions (which may include an old, unresolved Completion Run).
+    val validationPlan = if (previousPlan == null) plan else plan.copy(
+      startDate = startDate,
+      weeks = weeks.mapIndexed { index, week -> week.copy(weekIndex = index) },
+      blocks = emptyList(),
+    )
+    validator.requireValid(validationPlan, goal, requireGoalDistanceSession =
+      if (previousPlan == null) goalSessionScheduled else weeks.flatMap { it.workouts }.any {
+        it.workout.purpose == WorkoutPurpose.GOAL_COMPLETION
+      })
     return plan
   }
 
@@ -249,6 +341,25 @@ class TrainingPlanGenerator(
     profile.averageRunsPerWeek >= 2.5 -> 3
     profile.runsLast28Days >= 3 -> 3
     else -> 2
+  }
+
+  /** Keep whole structured sessions; do not let minimum practical distances defeat recovery
+   * after a constrained/rest week. No partial intervals or invented replacement distance.
+   */
+  private fun limitRecoveryLoad(entries: List<PlannedWorkoutEntry>, budget: Double): List<PlannedWorkoutEntry> {
+    var remaining = budget
+    return entries.map { entry ->
+      val distance = WorkoutEstimateCalculator.calculate(entry.workout).knownDistanceMeters
+      if (distance <= remaining) {
+        remaining -= distance
+        entry
+      } else {
+        val rest = entry.workout.copy(type = WorkoutType.REST, name = "Rest", purpose = WorkoutPurpose.RECOVERY,
+          blocks = emptyList(), explanation = "Rest keeps recovery volume below the preceding scheduled week.",
+          cues = listOf("Absorb recent training before increasing load."))
+        entry.copy(workout = rest, originalWorkout = rest, generationReason = rest.explanation)
+      }
+    }
   }
 
   private fun frequencyForWeek(startingFrequency: Int, profile: AthletePerformanceProfile, weekIndex: Int): Int {
@@ -866,9 +977,12 @@ class TrainingPlanGenerator(
     createdAt: Instant,
     completionMilestone: GoalCompletionMilestone?,
     availability: TrainingAvailability?,
+    weekIndex: Int = 0,
+    retainedWorkouts: List<com.example.openruncoach.domain.workout.StructuredWorkout> = emptyList(),
+    retainedCompletion: Boolean = false,
   ): TrainingPlan {
     val assessmentType = requireNotNull(sufficiency.recommendedAssessment)
-    val id = "$planId:assessment"
+    val id = if (weekIndex == 0) "$planId:assessment" else "$planId:w$weekIndex:assessment"
     val longest = profile.longestRunLast28Days?.distanceMeters?.takeIf { it.isFinite() && it > 0.0 }
     val distance = when (assessmentType) {
       AssessmentRunType.INITIAL_BASELINE -> null
@@ -907,8 +1021,9 @@ class TrainingPlanGenerator(
     val proposals = listOf(PlannedWorkoutEntry(WeeklyWorkoutSlot.EARLY_WEEK, workout, sufficiency.reasons.last()))
     val scheduled = TrainingSchedulePolicy(
       config.minimumHardSessionSpacingDays,
-    ).schedule(startDate, proposals, availability,
-      completionDate = completionMilestone?.scheduledDate?.takeUnless { it.isBefore(startDate) })
+    ).schedule(startDate, proposals, availability, retainedWorkouts = retainedWorkouts,
+      completionDate = completionMilestone?.scheduledDate?.takeIf { !it.plusDays(6).isBefore(startDate) },
+      retainedCompletion = retainedCompletion)
     val week = TrainingWeek(
       weekIndex = 0,
       startDate = startDate,
