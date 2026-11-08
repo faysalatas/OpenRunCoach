@@ -43,7 +43,7 @@ import org.junit.runner.RunWith
 class GoalCompletionRepositoryTest {
   private val runTime = Instant.parse("2026-10-10T08:00:00Z")
 
-  @Test fun qualifyingRunBeforeMilestoneCompletesGoalAndObsoletesFutureRun() = runBlocking {
+  @Test fun qualifyingRunBeforeMilestoneCompletesGoalAndObsoletesFutureRun() = runBlocking<Unit> {
     val database = Room.inMemoryDatabaseBuilder(
       ApplicationProvider.getApplicationContext(), OpenRunCoachDatabase::class.java,
     ).build()

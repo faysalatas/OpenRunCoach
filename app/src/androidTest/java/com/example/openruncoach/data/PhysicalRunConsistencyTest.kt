@@ -365,7 +365,7 @@ class PhysicalRunConsistencyTest {
       buildList { while (cursor.moveToNext()) add(cursor.getString(0)) }
     }
   }
-  private fun withDatabase(block: suspend (OpenRunCoachDatabase) -> Unit) = runBlocking {
+  private fun withDatabase(block: suspend (OpenRunCoachDatabase) -> Unit) = runBlocking<Unit> {
     val db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), OpenRunCoachDatabase::class.java).build()
     try { block(db) } finally { db.close() }
   }

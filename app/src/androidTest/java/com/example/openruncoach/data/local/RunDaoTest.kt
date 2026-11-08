@@ -12,7 +12,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class RunDaoTest {
   @Test
-  fun upsertUpdatesExistingRunAndKeepsRunsMissingFromNextSync() = runBlocking {
+  fun upsertUpdatesExistingRunAndKeepsRunsMissingFromNextSync() = runBlocking<Unit> {
     val database =
       Room.inMemoryDatabaseBuilder(
           ApplicationProvider.getApplicationContext(),
@@ -51,7 +51,7 @@ class RunDaoTest {
   }
 
   @Test
-  fun recentRunsReturnsNewestTen() = runBlocking {
+  fun recentRunsReturnsNewestTen() = runBlocking<Unit> {
     val database =
       Room.inMemoryDatabaseBuilder(
           ApplicationProvider.getApplicationContext(),
@@ -72,7 +72,7 @@ class RunDaoTest {
   }
 
   @Test
-  fun recentRunsOnlyReturnsCanonicalRecords() = runBlocking {
+  fun recentRunsOnlyReturnsCanonicalRecords() = runBlocking<Unit> {
     val database = Room.inMemoryDatabaseBuilder(
       ApplicationProvider.getApplicationContext(), OpenRunCoachDatabase::class.java,
     ).build()
@@ -90,7 +90,7 @@ class RunDaoTest {
   }
 
   @Test
-  fun ignoredPhysicalRunIsHiddenFromNormalHistoryAndCanBeRestored() = runBlocking {
+  fun ignoredPhysicalRunIsHiddenFromNormalHistoryAndCanBeRestored() = runBlocking<Unit> {
     val database = Room.inMemoryDatabaseBuilder(
       ApplicationProvider.getApplicationContext(), OpenRunCoachDatabase::class.java,
     ).build()

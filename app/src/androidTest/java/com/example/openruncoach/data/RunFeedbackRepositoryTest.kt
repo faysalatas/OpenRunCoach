@@ -24,7 +24,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class RunFeedbackRepositoryTest {
   @Test
-  fun savingAgainUpdatesTheOnlyFeedbackForARun() = runBlocking {
+  fun savingAgainUpdatesTheOnlyFeedbackForARun() = runBlocking<Unit> {
     val database = Room.inMemoryDatabaseBuilder(
       ApplicationProvider.getApplicationContext(), OpenRunCoachDatabase::class.java,
     ).build()
@@ -63,7 +63,7 @@ class RunFeedbackRepositoryTest {
   }
 
   @Test
-  fun migrationPreservesExistingRunsAndAddsFeedback() = runBlocking {
+  fun migrationPreservesExistingRunsAndAddsFeedback() = runBlocking<Unit> {
     val context = ApplicationProvider.getApplicationContext<android.content.Context>()
     val databaseName = "feedback-migration-test.db"
     context.deleteDatabase(databaseName)
@@ -97,7 +97,7 @@ class RunFeedbackRepositoryTest {
   }
 
   @Test
-  fun sourceMigrationPreservesRunsAndFeedback() = runBlocking {
+  fun sourceMigrationPreservesRunsAndFeedback() = runBlocking<Unit> {
     val context = ApplicationProvider.getApplicationContext<android.content.Context>()
     val databaseName = "source-migration-test.db"
     context.deleteDatabase(databaseName)
@@ -131,7 +131,7 @@ class RunFeedbackRepositoryTest {
   }
 
   @Test
-  fun canonicalMigrationPreservesRunsAndFeedback() = runBlocking {
+  fun canonicalMigrationPreservesRunsAndFeedback() = runBlocking<Unit> {
     val context = ApplicationProvider.getApplicationContext<android.content.Context>()
     val databaseName = "canonical-migration-test.db"
     context.deleteDatabase(databaseName)
