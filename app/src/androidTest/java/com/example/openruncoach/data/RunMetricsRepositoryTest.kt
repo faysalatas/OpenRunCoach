@@ -16,12 +16,14 @@ import java.time.Instant
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class RunMetricsRepositoryTest {
-  @Test fun directAndCollectionLoadingPreserveTheSameSpeedSeries() = runBlocking {
+  @Test fun directAndCollectionLoadingPreserveTheSameSpeedSeries() = runBlocking<Unit> {
     val database = Room.inMemoryDatabaseBuilder(
       ApplicationProvider.getApplicationContext(), OpenRunCoachDatabase::class.java,
     ).build()
@@ -44,7 +46,7 @@ class RunMetricsRepositoryTest {
     }
   }
 
-  @Test fun existingRepositoryObservesSamplesWrittenAfterItsInitialRead() = runBlocking {
+  @Test fun existingRepositoryObservesSamplesWrittenAfterItsInitialRead() = runBlocking<Unit> {
     val database = Room.inMemoryDatabaseBuilder(
       ApplicationProvider.getApplicationContext(), OpenRunCoachDatabase::class.java,
     ).build()
@@ -63,6 +65,34 @@ class RunMetricsRepositoryTest {
     } finally {
       database.close()
     }
+  }
+
+  @Test fun forecastSummariesMatchCanonicalScalarsWithoutQueryingSensorSamples() = runBlocking<Unit> {
+    val queries = java.util.concurrent.CopyOnWriteArrayList<String>()
+    val database = Room.inMemoryDatabaseBuilder(
+      ApplicationProvider.getApplicationContext(), OpenRunCoachDatabase::class.java,
+    ).setQueryCallback({ sql, _ -> queries.add(sql) }, java.util.concurrent.Executor { it.run() }).build()
+    try {
+      val repository = RunMetricsRepository(database.runMetricsDao())
+      database.runDao().upsertAll(listOf(run(),
+        run().copy(healthConnectRecordId = "duplicate", isCanonical = false),
+        run().copy(healthConnectRecordId = "ignored", relevance = "IGNORED"),
+        run().copy(healthConnectRecordId = "stale")))
+      repository.save(metrics())
+      repository.save(metrics().copy(runId = "duplicate"))
+      repository.save(metrics().copy(runId = "ignored"))
+      repository.save(metrics().copy(runId = "stale", endTime = metrics().endTime.plusSeconds(1)))
+      val full = repository.getCanonicalRunMetrics()
+      assertEquals(listOf(RUN_ID), full.map { it.runId })
+      queries.clear()
+      val summaries = repository.getCanonicalRunMetricSummaries()
+      assertEquals(full.map { it.copy(series = RunTimeSeries()) }, summaries)
+      val reads = queries.filter { it.trimStart().startsWith("SELECT", ignoreCase = true) }
+      assertTrue(reads.any { it.contains("run_metric_values", ignoreCase = true) })
+      assertFalse("Forecast query must not load series: $reads",
+        reads.any { it.contains("run_metric_samples", ignoreCase = true) })
+      assertEquals(181, repository.getRunMetrics(RUN_ID)?.series?.speed?.size)
+    } finally { database.close() }
   }
 
   private fun run() = RunEntity(

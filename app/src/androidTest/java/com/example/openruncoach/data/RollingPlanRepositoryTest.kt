@@ -131,7 +131,7 @@ class RollingPlanRepositoryTest {
     assertEquals(5, db.trainingPlanDao().getWorkoutReferences(plan.id).size)
   }
 
-  @Test fun fileDatabaseRestartRetainsForecastAndDayRolloverAppendsOneWeek() = runBlocking {
+  @Test fun fileDatabaseRestartRetainsForecastAndDayRolloverAppendsOneWeek() = runBlocking<Unit> {
     val name = "rolling-${System.nanoTime()}.db"
     fun open() = Room.databaseBuilder(context, OpenRunCoachDatabase::class.java, name).build()
     var db = open()
@@ -149,6 +149,40 @@ class RollingPlanRepositoryTest {
     } finally { db.close(); context.deleteDatabase(name) }
   }
 
+  @Test fun satisfiedHorizonDoesNotLoadForecastEvidence() = runBlocking<Unit> {
+    val queries = java.util.concurrent.CopyOnWriteArrayList<String>()
+    val db = Room.inMemoryDatabaseBuilder(context, OpenRunCoachDatabase::class.java)
+      .setQueryCallback({ sql, _ -> queries.add(sql) }, java.util.concurrent.Executor { it.run() })
+      .build()
+    try {
+      seed(db)
+      PostRunReconciler(db, clock).reconcileAll()
+      val repository = TrainingPlanRepository(db, clock = clock)
+      val plan = requireNotNull(repository.getActivePlan())
+      val profile = AthletePerformanceProfileRepository(db,
+        AthletePerformanceProfileCalculator(clock, clock.zone)).recalculate()
+      queries.clear()
+      repository.extendForecast(profile)
+      assertTrue("Covered forecast must skip evidence queries: $queries", queries.none { sql ->
+        sql.trimStart().startsWith("SELECT", ignoreCase = true) &&
+          listOf("run_metrics", "run_metric_values", "run_metric_samples", "training_availability").any {
+            sql.contains(it, ignoreCase = true)
+          }
+      })
+      assertEquals(plan, repository.getActivePlan())
+    } finally { db.close() }
+  }
+
+  @Test fun reconciliationReusesInjectedForecastExtender() = withDatabase { db ->
+    var calls = 0
+    val extender = PlanForecastExtender { calls++ }
+    val reconciler = PostRunReconciler(db, clock, forecastExtender = extender)
+    reconciler.reconcileAll()
+    reconciler.reconcileAll()
+    assertEquals(2, calls)
+    assertTrue(db.trainingPlanDao().getAllPlans().isEmpty())
+  }
+
   private suspend fun seed(db: OpenRunCoachDatabase): TrainingPlan {
     val profiles = AthletePerformanceProfileRepository(db, AthletePerformanceProfileCalculator(oldClock, oldClock.zone))
     val goal = TrainingGoalRepository(db, profiles, TrainingGoalFactory(oldClock, idProvider = { "goal" }))
@@ -159,7 +193,7 @@ class RollingPlanRepositoryTest {
     return plan
   }
 
-  private fun withDatabase(block: suspend (OpenRunCoachDatabase) -> Unit) = runBlocking {
+  private fun withDatabase(block: suspend (OpenRunCoachDatabase) -> Unit) = runBlocking<Unit> {
     val db = Room.inMemoryDatabaseBuilder(context, OpenRunCoachDatabase::class.java).build()
     try { block(db) } finally { db.close() }
   }

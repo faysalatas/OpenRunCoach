@@ -23,7 +23,7 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class GoalStrategyPipelineTest {
-  @Test fun strategyScenariosUsePersistedEvidenceAndRebuildDeterministically() = runBlocking {
+  @Test fun strategyScenariosUsePersistedEvidenceAndRebuildDeterministically() = runBlocking<Unit> {
     val database = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), OpenRunCoachDatabase::class.java).build()
     val clock = Clock.fixed(Instant.parse("2026-09-27T12:00:00Z"), ZoneOffset.UTC)
     val environment = OpenRunCoachEnvironment("strategy-test", database, clock, true)

@@ -24,7 +24,7 @@ import org.junit.runner.RunWith
 class TrainingAvailabilityRepositoryTest {
   private val clock = Clock.fixed(Instant.parse("2026-10-19T08:00:00Z"), ZoneOffset.UTC)
 
-  @Test fun settingsSurviveRepositoryRecreationAndDistinguishMissingFromEmpty() = runBlocking {
+  @Test fun settingsSurviveRepositoryRecreationAndDistinguishMissingFromEmpty() = runBlocking<Unit> {
     val database = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), OpenRunCoachDatabase::class.java).build()
     try {
       val repository = TrainingAvailabilityRepository(database)
@@ -40,7 +40,7 @@ class TrainingAvailabilityRepositoryTest {
     } finally { database.close() }
   }
 
-  @Test fun savingAndReadingAvailabilityNeverRewritesCompletedOrFutureWorkouts() = runBlocking {
+  @Test fun savingAndReadingAvailabilityNeverRewritesCompletedOrFutureWorkouts() = runBlocking<Unit> {
     val database = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), OpenRunCoachDatabase::class.java).build()
     try {
       val dao = database.coachingWorkflowDao()

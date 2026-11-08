@@ -118,12 +118,23 @@ class TrainingPlanGenerator(
     availability: TrainingAvailability? = null,
   ): TrainingPlan {
     if (goal.status != GoalStatus.ACTIVE || plan.status != TrainingPlanStatus.ACTIVE || plan.goalId != goal.id) return plan
-    val horizon = LocalDate.now(clock.withZone(zoneId)).plusWeeks(config.defaultDetailedWeeks.toLong()).minusDays(1)
-    if (!plan.weeks.last().startDate.plusDays(6).isBefore(horizon)) return plan
+    if (!needsExtension(plan)) return plan
     return buildForecast(goal, profile, runMetricsHistory, completedAssessmentAttempts,
       plan.completionMilestone, availability, plan)
   }
 
+  /** Pure horizon check shared with persistence so completed forecasts need no evidence loading. */
+  fun needsExtension(plan: TrainingPlan, today: LocalDate = LocalDate.now(clock.withZone(zoneId))): Boolean =
+    plan.status == TrainingPlanStatus.ACTIVE && plan.weeks.last().startDate.plusDays(6).isBefore(
+      today.plusWeeks(config.defaultDetailedWeeks.toLong()).minusDays(1),
+    )
+
+  /**
+   * Fresh generation (previousPlan == null) creates identity, dates and an optional milestone attempt.
+   * Continuation retains previousPlan's identity, history, week indices and milestone; it appends only
+   * new weeks. Current profile/metrics/assessment evidence and availability guide both modes.
+   * completionMilestone is supplied by the caller for fresh generation, by previousPlan for extension.
+   */
   private fun buildForecast(
     goal: TrainingGoal,
     profile: AthletePerformanceProfile,

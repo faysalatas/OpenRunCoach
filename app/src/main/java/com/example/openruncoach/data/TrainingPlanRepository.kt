@@ -40,7 +40,8 @@ class TrainingPlanRepository(
   private val completionService: GoalCompletionMilestoneService = GoalCompletionMilestoneService(),
   private val clock: java.time.Clock = java.time.Clock.systemDefaultZone(),
   private val availabilityRepository: TrainingAvailabilityRepository = TrainingAvailabilityRepository(database),
-) {
+) : PlanForecastExtender {
+  private val forecastGenerator = TrainingPlanGenerator(clock)
   private val dao = database.trainingPlanDao()
   private val workoutDao = database.coachingWorkflowDao()
 
@@ -91,14 +92,15 @@ class TrainingPlanRepository(
    * Room serializes reload/decision/append across repository instances and rolls back together
    * with the authoritative evidence update. Retained rows are never replaced.
    */
-  internal suspend fun extendForecast(profile: AthletePerformanceProfile) = database.withTransaction {
+  override suspend fun extendForecast(profile: AthletePerformanceProfile) = database.withTransaction {
     val entity = dao.getActivePlan() ?: return@withTransaction
     val goal = database.trainingGoalDao().getActiveGoal()?.toDomain() ?: return@withTransaction
     if (goal.id != entity.goalId) return@withTransaction
     val previous = loadPlan(entity)
-    val extended = TrainingPlanGenerator(clock).extend(
+    if (!forecastGenerator.needsExtension(previous)) return@withTransaction
+    val extended = forecastGenerator.extend(
       previous, goal, profile,
-      runMetricsHistory = RunMetricsRepository(database.runMetricsDao()).getCanonicalRunMetrics(),
+      runMetricsHistory = RunMetricsRepository(database.runMetricsDao()).getCanonicalRunMetricSummaries(),
       completedAssessmentAttempts = workoutDao.completedAssessmentCount(goal.id),
       availability = availabilityRepository.get(),
     )

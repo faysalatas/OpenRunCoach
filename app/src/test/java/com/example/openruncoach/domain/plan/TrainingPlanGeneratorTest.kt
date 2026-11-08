@@ -748,6 +748,31 @@ class TrainingPlanGeneratorTest {
     assertEquals(plan, onDay(100).extend(plan, goal().copy(id = "different"), profile()))
   }
 
+  @Test fun extensionHorizonGateMatchesBoundaryAndConfiguredForecast() {
+    val plan = generator.generate(goal(), profile())
+    val today = LocalDate.ofInstant(now, ZoneOffset.UTC)
+    assertFalse(generator.needsExtension(plan, today))
+    assertTrue(generator.needsExtension(plan, today.plusDays(1)))
+    val extended = onDay(1).extend(plan, goal(), profile())
+    assertFalse(generator.needsExtension(extended, today.plusDays(7)))
+    assertTrue(generator.needsExtension(extended, today.plusDays(8)))
+    val shorter = TrainingPlanGenerator(Clock.fixed(now, ZoneOffset.UTC),
+      config = PlanGenerationConfig(defaultDetailedWeeks = 2))
+    assertFalse(shorter.needsExtension(plan, today.plusDays(14)))
+    assertTrue(shorter.needsExtension(plan, today.plusDays(15)))
+  }
+
+  @Test fun extensionHorizonGateUsesLocalDateAndRejectsInactivePlans() {
+    val plan = generator.generate(goal(), profile())
+    val midnight = now.plusSeconds(12 * 3600)
+    val losAngeles = java.time.ZoneId.of("America/Los_Angeles")
+    assertFalse(TrainingPlanGenerator(Clock.fixed(midnight, losAngeles)).needsExtension(plan))
+    assertTrue(TrainingPlanGenerator(Clock.fixed(midnight, ZoneOffset.UTC)).needsExtension(plan))
+    TrainingPlanStatus.entries.filter { it != TrainingPlanStatus.ACTIVE }.forEach { status ->
+      assertFalse(generator.needsExtension(plan.copy(status = status), plan.startDate.plusDays(100)))
+    }
+  }
+
   private fun goal(
     distance: GoalDistance = GoalDistance.TEN_K,
     type: GoalType = GoalType.COMPLETE_DISTANCE,

@@ -28,7 +28,7 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class PostRunReconciliationSimulationTest {
-  @Test fun equivalentPersistedInputsUseTheSameProductionReconciliationForDAndE() = runBlocking {
+  @Test fun equivalentPersistedInputsUseTheSameProductionReconciliationForDAndE() = runBlocking<Unit> {
     val context = ApplicationProvider.getApplicationContext<Context>()
     val clock = Clock.fixed(Instant.parse("2026-09-27T12:00:00Z"), ZoneOffset.UTC)
     for (key in listOf(SimulationScenarioKey.HARD_CONTINUOUS_5K, SimulationScenarioKey.HARD_5K_POOR_RESPONSE)) {

@@ -230,7 +230,7 @@ class PostRunReconcilerTest {
     assertEquals(1, WorkoutResponseRepository(db).getAll().size)
   }
 
-  @Test fun repositoryAndDatabaseRecreationConvergeAfterRestart() = runBlocking {
+  @Test fun repositoryAndDatabaseRecreationConvergeAfterRestart() = runBlocking<Unit> {
     val name = "post-run-restart-test.db"
     context.deleteDatabase(name)
     var db = Room.databaseBuilder(context, OpenRunCoachDatabase::class.java, name).build()
@@ -325,7 +325,7 @@ class PostRunReconcilerTest {
     assertEquals(listOf("A"), db.coachingWorkflowDao().getStoredExecutions().map { it.plannedWorkoutId })
   }
 
-  private fun withDatabase(block: suspend (OpenRunCoachDatabase) -> Unit) = runBlocking {
+  private fun withDatabase(block: suspend (OpenRunCoachDatabase) -> Unit) = runBlocking<Unit> {
     val db = Room.inMemoryDatabaseBuilder(context, OpenRunCoachDatabase::class.java).build()
     try { block(db) } finally { db.close() }
   }
