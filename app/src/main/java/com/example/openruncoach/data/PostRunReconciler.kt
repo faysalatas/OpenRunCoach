@@ -9,6 +9,7 @@ import com.example.openruncoach.domain.athlete.AthleteStateBuilder
 import com.example.openruncoach.domain.coaching.CoachingDecision
 import com.example.openruncoach.domain.coaching.CoachingEngine
 import com.example.openruncoach.domain.goal.GoalCompletionResult
+import com.example.openruncoach.domain.profile.AthletePerformanceProfile
 import com.example.openruncoach.domain.profile.AthletePerformanceProfileCalculator
 import com.example.openruncoach.domain.workout.WorkoutAdherenceEvaluator
 import com.example.openruncoach.domain.workout.WorkoutExecutionEvidence
@@ -18,8 +19,8 @@ import com.example.openruncoach.domain.workout.WorkoutResponse
 import java.time.Clock
 
 /**
- * The post-run commit boundary for evidence, goal completion, and upcoming adaptation. No new
- * workout is generated here. Responses and AthleteState remain rebuildable projections.
+ * The post-run commit boundary for evidence, goal completion, rolling forecast and adaptation.
+ * Responses and AthleteState remain rebuildable projections.
  */
 data class PostRunReconciliationResult(
   val physicalRunId: String,
@@ -29,6 +30,11 @@ data class PostRunReconciliationResult(
   val goalCompletion: GoalCompletionResult?,
   val coachingDecision: CoachingDecision?,
 )
+
+/** Generate → reconcile → extend. Extension must never call generate or start reconciliation. */
+fun interface PlanForecastExtender {
+  suspend fun extendForecast(profile: AthletePerformanceProfile)
+}
 
 /**
  * Resolves current persisted inputs, never caller-supplied run/checkout snapshots. Room owns the
@@ -42,6 +48,7 @@ class PostRunReconciler(
   private val profiles: AthletePerformanceProfileRepository = AthletePerformanceProfileRepository(
     database, AthletePerformanceProfileCalculator(clock, clock.zone),
   ),
+  private val forecastExtender: PlanForecastExtender = TrainingPlanRepository(database, clock = clock),
 ) {
   suspend fun reconcilePhysicalRun(physicalRunId: String): PostRunReconciliationResult = database.withTransaction {
     val id = database.runDao().getRun(physicalRunId)?.physicalRunId ?: physicalRunId
@@ -144,6 +151,7 @@ class PostRunReconciler(
         ) else null)
     }
     database.trainingGoalDao().getActiveGoal()?.toDomain()?.let { completion.refreshReadiness(it, profile) }
+    forecastExtender.extendForecast(profile)
     TrainingAdaptationRepository(database, clock).reconcile(athleteState, canonicalRuns, allResponses)
     return results
   }

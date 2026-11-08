@@ -49,6 +49,12 @@ class RunMetricsRepository(
     getRunMetrics(runId)
   }
 
+  /** Forecast sufficiency uses scalar evidence only; sensor series are not queried. */
+  internal suspend fun getCanonicalRunMetricSummaries(): List<RunMetrics> =
+    dao.getCanonicalRunMetricSummaries().mapNotNull {
+      RunMetricsWithValues(it.snapshot, it.values, emptyList()).toDomain()
+    }
+
   suspend fun save(metrics: RunMetrics) {
     val owner = database
     if (owner == null) persist(metrics) else owner.withTransaction {

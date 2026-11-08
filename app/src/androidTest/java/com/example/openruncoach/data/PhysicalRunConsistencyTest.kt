@@ -46,9 +46,12 @@ class PhysicalRunConsistencyTest {
     db.coachingWorkflowDao().updateLifecycleState(workout.id, WorkoutLifecycleState.CHECK_IN_REQUIRED.name)
     WorkoutExecutionRepository(db, clock).assignManually(requireNotNull(db.runDao().getRun("samsung")).toRunSummary(), workout.id)
 
+    // Explicit association reconciliation can now replenish the forecast. Presentation still
+    // resolves the retained workout independently from the new, unassociated prescriptions.
+    val savedPlan = requireNotNull(plans.getActivePlan())
     val before = applicationWrites(db)
     val metadata = plans.observeWorkoutPresentation(plan.id).first()
-    assertEquals(1, metadata.size)
+    assertEquals(savedPlan.weeks.sumOf { it.workouts.size }, metadata.size)
     val presentation = requireNotNull(metadata[workout.id])
     assertEquals("samsung", presentation.actual?.healthConnectRecordId)
     assertEquals(1_952.169, requireNotNull(presentation.actual?.distanceMeters), 0.001)
@@ -60,9 +63,10 @@ class PhysicalRunConsistencyTest {
     db.trainingPlanDao().updateStatus(plan.id, TrainingPlanStatus.SUPERSEDED.name)
     val previous = plans.observePreviousPlans().first().single()
     assertEquals(plan.id, previous.id)
-    assertEquals(1, previous.weekCount)
+    assertEquals(savedPlan.weeks.size, previous.weekCount)
     assertEquals(TrainingPlanStatus.SUPERSEDED, previous.status)
-    assertEquals(workout, plans.getPlanSnapshot(plan.id)?.weeks?.single()?.workouts?.single()?.workout)
+    assertEquals(workout, plans.getPlanSnapshot(plan.id)?.weeks?.flatMap { it.workouts }
+      ?.single { it.workout.id == workout.id }?.workout)
     assertTrue(db.coachingWorkflowDao().getAllExecutions().isEmpty())
   }
 

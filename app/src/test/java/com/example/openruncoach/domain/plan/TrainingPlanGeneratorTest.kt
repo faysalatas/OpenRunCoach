@@ -589,6 +589,190 @@ class TrainingPlanGeneratorTest {
     assertEquals(TrainingPlanStatus.ARCHIVED, result.first { it.id == archived.id }.status)
   }
 
+  private fun onDay(day: Long) = TrainingPlanGenerator(
+    Clock.fixed(now.plusSeconds(day * 86_400), ZoneOffset.UTC), ZoneOffset.UTC,
+  )
+
+  @Test fun rollingHorizonBoundaryAppendsOnlyMissingWeekAndRepeatedCallsAreStable() {
+    val plan = generator.generate(goal(), profile())
+    assertEquals(plan, generator.extend(plan, goal(), profile()))
+    val extended = onDay(1).extend(plan, goal(), profile())
+    assertEquals(5, extended.weeks.size)
+    assertEquals(plan.weeks, extended.weeks.take(4))
+    assertEquals(plan.blocks, extended.blocks.take(plan.blocks.size))
+    assertEquals(plan.id, extended.id)
+    assertEquals(plan.createdAt, extended.createdAt)
+    assertEquals(plan.startDate, extended.startDate)
+    assertEquals(plan.weeks.last().startDate.plusWeeks(1), extended.weeks[4].startDate)
+    assertEquals(extended, onDay(1).extend(extended, goal(), profile()))
+    assertEquals(extended, onDay(7).extend(extended, goal(), profile()))
+    assertEquals(6, onDay(8).extend(extended, goal(), profile()).weeks.size)
+  }
+
+  @Test fun rollingContinuationKeepsRecoveryCycleAndDoesNotCompoundUnperformedForecastLoad() {
+    val plan = generator.generate(goal(), profile())
+    val extended = onDay(28).extend(plan, goal(), profile())
+    assertEquals(8, extended.weeks.size)
+    assertEquals(WeekLoadClassification.RECOVERY, extended.weeks[7].loadClassification)
+    assertEquals(TrainingBlockType.BASE, extended.blocks.first { it.startWeek == 4 }.type)
+    val firstAddedLong = extended.weeks[4].workouts.single { it.workout.type == WorkoutType.LONG_RUN }.workout
+    assertTrue(firstAddedLong.prescribedRunningDistanceMeters() <= 5_000.0)
+    assertTrue(extended.weeks[7].targetDistanceMeters!! < extended.weeks[6].targetDistanceMeters!!)
+    assertTrue(extended.weeks.drop(4).all { week -> week.reasons.any { it.contains("unperformed forecast") } })
+  }
+
+  @Test fun returningAfterExtendedInactivitySkipsExpiredDatesAndUsesCurrentSparseEvidence() {
+    val plan = generator.generate(goal(), establishedProfile())
+    val sparse = profile(totalRuns = 20, runs = 0, averageRuns = 0.0, weeklyDistance = 0.0,
+      longest = null, easyPace = null, confidence = ProfileConfidence.VERY_LOW)
+    val extended = onDay(180).extend(plan, goal(), sparse)
+    val added = extended.weeks.drop(4)
+    assertEquals(plan.weeks, extended.weeks.take(4))
+    assertEquals(ProfileConfidence.VERY_LOW, extended.confidence)
+    assertEquals(LocalDate.parse("2027-03-23"), added.first().startDate)
+    assertEquals(4, added.size)
+    assertTrue(added.flatMap { it.workouts }.all { it.workout.type == WorkoutType.ASSESSMENT })
+    assertTrue(added.flatMap { it.workouts }.flatMap { it.workout.blocks }.flatMap { it.segments }
+      .flatMap { listOf(it.primaryIntensity) + it.secondaryIntensities }.none { it is PaceTarget })
+    assertTrue(added.flatMap { it.workouts }.all { !it.workout.date.isBefore(added.first().startDate) })
+    assertEquals(extended, onDay(180).extend(extended, goal(), sparse))
+  }
+
+  @Test fun assessmentContinuationHasStableUniqueIdentitiesAndOneComfortableRunPerWeek() {
+    val sparse = profile(totalRuns = 0, runs = 0, averageRuns = 0.0, longest = null,
+      easyPace = null, confidence = ProfileConfidence.VERY_LOW)
+    val initial = generator.generate(goal(), sparse)
+    val extended = generator.extend(initial, goal(), sparse)
+    assertEquals(4, extended.weeks.size)
+    assertEquals(initial.weeks.single(), extended.weeks.first())
+    val workouts = extended.weeks.flatMap { it.workouts }.map { it.workout }
+    assertEquals(4, workouts.map { it.id }.distinct().size)
+    assertTrue(workouts.all { it.type == WorkoutType.ASSESSMENT && it.targetRpeMax == 4 })
+    assertEquals(extended, generator.extend(extended, goal(), sparse))
+  }
+
+  @Test fun continuationUsesChangedAvailabilityOnlyForNewPrescriptionsAndKeepsSpacing() {
+    val selectedGoal = goal(GoalDistance.FIVE_K, GoalType.IMPROVE_PERFORMANCE)
+    val initial = generator.generate(selectedGoal, establishedProfile())
+    val days = TrainingAvailability(setOf(DayOfWeek.FRIDAY, DayOfWeek.SATURDAY))
+    val extended = onDay(28).extend(initial, selectedGoal, establishedProfile(), availability = days)
+    assertEquals(initial.weeks, extended.weeks.take(4))
+    val added = extended.weeks.drop(4).flatMap { it.workouts }.map { it.workout }
+    assertTrue(added.filter { it.type != WorkoutType.REST }.all { it.date.dayOfWeek in days.availableDays })
+    assertEquals(added.size, added.map { it.date }.distinct().size)
+    extended.weeks.flatMap { it.workouts }.map { it.workout }.filter { it.isDemandingForScheduling() }
+      .sortedBy { it.date }.zipWithNext().forEach { (a, b) ->
+        assertTrue(java.time.temporal.ChronoUnit.DAYS.between(a.date, b.date) >= 2)
+      }
+  }
+
+  @Test fun noAvailableDaysExtendsWithExplainedRestWithoutMovingExistingSessions() {
+    val plan = generator.generate(goal(), profile())
+    val extended = onDay(28).extend(plan, goal(), profile(), availability = TrainingAvailability(emptySet()))
+    assertEquals(plan.weeks, extended.weeks.take(4))
+    assertTrue(extended.weeks.drop(4).all { week -> week.workouts.all { it.workout.type == WorkoutType.REST } })
+    assertTrue(extended.weeks.drop(4).all { it.targetDistanceMeters == 0.0 && it.reasons.any { reason ->
+      reason.contains("omitted", ignoreCase = true) || reason.contains("rest", ignoreCase = true)
+    } })
+  }
+
+  @Test fun missedCompletionRemainsHistoricalWhileTrainingContinuesWithoutAnotherAttempt() {
+    val initial = generator.generate(goal(), profile(), completionMilestone = scheduledMilestone())
+    val extended = onDay(60).extend(initial, goal(), profile())
+    assertEquals(initial.completionMilestone, extended.completionMilestone)
+    assertEquals(initial.weeks, extended.weeks.take(initial.weeks.size))
+    assertEquals(1, extended.weeks.flatMap { it.workouts }.count { it.workout.purpose == WorkoutPurpose.GOAL_COMPLETION })
+    assertTrue(extended.weeks.drop(initial.weeks.size).flatMap { it.workouts }.any { it.workout.type == WorkoutType.LONG_RUN })
+  }
+
+  @Test fun retainedFutureCompletionStaysPinnedWhenAvailabilityChanges() {
+    val date = LocalDate.parse("2026-10-18")
+    val initial = generator.generate(goal(), profile(), completionMilestone = scheduledMilestone(date))
+    val extended = onDay(1).extend(initial, goal(), profile(),
+      availability = TrainingAvailability(setOf(DayOfWeek.MONDAY, DayOfWeek.THURSDAY)))
+    assertEquals(initial.completionMilestone, extended.completionMilestone)
+    assertEquals(initial.weeks, extended.weeks.take(initial.weeks.size))
+    assertTrue(extended.weeks.size > initial.weeks.size)
+    assertEquals(1, extended.weeks.flatMap { it.workouts }.count { it.workout.purpose == WorkoutPurpose.GOAL_COMPLETION })
+  }
+
+  @Test fun selectedFutureAttemptIsCreatedOnceWhenItsNewWindowHasSufficientEvidence() {
+    val sparse = profile(totalRuns = 0, runs = 0, longest = null, easyPace = null,
+      confidence = ProfileConfidence.VERY_LOW)
+    val date = LocalDate.parse("2026-10-11")
+    val initial = generator.generate(goal(), sparse, completionMilestone = scheduledMilestone(date))
+    assertNull(initial.completionMilestone?.workoutId)
+    val extended = onDay(7).extend(initial, goal(), profile())
+    assertEquals(initial.weeks, extended.weeks.take(1))
+    val attempt = extended.weeks.flatMap { it.workouts }.single { it.workout.purpose == WorkoutPurpose.GOAL_COMPLETION }
+    assertEquals(date, attempt.workout.date)
+    assertEquals(attempt.workout.id, extended.completionMilestone?.workoutId)
+    assertEquals(extended, onDay(7).extend(extended, goal(), profile()))
+    assertTrue(extended.weeks.flatMap { it.workouts }.filter {
+      it.workout.date.isAfter(date) && !it.workout.date.isAfter(date.plusDays(6))
+    }.all { it.workout.type in setOf(WorkoutType.REST, WorkoutType.RECOVERY_RUN) })
+  }
+
+  @Test fun unavailableSavedDateWithoutAttemptIsExplainedWithoutBlockingContinuation() {
+    val sparse = profile(totalRuns = 0, runs = 0, longest = null, easyPace = null,
+      confidence = ProfileConfidence.VERY_LOW)
+    val date = LocalDate.parse("2026-10-11")
+    val initial = generator.generate(goal(), sparse, completionMilestone = scheduledMilestone(date))
+    val extended = onDay(7).extend(initial, goal(), profile(),
+      availability = TrainingAvailability(setOf(DayOfWeek.MONDAY, DayOfWeek.THURSDAY)))
+    assertEquals(initial.completionMilestone, extended.completionMilestone)
+    assertTrue(extended.weeks.size > initial.weeks.size)
+    assertTrue(extended.weeks.flatMap { it.workouts }.none { it.workout.purpose == WorkoutPurpose.GOAL_COMPLETION })
+    assertTrue(extended.weeks.drop(1).all { week -> week.reasons.any { it.contains("date is unavailable") } })
+  }
+
+  @Test fun existingAdjustmentsAndExecutionContextAreRetainedDuringExtension() {
+    val initial = generator.generate(goal(), profile())
+    val first = initial.weeks.first().workouts.first()
+    val adjusted = first.copy(workout = first.workout.copy(explanation = "Saved effective prescription"),
+      adjustmentReasons = listOf("Existing adaptation"))
+    val plan = initial.copy(weeks = listOf(initial.weeks.first().copy(
+      workouts = listOf(adjusted) + initial.weeks.first().workouts.drop(1))) + initial.weeks.drop(1))
+    assertEquals(plan.weeks, onDay(28).extend(plan, goal(), profile()).weeks.take(4))
+  }
+
+  @Test fun inactiveGoalsOrPlansAndMismatchedGoalsNeverExtend() {
+    val plan = generator.generate(goal(), profile())
+    GoalStatus.entries.filter { it != GoalStatus.ACTIVE }.forEach { status ->
+      assertEquals(plan, onDay(100).extend(plan, goal().copy(status = status), profile()))
+    }
+    TrainingPlanStatus.entries.filter { it != TrainingPlanStatus.ACTIVE }.forEach { status ->
+      val saved = plan.copy(status = status)
+      assertEquals(saved, onDay(100).extend(saved, goal(), profile()))
+    }
+    assertEquals(plan, onDay(100).extend(plan, goal().copy(id = "different"), profile()))
+  }
+
+  @Test fun extensionHorizonGateMatchesBoundaryAndConfiguredForecast() {
+    val plan = generator.generate(goal(), profile())
+    val today = LocalDate.ofInstant(now, ZoneOffset.UTC)
+    assertFalse(generator.needsExtension(plan, today))
+    assertTrue(generator.needsExtension(plan, today.plusDays(1)))
+    val extended = onDay(1).extend(plan, goal(), profile())
+    assertFalse(generator.needsExtension(extended, today.plusDays(7)))
+    assertTrue(generator.needsExtension(extended, today.plusDays(8)))
+    val shorter = TrainingPlanGenerator(Clock.fixed(now, ZoneOffset.UTC),
+      config = PlanGenerationConfig(defaultDetailedWeeks = 2))
+    assertFalse(shorter.needsExtension(plan, today.plusDays(14)))
+    assertTrue(shorter.needsExtension(plan, today.plusDays(15)))
+  }
+
+  @Test fun extensionHorizonGateUsesLocalDateAndRejectsInactivePlans() {
+    val plan = generator.generate(goal(), profile())
+    val midnight = now.plusSeconds(12 * 3600)
+    val losAngeles = java.time.ZoneId.of("America/Los_Angeles")
+    assertFalse(TrainingPlanGenerator(Clock.fixed(midnight, losAngeles)).needsExtension(plan))
+    assertTrue(TrainingPlanGenerator(Clock.fixed(midnight, ZoneOffset.UTC)).needsExtension(plan))
+    TrainingPlanStatus.entries.filter { it != TrainingPlanStatus.ACTIVE }.forEach { status ->
+      assertFalse(generator.needsExtension(plan.copy(status = status), plan.startDate.plusDays(100)))
+    }
+  }
+
   private fun goal(
     distance: GoalDistance = GoalDistance.TEN_K,
     type: GoalType = GoalType.COMPLETE_DISTANCE,

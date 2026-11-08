@@ -71,7 +71,9 @@ class TrainingPlanValidator(
               add("${workout.id}: pre-goal running distance must remain below the completion target.")
             }
           }
-          ordered.drop(completionIndex + 1).forEach { workout ->
+          ordered.drop(completionIndex + 1).filter {
+            !it.date.isAfter(session.date.plusDays(6))
+          }.forEach { workout ->
             if (workout.type !in setOf(WorkoutType.REST, WorkoutType.RECOVERY_RUN)) {
               add("${workout.id}: only rest or recovery may follow the unresolved goal completion session.")
             }

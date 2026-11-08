@@ -158,7 +158,7 @@ class TrainingAdaptationRepositoryTest {
   }
 
   private suspend fun assertSameProjection(db: OpenRunCoachDatabase) {
-    val entry = TrainingPlanRepository(db, clock = clock).getActivePlan()!!.weeks.single().workouts.single()
+    val entry = TrainingPlanRepository(db, clock = clock).getActivePlan()!!.weeks.flatMap { it.workouts }.single { it.workout.id == future.id }
     val detail = StructuredWorkoutRepository(db).observeWorkoutDetails(future.id).first()!!
     assertEquals(entry.workout, detail.workout)
     assertEquals(entry.originalWorkout, detail.originalWorkout)

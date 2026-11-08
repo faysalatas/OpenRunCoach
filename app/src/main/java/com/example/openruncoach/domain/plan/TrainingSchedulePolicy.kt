@@ -22,8 +22,9 @@ class TrainingSchedulePolicy(private val minimumDemandingSpacingDays: Int = 2) {
     availability: TrainingAvailability?,
     retainedWorkouts: List<StructuredWorkout> = emptyList(),
     completionDate: LocalDate? = null,
+    retainedCompletion: Boolean = false,
   ): ScheduledWeek {
-    availability.requireCompletionDateAvailable(completionDate)
+    if (!retainedCompletion) availability.requireCompletionDateAvailable(completionDate)
     require(proposals.isNotEmpty())
     if (availability == null && retainedWorkouts.isEmpty()) return ScheduledWeek(proposals, emptyList())
     require(proposals.size <= 5) { "Schedule one generated week at a time." }
@@ -42,7 +43,7 @@ class TrainingSchedulePolicy(private val minimumDemandingSpacingDays: Int = 2) {
       if (completionDate != null && !pinned) {
         val offset = ChronoUnit.DAYS.between(completionDate, date)
         if (offset == 0L || offset == -1L) return false
-        if (offset > 0 && workout.type != WorkoutType.RECOVERY_RUN) return false
+        if (offset in 1..6 && workout.type != WorkoutType.RECOVERY_RUN) return false
         if (workout.isDemandingForScheduling() && abs(offset) <= 2) return false
       }
       return (retained + placed.map { it.workout }).none { other ->
