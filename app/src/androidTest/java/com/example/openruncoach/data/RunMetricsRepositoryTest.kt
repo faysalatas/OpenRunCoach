@@ -21,7 +21,7 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class RunMetricsRepositoryTest {
-  @Test fun directAndCollectionLoadingPreserveTheSameSpeedSeries() = runBlocking {
+  @Test fun directAndCollectionLoadingPreserveTheSameSpeedSeries() = runBlocking<Unit> {
     val database = Room.inMemoryDatabaseBuilder(
       ApplicationProvider.getApplicationContext(), OpenRunCoachDatabase::class.java,
     ).build()
@@ -44,7 +44,7 @@ class RunMetricsRepositoryTest {
     }
   }
 
-  @Test fun existingRepositoryObservesSamplesWrittenAfterItsInitialRead() = runBlocking {
+  @Test fun existingRepositoryObservesSamplesWrittenAfterItsInitialRead() = runBlocking<Unit> {
     val database = Room.inMemoryDatabaseBuilder(
       ApplicationProvider.getApplicationContext(), OpenRunCoachDatabase::class.java,
     ).build()

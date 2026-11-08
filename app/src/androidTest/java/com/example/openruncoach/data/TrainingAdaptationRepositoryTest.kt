@@ -111,7 +111,7 @@ class TrainingAdaptationRepositoryTest {
     assertEquals("performed", db.coachingWorkflowDao().getAssociationForPhysicalRun("physical")!!.plannedWorkoutId)
   }
 
-  @Test fun fileDatabaseRecreationAndDayRolloverRetainOneStructuredAdjustment() = runBlocking {
+  @Test fun fileDatabaseRecreationAndDayRolloverRetainOneStructuredAdjustment() = runBlocking<Unit> {
     val name = "adaptation-${System.nanoTime()}.db"
     fun open() = Room.databaseBuilder(context, OpenRunCoachDatabase::class.java, name).build()
     var db = open()
@@ -187,7 +187,7 @@ class TrainingAdaptationRepositoryTest {
   private fun draft(pain: PainLevel) = RunFeedbackDraft("physical", 3, CardioEffort.EASY, MuscleFatigue.NONE,
     pain, CompletionStatus.COMPLETED, null, null)
 
-  private fun withDatabase(block: suspend (OpenRunCoachDatabase) -> Unit) = runBlocking {
+  private fun withDatabase(block: suspend (OpenRunCoachDatabase) -> Unit) = runBlocking<Unit> {
     val db = Room.inMemoryDatabaseBuilder(context, OpenRunCoachDatabase::class.java).build()
     try { block(db) } finally { db.close() }
   }

@@ -30,7 +30,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class WorkoutRunAssociationRepositoryTest {
   @Test
-  fun detailWorkoutObservationTracksLateAssignmentEditsReassignmentAndUnassignmentWithoutCheckout() = runBlocking {
+  fun detailWorkoutObservationTracksLateAssignmentEditsReassignmentAndUnassignmentWithoutCheckout() = runBlocking<Unit> {
     val database = database()
     try {
       database.runDao().upsertAll(listOf(runEntity("provider-a")))
@@ -70,7 +70,7 @@ class WorkoutRunAssociationRepositoryTest {
   }
 
   @Test
-  fun manualAssignmentCanBeReassignedAndUnassignedWithoutDeletingRunOrWorkout() = runBlocking {
+  fun manualAssignmentCanBeReassignedAndUnassignedWithoutDeletingRunOrWorkout() = runBlocking<Unit> {
     val database = database()
     try {
       database.runDao().upsertAll(listOf(runEntity("provider-a")))
@@ -97,7 +97,7 @@ class WorkoutRunAssociationRepositoryTest {
   }
 
   @Test
-  fun providerReplacementWithSamePhysicalIdentityDoesNotCreateSecondAssociation() = runBlocking {
+  fun providerReplacementWithSamePhysicalIdentityDoesNotCreateSecondAssociation() = runBlocking<Unit> {
     val database = database()
     try {
       database.runDao().upsertAll(listOf(runEntity("provider-a"), runEntity("provider-b").copy(isCanonical = false)))
@@ -119,7 +119,7 @@ class WorkoutRunAssociationRepositoryTest {
   }
 
   @Test
-  fun manualAssignmentRepairsWorkoutAssociatedWithAnotherRun() = runBlocking {
+  fun manualAssignmentRepairsWorkoutAssociatedWithAnotherRun() = runBlocking<Unit> {
     val database = database()
     try {
       database.runDao().upsertAll(listOf(
