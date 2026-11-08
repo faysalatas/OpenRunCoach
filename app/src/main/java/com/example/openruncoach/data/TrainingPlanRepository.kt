@@ -39,6 +39,7 @@ class TrainingPlanRepository(
   private val completionRepository: GoalCompletionRepository = GoalCompletionRepository(database),
   private val completionService: GoalCompletionMilestoneService = GoalCompletionMilestoneService(),
   private val clock: java.time.Clock = java.time.Clock.systemDefaultZone(),
+  private val availabilityRepository: TrainingAvailabilityRepository = TrainingAvailabilityRepository(database),
 ) {
   private val dao = database.trainingPlanDao()
   private val workoutDao = database.coachingWorkflowDao()
@@ -103,6 +104,7 @@ class TrainingPlanRepository(
       runMetricsHistory = metrics,
       completedAssessmentAttempts = workoutDao.completedAssessmentCount(goal.id),
       completionMilestone = milestone,
+      availability = availabilityRepository.get(),
     )
     saveAsActive(plan)
     PostRunReconciler(database, clock).reconcileAll()

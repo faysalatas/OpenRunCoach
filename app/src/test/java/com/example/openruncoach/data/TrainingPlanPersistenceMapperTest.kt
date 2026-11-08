@@ -10,6 +10,7 @@ import com.example.openruncoach.domain.goal.GoalType
 import com.example.openruncoach.domain.goal.StartingPerformanceSnapshot
 import com.example.openruncoach.domain.goal.TrainingGoal
 import com.example.openruncoach.domain.plan.TrainingPlanGenerator
+import com.example.openruncoach.domain.plan.TrainingAvailability
 import com.example.openruncoach.domain.profile.AthletePerformanceProfile
 import com.example.openruncoach.domain.profile.FeedbackAggregates
 import com.example.openruncoach.domain.profile.FitnessTrend
@@ -22,6 +23,7 @@ import com.example.openruncoach.domain.workout.WorkoutComparisonBasis
 import com.example.openruncoach.domain.workout.WorkoutExecutionResult
 import com.example.openruncoach.domain.workout.WorkoutExecutionStatus
 import java.time.Clock
+import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -30,6 +32,22 @@ import org.junit.Test
 
 class TrainingPlanPersistenceMapperTest {
   private val now = Instant.parse("2026-09-24T12:00:00Z")
+
+  @Test fun constrainedDatesRoundTripToTheSameSharedWorkoutRecordsUsedByHomePlanAndDetail() {
+    val plan = TrainingPlanGenerator(Clock.fixed(now, ZoneOffset.UTC)).generate(goal(), profile(),
+      availability = TrainingAvailability(setOf(DayOfWeek.TUESDAY, DayOfWeek.SATURDAY)))
+    val snapshot = TrainingPlanPersistenceMapper.toSnapshot(plan)
+    val workouts = plan.weeks.flatMap { it.workouts }.associate { entry ->
+      val record = StructuredWorkoutPersistenceMapper.toRecord(entry.originalWorkout, "PLANNED")
+      entry.workout.id to StructuredWorkoutPersistenceMapper.toDomain(record)
+    }
+    val restored = TrainingPlanPersistenceMapper.toDomain(snapshot, workouts)
+    assertEquals(plan, restored.copy(completionMilestone = null))
+    restored.weeks.flatMap { it.workouts }.forEach { entry ->
+      assertEquals(entry.workout.date, workouts.getValue(entry.workout.id).date)
+      assertEquals(entry.workout, entry.originalWorkout)
+    }
+  }
 
   @Test fun planRoundTripPreservesWeekAndWorkoutOrdering() {
     val completionDate = LocalDate.parse("2026-10-18")

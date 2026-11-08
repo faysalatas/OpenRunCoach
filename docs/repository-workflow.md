@@ -41,7 +41,7 @@ Run the chain and legacy feedback fixtures on an isolated emulator:
 ANDROID_SERIAL=<emulator-id> ./gradlew --no-daemon --no-watch-fs connectedDebugAndroidTest '-Pandroid.testInstrumentationRunnerArguments.class=com.example.openruncoach.data.local.MigrationChainTest,com.example.openruncoach.data.RunFeedbackRepositoryTest'
 ```
 
-This is local Android instrumentation, not Core CI or a real-data phone check. When integrating PR #18's schema version 19, add `MIGRATION_18_19` to the shared array and retain `19.json`; the chain test then includes version 18 automatically.
+This is local Android instrumentation, not Core CI or a real-data phone check. The registry currently includes `MIGRATION_18_19` and the tracked schema `19.json`, so the chain test covers upgrades from versions 1–18 to 19. Add each future migration and schema together before rerunning the checks.
 
 ## Main protection
 

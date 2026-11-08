@@ -10,6 +10,10 @@ import com.example.openruncoach.data.TrainingGoalRepository
 import com.example.openruncoach.data.TrainingPlanRepository
 import com.example.openruncoach.data.PlanWorkoutPresentation
 import com.example.openruncoach.data.PreviousPlanSummary
+import com.example.openruncoach.data.TrainingAvailabilityRepository
+import com.example.openruncoach.domain.plan.TrainingAvailability
+import com.example.openruncoach.domain.plan.CompletionAvailabilityConflict
+import com.example.openruncoach.domain.plan.completionDateConflict
 import com.example.openruncoach.domain.goal.TrainingGoal
 import com.example.openruncoach.domain.goal.CompletionDateSuggestion
 import com.example.openruncoach.domain.goal.CompletionDateAssessment
@@ -17,6 +21,7 @@ import com.example.openruncoach.domain.goal.CompletionDateFeasibilityEvaluator
 import com.example.openruncoach.domain.goal.GoalCompletionDateSuggester
 import com.example.openruncoach.domain.goal.GoalCompletionMilestone
 import com.example.openruncoach.domain.goal.GoalCompletionReadiness
+import com.example.openruncoach.domain.goal.GoalCompletionReadinessEvaluator
 import com.example.openruncoach.domain.plan.TrainingPlan
 import com.example.openruncoach.domain.profile.AthletePerformanceProfile
 import java.time.Clock
@@ -52,6 +57,7 @@ data class PlanUiState(
   val previousPlans: List<PreviousPlanSummary> = emptyList(),
   val previousPlan: TrainingPlan? = null,
   val previousWeekIndex: Int = 0,
+  val availabilityConflict: String? = null,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -60,6 +66,7 @@ class PlanViewModel(
   private val goalRepository: TrainingGoalRepository,
   private val profileRepository: AthletePerformanceProfileRepository,
   private val completionRepository: GoalCompletionRepository,
+  private val availabilityRepository: TrainingAvailabilityRepository,
   private val clock: Clock = Clock.systemDefaultZone(),
   private val dateSuggester: GoalCompletionDateSuggester = GoalCompletionDateSuggester(),
   private val feasibilityEvaluator: CompletionDateFeasibilityEvaluator = CompletionDateFeasibilityEvaluator(),
@@ -68,6 +75,7 @@ class PlanViewModel(
   val uiState = _uiState.asStateFlow()
   private var historyJob: Job? = null
   private var previousPlanJob: Job? = null
+  private var availability: TrainingAvailability? = null
 
   init {
     viewModelScope.launch {
@@ -75,10 +83,15 @@ class PlanViewModel(
         goalRepository.observeActiveGoal(),
         planRepository.observeActivePlan(),
         profileRepository.observeProfile(),
-      ) { goal, plan, profile -> Triple(goal, plan, profile) }
+        availabilityRepository.availability,
+      ) { goal, plan, profile, days -> PlanInputs(goal, plan, profile, days) }
         .catch { _uiState.update { it.copy(isLoading = false, errorMessage = "Could not load your training plan.") } }
-        .collect { (goal, storedPlan, profile) ->
-          val milestone = if (goal != null && profile != null) completionRepository.refreshReadiness(goal, profile) else null
+        .collect { (goal, storedPlan, profile, days) ->
+          availability = days
+          // Availability changes and presentation reads must not persist readiness or replan.
+          val milestone = if (goal != null && profile != null) GoalCompletionReadinessEvaluator().evaluate(
+            goal, profile, storedPlan?.takeIf { it.goalId == goal.id }?.completionMilestone, clock.instant(),
+          ) else null
           val plan = storedPlan?.takeIf { it.goalId == goal?.id }?.takeUnless { candidate ->
             milestone?.scheduledDate == null &&
               candidate.weeks.flatMap { it.workouts }.any { it.workout.purpose == com.example.openruncoach.domain.workout.WorkoutPurpose.GOAL_COMPLETION }
@@ -98,6 +111,8 @@ class PlanViewModel(
               completionDateSuggestions = suggestions(plan, goal, profile),
               completionDateAssessment = dateAssessment(goal, profile, milestone),
               showCompletionScheduler = state.showCompletionScheduler || prompt,
+              availabilityConflict = days.completionDateConflict(milestone?.scheduledDate)
+                ?.let { "Completion Run on ${it.date} conflicts with your running days. Its saved date is unchanged. Update running days in Settings or explicitly choose another date." },
             )
           }
         }
@@ -184,8 +199,9 @@ class PlanViewModel(
         }
       } catch (exception: CancellationException) {
         throw exception
-      } catch (_: Exception) {
-        _uiState.update { it.copy(isGenerating = false, errorMessage = "Could not generate the training plan.") }
+      } catch (exception: Exception) {
+        _uiState.update { it.copy(isGenerating = false, errorMessage =
+          if (exception is CompletionAvailabilityConflict) exception.message else "Could not generate the training plan.") }
       }
     }
   }
@@ -247,7 +263,8 @@ class PlanViewModel(
           "Failed to schedule completion run: request=$request goalId=${goal.id} planId=$currentPlanId",
           exception,
         )
-        _uiState.update { it.copy(isGenerating = false, errorMessage = "Could not update the Completion Run schedule.") }
+        _uiState.update { it.copy(isGenerating = false, errorMessage =
+          if (exception is CompletionAvailabilityConflict) exception.message else "Could not update the Completion Run schedule.") }
       }
     }
   }
@@ -261,6 +278,7 @@ class PlanViewModel(
     plannedWorkouts = plan?.weeks.orEmpty().flatMap { it.workouts }.map { it.workout },
     goal = goal,
     profile = profile,
+    availableDays = availability?.availableDays,
   )
 
   private fun dateAssessment(
@@ -271,3 +289,8 @@ class PlanViewModel(
     feasibilityEvaluator.evaluate(goal, profile, date, LocalDate.now(clock))
   }
 }
+
+private data class PlanInputs(
+  val goal: TrainingGoal?, val plan: TrainingPlan?, val profile: AthletePerformanceProfile?,
+  val availability: TrainingAvailability?,
+)

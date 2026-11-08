@@ -29,6 +29,8 @@ import com.example.openruncoach.data.RunRepository
 import com.example.openruncoach.data.RunMetricsRepository
 import com.example.openruncoach.data.RunMetricsAutoRefreshCoordinator
 import com.example.openruncoach.data.RunSettingsRepository
+import com.example.openruncoach.data.TrainingAvailabilityRepository
+import com.example.openruncoach.data.TrainingPlanRepository
 import com.example.openruncoach.LocalOpenRunCoachEnvironment
 import com.example.openruncoach.ui.components.ItemSpacing
 import com.example.openruncoach.ui.components.ScreenPadding
@@ -68,6 +70,8 @@ fun SettingsScreen(
         postRunReconciler = environment.postRunReconciler(),
       ),
       settingsRepository,
+      TrainingAvailabilityRepository(database),
+      TrainingPlanRepository(database, clock = environment.clock),
     )
   }
   val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -92,6 +96,7 @@ fun SettingsScreen(
       Text("Choose a distance goal using your current performance context.")
       Button(onClick = onOpenTrainingGoal) { Text("Open Training Goal") }
     }
+    TrainingAvailabilitySettings(state, viewModel)
     if (!environment.isSimulation) SettingsCard("Preferred workout source") {
       Text("Automatic uses OpenRunCoach's canonical run selection rules.")
       Row(
