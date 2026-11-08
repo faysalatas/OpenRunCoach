@@ -552,6 +552,8 @@ The Samsung Health Data SDK connection and exercise reads have been confirmed on
 
 The debug APK is generated at `app/build/outputs/apk/debug/app-debug.apk`.
 
+Room's shared migration registry is checked on an emulator from every exported historical schema to the current version. See [Room migration verification](docs/repository-workflow.md#room-migration-verification) for the command and schema-maintenance requirements.
+
 ### Repository instructions
 
 [`AGENTS.md`](AGENTS.md) defines the project's architecture, health-data, development, and Git rules. Codex and other automated contributors should read and follow it before changing the project.
