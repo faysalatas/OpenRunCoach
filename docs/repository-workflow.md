@@ -31,6 +31,18 @@ The current app directly references proprietary Samsung SDK classes and requires
 
 Record actual results in the PR. If local dependencies/toolchains are unavailable, record the blocker and leave full Android verification pending. Instrumentation, actual Samsung imports and phone checks are separate. An SDK-free full app variant could be a later explicit task; this change does not remove Samsung functionality or introduce fake SDK classes.
 
+## Room migration verification
+
+Register every migration in `OpenRunCoachDatabase.ALL_MIGRATIONS`, shared by production and isolated databases. Keep exported schemas in `app/schemas` and include the schema for each new `@Database(version)`. `MigrationChainTest` discovers these assets, checks that versions and registered migrations have no gaps, compares the latest schema with a newly created database, and migrates every historical schema to the latest version with Room schema validation. Existing targeted tests retain their data-preservation assertions.
+
+Run the chain and legacy feedback fixtures on an isolated emulator:
+
+```bash
+ANDROID_SERIAL=<emulator-id> ./gradlew --no-daemon --no-watch-fs connectedDebugAndroidTest '-Pandroid.testInstrumentationRunnerArguments.class=com.example.openruncoach.data.local.MigrationChainTest,com.example.openruncoach.data.RunFeedbackRepositoryTest'
+```
+
+This is local Android instrumentation, not Core CI or a real-data phone check. When integrating PR #18's schema version 19, add `MIGRATION_18_19` to the shared array and retain `19.json`; the chain test then includes version 18 automatically.
+
 ## Main protection
 
 Inspect a real Actions run first. Once `Core domain unit tests` reliably passes, the owner can require PRs and that status check in a main ruleset. Label it as core-only, not full Android verification. Do not require another person's approval on a solo repository unless a reviewer is available. This PR changes no protection rules, credentials or merge settings.
