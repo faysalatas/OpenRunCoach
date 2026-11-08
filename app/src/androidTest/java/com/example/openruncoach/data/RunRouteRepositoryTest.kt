@@ -26,7 +26,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class RunRouteRepositoryTest {
   @Test
-  fun canonicalRefreshConsolidatesLegacyRoutesUnderStableOwnerWithoutDuplicates() = runBlocking {
+  fun canonicalRefreshConsolidatesLegacyRoutesUnderStableOwnerWithoutDuplicates() = runBlocking<Unit> {
     val database = Room.inMemoryDatabaseBuilder(
       ApplicationProvider.getApplicationContext(), OpenRunCoachDatabase::class.java,
     ).build()
@@ -166,7 +166,7 @@ class RunRouteRepositoryTest {
     assertEquals(2, database.runRouteDao().getAllRoutes().size)
   }
 
-  private fun withDatabase(block: suspend (OpenRunCoachDatabase) -> Unit) = runBlocking {
+  private fun withDatabase(block: suspend (OpenRunCoachDatabase) -> Unit) = runBlocking<Unit> {
     val database = Room.inMemoryDatabaseBuilder(
       ApplicationProvider.getApplicationContext(), OpenRunCoachDatabase::class.java,
     ).build()

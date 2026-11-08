@@ -21,75 +21,45 @@ Generated plans previously used fixed day offsets without an athlete-owned avail
 | Issue #16 criterion | Implementation / evidence |
 | --- | --- |
 | Select days with hard versus soft semantics | Settings controls and domain model implemented; phone verification pending. |
-| Persist independently of a generated plan | Singleton athlete table and repository implemented; persistence tests written, unrun. |
-| Initial generation and rolling extension share scheduling | Normal generation and assessments wired. Shared continuation boundary API and fixed-clock tests written. **Production rolling-extension wiring remains blocked by absent #4 workflow; it is not implemented or claimed verified.** |
-| Demanding spacing and no multiple workouts per day | Bounded placement policy checks both retained boundaries and newly placed sessions; tests unrun. |
-| Conservatively reduce and explain impossible frequency | Omit sessions, retain their structured prescriptions only when selected, recalculate totals, persist reasons. Tests unrun. |
+| Persist independently of a generated plan | Singleton athlete table and repository implemented; persistence tests pass on the emulator; manual restart/UI verification pending. |
+| Initial generation and rolling extension share scheduling | Normal generation and assessments wired. Shared continuation boundary API and fixed-clock tests written. **Production rolling extension is implemented separately in draft PR #20, which is not part of this branch and has not been reverified by this integration.** |
+| Demanding spacing and no multiple workouts per day | Bounded placement policy checks both retained boundaries and newly placed sessions; automated tests pass. |
+| Conservatively reduce and explain impossible frequency | Omit sessions, retain their structured prescriptions only when selected, recalculate totals, persist reasons. Automated tests pass. |
 | Respect explicit Completion Run and surface conflicts | Pinned date plus typed unavailable-day conflict; existing milestone transaction rolls back failed replacement. Phone verification pending. |
-| Preserve completed workouts / actual runs | Settings writes only the availability table. Existing explicit regeneration archives the preceding plan. Observer/persistence tests written, unrun. |
+| Preserve completed workouts / actual runs | Settings writes only the availability table. Existing explicit regeneration archives the preceding plan. Observer/persistence tests pass on the emulator; manual restart/UI verification pending. |
 | Deliberate movement only; non-mutating reads | Settings saves never replan; Plan presentation no longer calls the readiness writer. Phone verification pending. |
-| Missing settings preserve deterministic behavior | Policy returns original proposals unchanged when settings/context are absent; explicit empty is distinct. Tests unrun. |
-| Fixed-clock scenarios | 2/3/4 days, adjacent-only days, preferences, impossible spacing, retained boundaries, setting changes, empty/reset, assessment and milestone conflicts are covered by written tests; none run. |
-| Home / Plan / detail date consistency | Same saved workout records, plus constrained-date mapper round-trip test written. Phone screenshots pending. |
+| Missing settings preserve deterministic behavior | Policy returns original proposals unchanged when settings/context are absent; explicit empty is distinct. Automated tests pass. |
+| Fixed-clock scenarios | 2/3/4 days, adjacent-only days, preferences, impossible spacing, retained boundaries, setting changes, empty/reset, assessment and milestone conflicts are covered by passing automated tests. |
+| Home / Plan / detail date consistency | Same saved workout records, plus passing constrained-date mapper round-trip test. Phone screenshots pending. |
 
 Automatic horizon replenishment, event triggers, continuation persistence/idempotency and progression across extensions remain [#4](https://github.com/faysalatas/OpenRunCoach/issues/4). That implementation must read current availability once per explicit continuation transaction and pass retained prescriptions plus the milestone to `TrainingSchedulePolicy.schedule`; do not create another weekday scheduler. Reachable pre-run check-in remains #6 and must not change these settings implicitly.
 
-The owner's Android compilation has generated `app/schemas/com.example.openruncoach.data.local.OpenRunCoachDatabase/19.json`; it is currently untracked and preserved without modification. Schema review and migration verification remain pending. The migration test uses that generated schema. This issue must remain open until the outstanding runtime integration and verification criteria are satisfied.
+Schema `19.json` is already tracked and remains unchanged. The shared migration registry now includes `MIGRATION_18_19`; the inherited chain test discovers all 19 schemas and validates upgrades from every historical version. This issue remains open pending the manual phone checklist and rolling-extension integration.
 
 ## Automated verification
 
-**Implementation is present; tests and builds were not run, by explicit user instruction.** No Gradle, compiler, test runner, ADB, install/uninstall, or device command was executed. Source inspection and `git diff --check` are the only local verification, with no compilation or runtime claim.
+Updated 2026-11-08 for integration of main `96efb35` into PR #18's `941e892`. The only integration-specific code changes are adding the existing `MIGRATION_18_19` to the shared `ALL_MIGRATIONS` array and making the two availability repository tests explicitly use `runBlocking<Unit>`. Migration SQL, schema 19, scheduling behavior, UI code and existing assertions remain unchanged. The local fixture fix from `211ad14` is already represented by the main changes merged through PR #48; the original local branch remains intact.
 
-Owner-reported results before the follow-up correction: `./gradlew test` failed with 540 tests and one failure, `TrainingSchedulePolicyTest.completionDateIsPinnedAndProtectedAcrossTheWeekBoundary`; `./gradlew assembleDebug` reported BUILD SUCCESSFUL. These results apply to the preceding implementation, not the unverified follow-up edits. Device verification remains pending.
-
-The failure at test line 102 came from a contradictory fixture: Sunday-only athlete availability excluded the explicitly selected Monday Completion Run, even though it was outside the week being scheduled. Production correctly surfaced that conflict. The corrected fixture uses Monday/Sunday availability consistently and expects the new preceding long run to move to the prior Monday, seven days before Completion, rather than become rest. The Completion date stays pinned. An additional regression preserves the original Sunday-only case as an expected explicit conflict across the week boundary. No scheduling production rules changed. A separate trivial cleanup removes the unnecessary safe call after the existing positive-response guard in `TrainingAdaptation.kt`.
-
-Follow-up verification is **not run**. First run:
+Run from the isolated worktree `/tmp/openruncoach-availability-integration`:
 
 ```bash
-./gradlew :app:testDebugUnitTest --tests 'com.example.openruncoach.domain.plan.TrainingSchedulePolicyTest'
+./gradlew --no-daemon --no-watch-fs -p ci/core-tests test
+ANDROID_SERIAL=emulator-5554 ./gradlew --no-daemon --no-watch-fs test assembleDebug assembleDebugAndroidTest connectedDebugAndroidTest
+git diff --check
+git diff --cached --check
 ```
 
-Then run the full checks:
+PASS: **420 Core domain tests**, **541 app JVM tests**, both Debug APK builds and the **entire 82-test instrumentation suite**. Zero failures, errors or skipped tests. Both whitespace checks passed.
 
-```bash
-./gradlew test
-./gradlew assembleDebug
-```
+The final suite includes the previously contradictory Completion Run boundary fixture and its separate unavailable-Monday regression, availability persistence/history-preservation tests, the seeded 18→19 migration test, all legacy feedback fixtures and the six diagnostic-export tests. Room's full-chain loop now covers all 18 historical starting versions through schema 19. No production migration SQL or exported schema changed during this integration.
 
-Expected: both boundary scenarios pass (valid Monday remains pinned; unavailable Monday explicitly conflicts), the full test suite passes, Debug builds, and the line-73 unnecessary-safe-call warning is absent. No passing result is claimed for these edits.
+Environment: existing local Samsung AAR and Android SDK 36, Gradle 9.1.0, JDK 21 launcher with the configured JDK 17 toolchain. Emulator `Medium_Phone_API_37.0`, Android 17/API 37, serial `emulator-5554`; synthetic data only. Existing compiler/deprecation/native-symbol warnings remain. Core CI and full Android verification remain distinct checks.
 
-Run these yourself from the repository root with JDK 17:
-
-```bash
-./gradlew --no-daemon -p ci/core-tests test
-./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug
-```
-
-Expected: Core domain tests pass, including `TrainingSchedulePolicyTest` and `TrainingPlanGeneratorTest`; Android local tests pass, including `TrainingPlanPersistenceMapperTest`; Debug APK builds. Core CI alone does not compile Room, ViewModels or UI. The full app requires the already configured local Samsung AAR, as documented in `docs/repository-workflow.md`. Do not add that proprietary file to Git.
-
-The Android compilation should export schema 19. Inspect it with:
-
-```bash
-git status --short
-git diff -- app/schemas/com.example.openruncoach.data.local.OpenRunCoachDatabase/19.json
-```
-
-For a new untracked schema, open the file directly; `git diff` does not display untracked content. Expected: schema version 19, all existing version-18 tables preserved, one added `training_availability` table with integer `id`, `availableDaysMask`, `preferredDaysMask`, and a compiler-generated identity hash.
-
-If you choose to run the added phone instrumentation checks yourself on a configured device:
-
-```bash
-./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.example.openruncoach.data.TrainingAvailabilityRepositoryTest,com.example.openruncoach.data.local.TrainingAvailabilityMigrationTest
-```
-
-Expected: settings round-trip, missing/empty/reset distinction, saved-workout and actual-run preservation, and migration 18→19 validation pass. This command installs/runs test APKs; it has not been executed by the implementation agent.
-
-Return command lines, exit codes, failing test names and complete first failure/stack trace. Reports are in `ci/core-tests/build/reports/tests/test/`, `app/build/reports/tests/` and `app/build/reports/androidTests/connected/`. Include the generated schema 19 or its diff. Do not call a Core-only pass an Android build pass.
+Historical context: the owner previously reported a failing `TrainingSchedulePolicyTest.completionDateIsPinnedAndProtectedAcrossTheWeekBoundary` before commit `941e892`. That commit corrected the fixture without changing scheduling rules. The new results above supersede the earlier unrun/failure statements for this integration source; no phone verification is inferred.
 
 ## Device verification
 
-**Status: Pending.** No phone was inspected or changed by the implementation agent.
+**Manual phone status: Pending.** Automated emulator verification is recorded above; no physical phone was inspected or changed.
 
 Use your usual Android Studio deployment workflow after the commands above. Upgrade an existing installation to exercise migration; do not clear its data. Record phone model, Android version, build/commit, locale, timezone, current date, profile confidence and observed running frequency. A mature profile requesting four runs makes frequency reduction and demanding spacing easiest to observe. A low-data profile should remain in its existing Assessment Phase.
 
@@ -105,7 +75,7 @@ Use your usual Android Studio deployment workflow after the commands above. Upgr
 10. **Assessment and history.** In the separate simulator environment, or with an already low-data profile, choose just one Available weekday. Generate an assessment through the existing plan flow using an available milestone date. Expect one comfortable assessment on that weekday with its existing structured RPE guidance, no fabricated pace, and no extra workouts. Return to the real environment: its availability must be unchanged. Revisit the completed run and earlier plan recorded in step 1; original prescriptions, lifecycle and actual values remain intact after setting changes/regeneration.
 11. **Non-mutating reads / accessibility.** Navigate and restart repeatedly without regeneration; dates must not change. If using Android Studio Database Inspector, record workout dates/counts before and after reads and saving availability; only `training_availability` should change on a settings save. Verify 200% font scale and a narrow screen: all weekday labels, controls, Save and conflict text remain readable and reachable by scrolling; accessibility labels identify both weekday and state.
 
-Additional edges: one available day; all seven available with no Preferred days; Preferred→Unavailable removes the preference; Completion on the first date of a plan week; a month/year boundary; app restart after save but before regeneration; repeated regeneration; preserved completed and still-valid saved future prescriptions while merely browsing. Automatic post-expiry extension cannot be verified until #4 is implemented.
+Additional edges: one available day; all seven available with no Preferred days; Preferred→Unavailable removes the preference; Completion on the first date of a plan week; a month/year boundary; app restart after save but before regeneration; repeated regeneration; preserved completed and still-valid saved future prescriptions while merely browsing. Automatic post-expiry extension must be verified separately on PR #20 after its integration.
 
 Return these review artifacts:
 
@@ -144,4 +114,4 @@ app/src/androidTest/java/com/example/openruncoach/data/local/TrainingAvailabilit
 
 ## Risks and follow-up
 
-No automated check or device behavior is claimed passing. The Room schema export and migration need owner-run compilation/instrumentation, and rolling-extension integration cannot be completed without #4. This focused change does not implement a separate in-place rescheduler or modify long-term availability through check-in.
+Automated checks and schema upgrades pass as recorded above. The manual phone checklist remains pending; rolling-extension implementation is separate in PR #20 and requires its own review (#34) and integration. Do not close #16 or claim real-data/UI verification based on these automated results. This integration adds no separate in-place rescheduler and does not modify long-term availability through check-in.

@@ -62,6 +62,8 @@ Dump format version 1 includes every application table discovered from SQLite me
 
 All Room reads share one transaction, with no application-data writes, provider sync, canonical rebuild, checkout reconciliation, profile refresh, or plan regeneration. AthleteState is resolved by the production builder against the **saved** profile and its original calculation time; the dump documents this basis and returns null if no saved profile exists. Settings and current provider permission status are sampled separately and timestamped because they live outside Room. Simulation exports use only the selected synthetic database and skip production settings/providers.
 
+Passive History, Detail, route and Plan reads are also checked for application-table writes. Room's temporary observer bookkeeping is separate from application data; see the [read-path investigation and verification](docs/read-path-write-verification.md).
+
 Share-safe routes use local east/north coordinates in meters with an unexported first-valid-point origin, including in raw database rows. Full exports retain GPS coordinates. Credential columns, credential tables/settings, recognized credential text, and sensitive defaults are redacted in both modes; settings are explicitly allowlisted. Notes and health data remain sensitive, and relative route shapes may still be recognizable. No raw SQLite/WAL file, provider refetch, authentication storage, map-service URL, environment variables, or logs are included.
 
 Raw rows and sensor files stream as UTF-8 JSONL. ZIP entries are staged on disk, and optional section failures are recorded in `errors.json`; disk/destination failures fail the operation. Progress appears in Settings and duplicate exports are disabled while the picker/export is active. The archive's `README.txt` explains IDs, units, time semantics, provenance, privacy, and format limitations.
@@ -173,7 +175,7 @@ Settings → Running days stores athlete availability independently of any plan,
 
 Saving running days does not reschedule saved prescriptions or change completed history, actual runs, readiness, or reconciliation. Apply changes deliberately through Plan → Plan details → Regenerate Plan, or the existing Completion Run scheduling actions. These actions replace the active forecast and preserve the previous plan. Home, Plan, and workout details read the same saved workout dates. Plan presentation and availability reads do not write scheduling state. An explicitly selected Completion Run stays pinned; generation rejects an unavailable date with a visible conflict, while changing Settings leaves an existing milestone on its saved date and shows a warning. Suggested Completion Run dates exclude unavailable days.
 
-Automatic rolling-plan replenishment remains issue #4. Its eventual continuation must load the current `TrainingAvailabilityRepository` value and call `TrainingSchedulePolicy.schedule` for new prescriptions, supplying retained workouts on both sides of the new window and the explicit Completion Run date. Retained records are constraints, never rewrite targets. This change provides and tests that boundary contract; it does not implement the #4 event/horizon/persistence workflow. Pre-run check-in must not save long-term availability without an explicit athlete change (#6). See the [issue #16 implementation report and manual verification checklist](docs/training-availability-verification.md). Tests, builds, schema export, and device verification are pending user execution.
+Automatic rolling-plan replenishment remains issue #4. Its eventual continuation must load the current `TrainingAvailabilityRepository` value and call `TrainingSchedulePolicy.schedule` for new prescriptions, supplying retained workouts on both sides of the new window and the explicit Completion Run date. Retained records are constraints, never rewrite targets. This change provides and tests that boundary contract; it does not implement the #4 event/horizon/persistence workflow. Pre-run check-in must not save long-term availability without an explicit athlete change (#6). See the [issue #16 implementation report and manual verification checklist](docs/training-availability-verification.md). Core/app tests, Debug builds and schema upgrades through version 19 pass on an isolated emulator; the manual phone checklist remains pending.
 
 The starting frequency follows observed running frequency and is limited to two through four runs per week. Weekly distance and duration begin from the greater of the last-seven-day total and four-week weekly average, then use confidence-based bounded progression. Every fourth week is a recovery week with reduced volume, long-run load, and quality load. Long runs progress from recent capability with a fixed distance cap per increase; they do not jump directly to the race distance.
 
@@ -557,6 +559,8 @@ The Samsung Health Data SDK connection and exercise reads have been confirmed on
 ```
 
 The debug APK is generated at `app/build/outputs/apk/debug/app-debug.apk`.
+
+Room's shared migration registry is checked on an emulator from every exported historical schema to the current version. See [Room migration verification](docs/repository-workflow.md#room-migration-verification) for the command and schema-maintenance requirements.
 
 ### Repository instructions
 

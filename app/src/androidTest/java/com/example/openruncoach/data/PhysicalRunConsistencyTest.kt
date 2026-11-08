@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.example.openruncoach.data.local.*
+import com.example.openruncoach.data.diagnostics.sqlIdentifier
 import com.example.openruncoach.domain.*
 import com.example.openruncoach.domain.metrics.*
 import com.example.openruncoach.domain.goal.*
@@ -45,6 +46,7 @@ class PhysicalRunConsistencyTest {
     db.coachingWorkflowDao().updateLifecycleState(workout.id, WorkoutLifecycleState.CHECK_IN_REQUIRED.name)
     WorkoutExecutionRepository(db, clock).assignManually(requireNotNull(db.runDao().getRun("samsung")).toRunSummary(), workout.id)
 
+    val before = applicationWrites(db)
     val metadata = plans.observeWorkoutPresentation(plan.id).first()
     assertEquals(1, metadata.size)
     val presentation = requireNotNull(metadata[workout.id])
@@ -53,6 +55,7 @@ class PhysicalRunConsistencyTest {
     assertEquals(WorkoutLifecycleState.CHECK_IN_REQUIRED, presentation.lifecycle)
     assertTrue(db.coachingWorkflowDao().getAllExecutions().isEmpty())
     assertTrue(plans.observePreviousPlans().first().isEmpty())
+    assertEquals(before, applicationWrites(db))
 
     db.trainingPlanDao().updateStatus(plan.id, TrainingPlanStatus.SUPERSEDED.name)
     val previous = plans.observePreviousPlans().first().single()
@@ -194,14 +197,14 @@ class PhysicalRunConsistencyTest {
     RunMetricsRepository(db.runMetricsDao()).save(metrics(db.runDao().getRun("samsung")!!.toRunSummary()).copy(
       series = RunTimeSeries(heartRate = route.points.map { TimedMetricSample(it.timestamp, 145.0) },
         cadence = route.points.map { TimedMetricSample(it.timestamp, 165.0) })))
-    val before = changes(db)
+    val before = applicationWrites(db)
     val result = routes.get("strava")!!
     assertEquals(2, result.splits.size)
     assertEquals(SplitDerivationSource.ROUTE_DERIVED_ON_READ, result.splitDerivationSource)
     assertEquals(0, result.persistedSplitCount)
     assertTrue(result.splits.all { it.averageHeartRate == 145.0 && it.averageCadence == 165.0 })
     assertEquals(result, routes.observe("samsung").first())
-    assertEquals(before, changes(db))
+    assertEquals(before, applicationWrites(db))
     assertTrue(db.runRouteDao().getRoute("samsung")!!.splits.isEmpty())
   }
 
@@ -294,14 +297,38 @@ class PhysicalRunConsistencyTest {
     val runs = RunRepository(db.runDao(), HealthConnectRepository(context), RunSettingsRepository(context), clock,
       postRunReconciler = PostRunReconciler(db, clock),
     )
-    val before = changes(db)
+    val before = applicationWrites(db)
     val history = runs.canonicalRuns.first().single()
     assertEquals(1952.169, history.distanceMeters!!, 0.000001)
     assertEquals(ActualValueBasis.MATCHED_METRIC_FALLBACK, history.actualProvenance!!.distance.basis)
     assertEquals(history, runs.observeRun("samsung").first())
     assertEquals(1952.169, routes.get("strava")!!.splits.sumOf { it.distanceMeters }, 0.01)
-    assertEquals(before, changes(db))
+    assertEquals(before, applicationWrites(db))
     assertNull(db.runDao().getRun("samsung")!!.distanceMeters)
+  }
+
+  @Test fun passiveReadGuardDetectsSameValueUpdatesAndDeleteReinsertPairs() = withDatabase { db ->
+    seedRuns(db)
+    val original = requireNotNull(db.runDao().getRun("samsung"))
+    assertTrue(applicationWrites(db).isEmpty())
+    db.runDao().updateAll(listOf(original))
+    assertEquals(listOf("UPDATE runs"), applicationWrites(db))
+
+    val raw = db.openHelper.writableDatabase
+    raw.execSQL("DELETE FROM runs WHERE healthConnectRecordId = 'samsung'")
+    db.runDao().upsertAll(listOf(original))
+    assertEquals(original, db.runDao().getRun("samsung"))
+    assertEquals(listOf("UPDATE runs", "DELETE runs", "INSERT runs"), applicationWrites(db))
+  }
+
+  @Test fun passiveReadGuardCoversNewApplicationTablesAndIgnoresRoomBookkeeping() = withDatabase { db ->
+    val raw = db.openHelper.writableDatabase
+    raw.execSQL("CREATE TABLE future_application_table (id INTEGER PRIMARY KEY)")
+    assertTrue(applicationWrites(db).isEmpty())
+    db.runDao().observeCanonicalActualRuns().first()
+    assertTrue(applicationWrites(db).isEmpty())
+    raw.execSQL("INSERT INTO future_application_table VALUES (1)")
+    assertEquals(listOf("INSERT future_application_table"), applicationWrites(db))
   }
 
   private suspend fun seedRuns(db: OpenRunCoachDatabase, physicalId: String = "samsung", distance: Double = 1952.169) {
@@ -319,8 +346,26 @@ class PhysicalRunConsistencyTest {
     (0..400).map { i -> RunRoutePoint(i, start.plusSeconds(i * 5L), distance * i / 400 / 6371008.8 * 180 / Math.PI, 0.0) })
   private fun metrics(run: RunSummary) = RunMetrics(run.healthConnectRecordId, run.startTime, run.endTime,
     MetricValue(run.durationSeconds, MetricSource.HEALTH_CONNECT, MetricConfidence.HIGH), generatedAt = start)
-  private fun changes(db: OpenRunCoachDatabase) = db.openHelper.readableDatabase.query("SELECT total_changes()").use { it.moveToFirst(); it.getLong(0) }
-  private fun withDatabase(block: suspend (OpenRunCoachDatabase) -> Unit) = runBlocking {
+  /** Count application row writes, including same-value updates and delete/reinsert pairs.
+   * Room's TEMP invalidation bookkeeping is deliberately outside this in-memory fixture guard.
+   */
+  private fun applicationWrites(db: OpenRunCoachDatabase): List<String> {
+    val raw = db.openHelper.writableDatabase
+    raw.execSQL("CREATE TEMP TABLE IF NOT EXISTS passive_read_writes (description TEXT NOT NULL)")
+    val tables = raw.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' " +
+      "AND name NOT IN ('android_metadata', 'room_master_table', 'room_table_modification_log')").use { cursor ->
+      buildList { while (cursor.moveToNext()) add(cursor.getString(0)) }
+    }
+    for (table in tables) for (operation in listOf("INSERT", "UPDATE", "DELETE")) {
+      raw.execSQL("CREATE TEMP TRIGGER IF NOT EXISTS ${sqlIdentifier("passive_read_${operation}_$table")} " +
+        "AFTER $operation ON main.${sqlIdentifier(table)} BEGIN " +
+        "INSERT INTO passive_read_writes VALUES ('${operation} ${table.replace("'", "''")}'); END")
+    }
+    return raw.query("SELECT description FROM temp.passive_read_writes ORDER BY rowid").use { cursor ->
+      buildList { while (cursor.moveToNext()) add(cursor.getString(0)) }
+    }
+  }
+  private fun withDatabase(block: suspend (OpenRunCoachDatabase) -> Unit) = runBlocking<Unit> {
     val db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), OpenRunCoachDatabase::class.java).build()
     try { block(db) } finally { db.close() }
   }

@@ -44,7 +44,7 @@ import org.junit.runner.RunWith
 class DiagnosticDumpTest {
   private val context: Context = ApplicationProvider.getApplicationContext()
 
-  @Test fun futureApplicationTableIsDiscoveredAndAllSqliteValueTypesStreamInPkOrder() = runBlocking {
+  @Test fun futureApplicationTableIsDiscoveredAndAllSqliteValueTypesStreamInPkOrder() = runBlocking<Unit> {
     val database = database()
     try {
       val sqlite = database.openHelper.writableDatabase
@@ -84,7 +84,7 @@ class DiagnosticDumpTest {
     } finally { database.close() }
   }
 
-  @Test fun shareSafeAndFullPipelineArchivesPreserveProvenanceAssociationAndReadOnlyState() = runBlocking {
+  @Test fun shareSafeAndFullPipelineArchivesPreserveProvenanceAssociationAndReadOnlyState() = runBlocking<Unit> {
     val database = database()
     val scratch = File(context.cacheDir, "dump-pipeline-test").apply { mkdirs() }
     try {
@@ -146,7 +146,7 @@ class DiagnosticDumpTest {
     } finally { database.close(); scratch.deleteRecursively() }
   }
 
-  @Test fun foreignKeyOrphanIsReportedAndNeverRepaired() = runBlocking {
+  @Test fun foreignKeyOrphanIsReportedAndNeverRepaired() = runBlocking<Unit> {
     val database = database()
     try {
       val sqlite = database.openHelper.writableDatabase
@@ -165,7 +165,7 @@ class DiagnosticDumpTest {
     } finally { database.close() }
   }
 
-  @Test fun consistencyDiagnosticsResolveSplitsAndFeedbackConflictsWithoutMutatingAnyTable() = runBlocking {
+  @Test fun consistencyDiagnosticsResolveSplitsAndFeedbackConflictsWithoutMutatingAnyTable() = runBlocking<Unit> {
     val database = database()
     val scratch = File(context.cacheDir, "dump-consistency-test").apply { mkdirs() }
     try {
@@ -235,7 +235,7 @@ class DiagnosticDumpTest {
     } finally { database.close(); scratch.deleteRecursively() }
   }
 
-  @Test fun activePlanExportDoesNotReconcileAnEligiblePendingCheckout() = runBlocking {
+  @Test fun activePlanExportDoesNotReconcileAnEligiblePendingCheckout() = runBlocking<Unit> {
     val database = database()
     val scratch = File(context.cacheDir, "dump-no-reconcile-test").apply { mkdirs() }
     try {
@@ -283,7 +283,7 @@ class DiagnosticDumpTest {
     } finally { database.close(); scratch.deleteRecursively() }
   }
 
-  @Test fun corruptOptionalMetricsStillProduceUsableArchiveWithErrorReport() = runBlocking {
+  @Test fun corruptOptionalMetricsStillProduceUsableArchiveWithErrorReport() = runBlocking<Unit> {
     val database = database()
     val scratch = File(context.cacheDir, "dump-optional-test").apply { mkdirs() }
     try {

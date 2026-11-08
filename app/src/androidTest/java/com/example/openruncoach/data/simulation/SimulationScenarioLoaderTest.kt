@@ -119,7 +119,7 @@ class SimulationScenarioLoaderTest {
     assertEquals(RunContinuityEvidence.CONTINUOUS, currentResponse(database).continuity)
   }
 
-  private fun withDatabase(block: suspend (OpenRunCoachDatabase) -> Unit) = runBlocking {
+  private fun withDatabase(block: suspend (OpenRunCoachDatabase) -> Unit) = runBlocking<Unit> {
     val database = Room.inMemoryDatabaseBuilder(
       ApplicationProvider.getApplicationContext(),
       OpenRunCoachDatabase::class.java,
