@@ -62,7 +62,9 @@ kotlin {
 
 dependencies {
   val composeBom = platform(libs.androidx.compose.bom)
-  val serializationBom = platform("org.jetbrains.kotlinx:kotlinx-serialization-bom:1.8.1")
+  // SavedState and DataStore transitively use serialization core/json.
+  // Removing this platform downgrades their resolved 1.8.1 to 1.7.3 (verified for #23).
+  val serializationBom = platform(libs.kotlinx.serialization.bom)
   implementation(composeBom)
   implementation(serializationBom)
   androidTestImplementation(composeBom)
@@ -78,7 +80,7 @@ dependencies {
   implementation(libs.androidx.datastore.preferences)
   implementation(libs.maplibre.android)
   implementation(files("libs/samsung-health-data-api.aar"))
-  implementation("com.google.code.gson:gson:2.13.2")
+  implementation(libs.google.gson)
   ksp(libs.androidx.room.compiler)
 
   // Arch Components
