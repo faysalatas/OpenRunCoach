@@ -25,6 +25,8 @@ Plan getters/observers, workout presentation and diagnostic exports remain read-
 
 Verified the resolved source from parents `d6efd77c` and main `2ef3905`, plus the #34 changes described above, in `/tmp/openruncoach-rolling-review`.
 
+The tested source was published as commit `211ee66f533cd3309e88399cc7167e92f6c0cc81`. This subsequent documentation update records that exact reference; implementation and tests are unchanged.
+
 ```bash
 ./gradlew --no-daemon --no-watch-fs -p ci/core-tests test
 ANDROID_SERIAL=emulator-5554 ./gradlew --no-daemon --no-watch-fs test assembleDebug assembleDebugAndroidTest connectedDebugAndroidTest
