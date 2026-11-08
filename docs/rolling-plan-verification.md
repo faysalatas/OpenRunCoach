@@ -52,7 +52,28 @@ The earlier 2026-11-04 verification recorded 432 Core tests, 553 app JVM tests, 
 
 Automated Room/workflow execution: passed for all 92 instrumentation tests on `Medium_Phone_API_37.0`, Android 17/API 37, `emulator-5554`. This is separate from an athlete-facing journey or real-provider verification.
 
-Phone/UI verification: **pending**. No physical phone was accessed, its connection status was not rechecked, and no manual Home/Plan/Detail journey or real-provider import is claimed. Keep issue #4 open until the following checks are completed:
+### Synthetic emulator UI journey — 2026-11-08
+
+**Passed for the evaluated scenarios** on the same API 37 emulator, using PR head `f33310f` (implementation `211ee66`). The normal Home, Plan, workout Detail/Structure, Settings and Completion scheduler were driven with `android layout` and `adb shell input`. Two screenshots were visually inspected. A temporary test-only fixture loaded the existing positive-training and low-evidence presets, controlled only the isolated simulation clock and recorded read-only snapshots. The fixture was removed afterward; production code and the committed test suite are unchanged.
+
+| Check | Observed result |
+|---|---|
+| Home → Plan → Detail → Structure | Same September 29 workout/date; effective 2.10 km and original 2.00 km clearly separated. Passive navigation changed no saved forecast/workout/run/feedback state. |
+| Horizon boundary / repeated resumes | Last covered day retained 8 weeks; next day appended exactly one week to the same plan. Repeated resumes retained 9 weeks/20 workouts without duplicates. |
+| Save availability / long absence | Sunday-only save did not move retained workouts. A 90-day return preserved old weeks/originals/actuals and appended four current weeks with Sunday assessments, no backdated sessions or invented pace. |
+| Explicit Completion date / conflict | Scheduler saved January 3 separately from readiness. Marking Sunday unavailable showed the same-date warning in Settings and Plan. Rejected regeneration preserved the exact saved plan, milestone and prescriptions. |
+| No available days / missed date | Later continuation added only rest and retained the missed January 3 milestone without a replacement attempt. |
+| Inactive goals | Prepared paused/archived/completed states did not extend saved forecast metadata after time advances; Home showed no active plan. These states were fixture preparation, not tests of the corresponding UI buttons. |
+| Missing evidence / checkout | Low-evidence continuation stayed assessment/rest; missing feedback and execution remained empty. |
+| Diagnostic export smoke check | Existing export repository completed against simulation data without changing observed application state; document-picker UI was not exercised. |
+
+Effective adjustments can refresh through normal adaptation on day changes; original prescriptions and actual performance were checked separately. A minor debug-only layout observation remains: the simulation banner overlaps the status-bar area. No functional failure or app crash was observed in these scenarios.
+
+The temporary session command was `ANDROID_SERIAL=emulator-5554 ./gradlew --no-daemon --no-watch-fs connectedDebugAndroidTest '-Pandroid.testInstrumentationRunnerArguments.class=com.example.openruncoach.EmulatorUiSessionTest'` — **PASS**, one interactive fixture session, 15m 4s. This does not represent another run of the full 92-test suite. Local-only detailed journey, commands, fixture and synthetic evidence: `/tmp/openruncoach-ui-journey/journey-results.md`; no screenshots, dumps or fixture source are committed.
+
+Physical-phone/provider verification, process-death UI recovery, observed-run completion UI, document-picker flow and the full accessibility/phone checklist remain unverified by this journey.
+
+Physical-phone/provider verification: **pending**. No physical phone was accessed, its connection status was not rechecked, and no physical-phone Home/Plan/Detail journey or real-provider import is claimed. The synthetic emulator results above do not establish these real-device results. Keep issue #4 open until the remaining checks have evidence:
 
 - On an isolated simulation database, resume immediately before/after the horizon boundary and check that upcoming workouts appear with the same active plan ID. Repeat resume without duplicates.
 - Return after the entire forecast expired. Confirm current/future weeks appear, no workouts are manufactured in the absence, and completed/skipped history remains accessible.
