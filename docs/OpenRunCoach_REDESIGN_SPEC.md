@@ -176,7 +176,7 @@ Card with: title (`caption` 600, `muted`), value (`miniValue`) with unit (`meta`
 - `WeeklyDistanceBars`: 8 columns, same styling, 11 sp value labels.
 - `PaceLineChart`: 3 faint grid lines, 3 dp line, 5 dp dots, labels (`m:ss`) under dots. **Faster is higher.** Optional target `band` rectangle (radius 6).
 - `HeartRateChart`: 3 dp `heart` line, 3 grid lines.
-- `SplitBars`: label (28 dp wide), bar (12 dp high, radius 6, width ∝ speed), value right (40 dp wide). Last split uses `accent`.
+- `SplitBars`: label (28 dp wide), bar (12 dp high, radius 6, width ∝ speed), value right (40 dp wide). Last split uses `accent`. The fastest split fills 100% of the available track; every other width fraction is `speed / fastestSpeed` (for example, 7:24 versus 7:10 = 430 / 444 ≈ 96.8%). Do not exaggerate differences or impose a minimum bar width. PNG bar lengths are illustrative; this proportional rule is authoritative.
 - `Sparkline`: see 3.10.
 - Every chart gets a `contentDescription` summarizing the trend in words. Never convey the trend by color alone.
 
