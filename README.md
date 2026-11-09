@@ -7,7 +7,7 @@ The long-term goal is a transparent, explainable running coach inspired by feedb
 ## Current features
 
 - Native Android app written in Kotlin and Jetpack Compose
-- Dark-first Material 3 UI with a near-black blue-green and mint palette (current implementation; superseded design direction)
+- System-following light/dark Material 3 theme with a warm terracotta palette and bundled Bricolage Grotesque / Inter fonts (screen migration in progress)
 - Bottom navigation with Home, History, Plan, and Settings
 - Week and day selector with run indicators
 - Read-only Health Connect integration
@@ -567,3 +567,5 @@ The [repository workflow](docs/repository-workflow.md) describes issue-linked br
 ## UI redesign documentation
 
 Step 0 establishes [UI Rulebook v2.0](docs/OpenRunCoach_UI_RULEBOOK.md) from the [redesign spec](docs/OpenRunCoach_REDESIGN_SPEC.md): warm terracotta, equal light/dark support, bundled typography, fading heroes and flat cards. Accent-filled selected states use `accent` with `onAccent` text. The previous dark-first mint targets are [archived as legacy references](docs/UI/legacy/README.md). This documentation milestone does not change the app; theme, component and screen implementation follow in separate reviewed steps.
+
+Step 1 implements the shared light/dark palette (`LocalOpenRunPalette`, including `onAccent`), Material 3 mappings, tabular typography, spacing and shape tokens. Fonts are bundled offline with [licenses and provenance](docs/fonts/README.md). The theme follows the system by default; callers can still supply an explicit theme for previews. The [theme token gallery](app/src/main/java/com/example/openruncoach/theme/ThemePreview.kt) shows both themes without app data. Existing static `OpenRunColors` callers retain compatibility aliases to the dark palette until their scheduled component/screen migration; Step 1 does not complete screen-level light-theme styling. See [Step 1 verification and screenshots](docs/theme-step-1-verification.md).
