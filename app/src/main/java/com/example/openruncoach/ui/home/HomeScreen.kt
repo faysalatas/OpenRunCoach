@@ -68,6 +68,8 @@ import com.example.openruncoach.ui.common.formatDistance
 import com.example.openruncoach.ui.common.formatPace
 import com.example.openruncoach.ui.common.formatUserDate
 import com.example.openruncoach.ui.components.OpenRunCard
+import com.example.openruncoach.ui.components.OpenRunHero
+import com.example.openruncoach.ui.components.OpenRunSettingsIcon
 import com.example.openruncoach.ui.components.WorkoutIntensitySignal
 import com.example.openruncoach.ui.components.OpenRunInsightCard
 import com.example.openruncoach.ui.components.OpenRunTabs
@@ -88,6 +90,7 @@ fun HomeScreen(
   onViewPlan: () -> Unit,
   onOpenDetailedProgress: () -> Unit,
   modifier: Modifier = Modifier,
+  onOpenSettings: () -> Unit = {},
 ) {
   val context = LocalContext.current
   val environment = LocalOpenRunCoachEnvironment.current
@@ -119,66 +122,52 @@ fun HomeScreen(
   var selectedTab by rememberSaveable { mutableStateOf(HomeTab.OVERVIEW) }
 
   Column(
-    modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState())
-      .padding(horizontal = ScreenPadding, vertical = OpenRunSpacing.Compact),
+    modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()),
     verticalArrangement = Arrangement.spacedBy(OpenRunSpacing.Compact),
   ) {
-    HomeHeader(state.greeting, LocalDate.now(environment.clock))
-    OpenRunTabs(
-      tabs = listOf("Overview", "Training", "Progress"),
-      selectedIndex = selectedTab.ordinal,
-      onSelected = { index -> selectedTab = HomeTab.entries[index] },
-      distributeEvenly = true,
-    )
+    HomeNavigationEntry(state.greeting, LocalDate.now(environment.clock), onOpenSettings)
+    Column(Modifier.padding(horizontal = ScreenPadding), verticalArrangement = Arrangement.spacedBy(OpenRunSpacing.Compact)) {
+      OpenRunTabs(
+        tabs = listOf("Overview", "Training", "Progress"),
+        selectedIndex = selectedTab.ordinal,
+        onSelected = { index -> selectedTab = HomeTab.entries[index] },
+        distributeEvenly = true,
+      )
 
-    when {
-      state.isLoading -> Text(
-        "Loading your training…",
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-      )
-      errorMessage != null -> OpenRunInsightCard(
-        title = "Training data unavailable",
-        body = errorMessage,
-      )
-      else -> when (selectedTab) {
-        HomeTab.OVERVIEW -> OverviewContent(
-          state = state,
-          onViewPlan = onViewPlan,
-          onPreviousWeek = viewModel::previousWeek,
-          onNextWeek = viewModel::nextWeek,
+      when {
+        state.isLoading -> Text(
+          "Loading your training…",
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        HomeTab.TRAINING -> TrainingContent(state, onViewPlan)
-        HomeTab.PROGRESS -> ProgressContent(state.progress, onOpenDetailedProgress)
+        errorMessage != null -> OpenRunInsightCard(
+          title = "Training data unavailable",
+          body = errorMessage,
+        )
+        else -> when (selectedTab) {
+          HomeTab.OVERVIEW -> OverviewContent(
+            state = state,
+            onViewPlan = onViewPlan,
+            onPreviousWeek = viewModel::previousWeek,
+            onNextWeek = viewModel::nextWeek,
+          )
+          HomeTab.TRAINING -> TrainingContent(state, onViewPlan)
+          HomeTab.PROGRESS -> ProgressContent(state.progress, onOpenDetailedProgress)
+        }
       }
+      Spacer(Modifier.size(OpenRunSpacing.Small))
     }
-    Spacer(Modifier.size(OpenRunSpacing.Small))
   }
 }
 
 @Composable
-private fun HomeHeader(greeting: String, today: LocalDate) {
-  Column(
-    modifier = Modifier.padding(top = OpenRunSpacing.Small, bottom = OpenRunSpacing.Micro),
-    verticalArrangement = Arrangement.spacedBy(OpenRunSpacing.Standard),
-  ) {
-    Text(
-      "OPENRUNCOACH",
-      style = MaterialTheme.typography.labelMedium.copy(
-        fontWeight = FontWeight.Medium,
-        letterSpacing = 2.sp,
-      ),
-      color = OpenRunColors.TextSecondary,
-    )
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-      Text(greeting, Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall)
-      Text(
-        today.format(DateTimeFormatter.ofPattern("MMM d", Locale.getDefault())),
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-      )
-    }
-  }
+internal fun HomeNavigationEntry(greeting: String, today: LocalDate, onOpenSettings: () -> Unit) {
+  OpenRunHero(title = "Today", subtitle = greeting, header = {
+    Text(today.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.getDefault())).uppercase(Locale.getDefault()),
+      Modifier.weight(1f), style = com.example.openruncoach.theme.OpenRunType.eyebrow,
+      color = com.example.openruncoach.theme.LocalOpenRunPalette.current.onHeroSecondary)
+    OpenRunSettingsIcon(onOpenSettings)
+  })
 }
 
 @Composable
