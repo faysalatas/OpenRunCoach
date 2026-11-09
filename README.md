@@ -7,7 +7,7 @@ The long-term goal is a transparent, explainable running coach inspired by feedb
 ## Current features
 
 - Native Android app written in Kotlin and Jetpack Compose
-- Dark-first Material 3 UI with a near-black blue-green and mint palette
+- Dark-first Material 3 UI with a near-black blue-green and mint palette (current implementation; superseded design direction)
 - Bottom navigation with Home, History, Plan, and Settings
 - Week and day selector with run indicators
 - Read-only Health Connect integration
@@ -563,3 +563,7 @@ The debug APK is generated at `app/build/outputs/apk/debug/app-debug.apk`.
 [`AGENTS.md`](AGENTS.md) defines the project's architecture, health-data, development, and Git rules. Codex and other automated contributors should read and follow it before changing the project.
 
 The [repository workflow](docs/repository-workflow.md) describes issue-linked branches/PRs, the PR template, separate device verification, and SDK-independent Core CI. CI compiles real domain sources and runs pure domain tests through `./gradlew -p ci/core-tests test`, without Samsung SDK files, private downloads or secrets. Two suites with data-layer dependencies remain in the local app suite. Full Android builds, UI/data-layer tests and device checks remain local and must be reported separately; Core CI does not verify them. No SDK binary or APK is published by the workflow.
+
+## UI redesign documentation
+
+Step 0 establishes [UI Rulebook v2.0](docs/OpenRunCoach_UI_RULEBOOK.md) from the [redesign spec](docs/OpenRunCoach_REDESIGN_SPEC.md): warm terracotta, equal light/dark support, bundled typography, fading heroes and flat cards. Accent-filled selected states use `accent` with `onAccent` text. The previous dark-first mint targets are [archived as legacy references](docs/UI/legacy/README.md). This documentation milestone does not change the app; theme, component and screen implementation follow in separate reviewed steps.

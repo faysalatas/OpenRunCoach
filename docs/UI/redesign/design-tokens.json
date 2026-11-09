@@ -1,0 +1,65 @@
+{
+  "fonts": {
+    "display": "Bricolage Grotesque 600/700",
+    "text": "Inter 400/500/600"
+  },
+  "light": {
+    "bg": "#F6EEE3",
+    "card": "#FFFAF3",
+    "ink": "#2A1C14",
+    "muted": "#6E5B4E",
+    "line": "#E6D8C6",
+    "hero": "#BF4318",
+    "accent": "#BF4318",
+    "accentText": "#BF4318",
+    "good": "#2F6B4F",
+    "goodBg": "#DDEEE3",
+    "chip": "#EFE4D5",
+    "nav": "#FFFAF3",
+    "dash": "#A89583",
+    "band": "#DDEEE3",
+    "map": "#EFE4D5",
+    "heart": "#B43A52",
+    "runEasy": "#3E9C85",
+    "runLong": "#7D9A6E",
+    "onAccent": "#FFFFFF"
+  },
+  "dark": {
+    "bg": "#1C1411",
+    "card": "#2A1F1A",
+    "ink": "#F6EEE3",
+    "muted": "#BBA997",
+    "line": "#3F3027",
+    "hero": "#A63B15",
+    "accent": "#FF8A5C",
+    "accentText": "#FF9A6B",
+    "good": "#8FD6AE",
+    "goodBg": "#233A2E",
+    "chip": "#3A2C24",
+    "nav": "#241915",
+    "dash": "#8C7A6B",
+    "band": "#2F4A3B",
+    "map": "#241915",
+    "heart": "#FF9AA2",
+    "runEasy": "#5DB7A0",
+    "runLong": "#A9C29A",
+    "onAccent": "#1C1411"
+  },
+  "onHero": {
+    "text": "#FFFFFF",
+    "secondary": "#FFE2D2",
+    "chip": "#FFFFFF33",
+    "lanes": "#FFFFFF26"
+  },
+  "layout": {
+    "pagePadding": 20,
+    "cardGap": 14,
+    "cardPadding": 16,
+    "cardRadius": 20,
+    "rowRadius": 16,
+    "pillMinHeight": 48,
+    "chipHeight": 32,
+    "progressHeight": 10,
+    "touchTargetMin": 48
+  }
+}

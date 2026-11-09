@@ -1,855 +1,244 @@
 # OpenRunCoach UI Rulebook
 
-**Status:** Design source of truth  
-**Version:** 1.2\
-**Applies to:** Android app UI built with Jetpack Compose  
-**Visual targets:** `docs/UI/openruncoach-ui-target.png` and, for History and workout details, `docs/UI/history-workout-detail-target.png`
+**Status:** Design source of truth for the redesign
+**Version:** 2.0
+**Applies to:** Native Android UI built with Jetpack Compose
+**Source:** [Redesign composition spec](OpenRunCoach_REDESIGN_SPEC.md), sections 1–4 and 8
+**Visual references:** [Redesign reference](UI/redesign/README.md), [design tokens](UI/redesign/design-tokens.json), and light/dark PNG boards in `docs/UI/redesign/`.
 
-## 1. Purpose
+## Authority and migration
 
-This document defines how OpenRunCoach should look and feel. It is the visual source of truth for all production UI work.
+Version 2.0 supersedes the v1.2 dark-first, blue-green and mint direction, including its old typography, card, chart, navigation and screen-composition rules. The old targets are historical references only:
 
-The goal is a calm, premium, data-driven running app that feels focused rather than decorative. The interface should make training information easy to scan without turning every metric into a card, badge, color, or chart.
+- [Legacy app target](UI/legacy/openruncoach-ui-target.png)
+- [Legacy History and workout-detail target](UI/legacy/history-workout-detail-target.png)
 
-OpenRunCoach should feel:
+References to the old rulebook and targets in earlier instructions or verification reports describe the superseded direction. Use this rulebook and the redesign spec for new UI work.
 
-- minimal
-- calm
-- precise
-- athletic
-- data-driven
-- premium without being flashy
-- dark-first
-- consistent across all screens
+The redesign spec overrides this rulebook where they conflict. If the spec and a PNG disagree, stop and ask the user; do not guess. If `design-tokens.json` disagrees with spec section 2, section 2 wins. The resolved selected-week rule is `accent` fill with `onAccent` text in both themes, including dark mode.
 
-When implementing UI changes, preserve existing domain behavior and data semantics. The design must adapt to the product; product logic must not be changed merely to imitate a mockup.
+This document specifies the target design; Step 0 changes documentation only. Implement later steps one at a time, on a focused branch and PR, after the preceding step is reviewed or merged. Screen compositions live in spec section 5; behavior, missing-data rules and accessibility remain in sections 6, 7 and 10.
 
----
+Preserve domain logic, ViewModel behavior, data models, database fields and existing route strings. Never invent data: hide elements whose source is absent, and never show sample numbers in production. Keep original prescriptions, effective adjustments and actual performance distinct.
 
-## 2. Design hierarchy and precedence
+Evolve `theme/Theme.kt`, `OpenRunColors`, `OpenRunShapeTokens`, `OpenRunSpacing` and `ui/components/AppVisuals.kt`, including the existing card, chip, button, disclosure, evidence, section-header and metric components. Do not create a parallel component set. All literal colors belong in the theme package. Fonts must be bundled, with no network loading.
 
-When UI decisions conflict, use this order:
-
-1. Existing product/domain correctness and accessibility
-2. This UI Rulebook
-3. The approved visual reference image
-4. Existing reusable OpenRunCoach components
-5. Legacy screen styling
-6. New ad-hoc design choices
-
-Do not introduce a new visual language on an individual screen.
+The canvas uses a 390 px board: 1 CSS px maps to 1 dp; text px maps to sp. Exported PNGs may be at a higher pixel density.
 
 ---
 
-## 3. Approved visual direction
+## 1. Design idea
 
-The approved reference is a restrained dark interface with:
+**One job per screen. The goal (Complete 10K) runs through every screen. Warm, human, data-rich.**
 
-- near-black blue/green-tinted backgrounds
-- only subtle differences between background and surfaces
-- one dominant mint/turquoise accent
-- white primary text and cool gray secondary text
-- thin dividers and borders
-- large typography for important information
-- generous empty space
-- flat, low-noise cards
-- charts using the same mint accent
-- very few decorative colors
-- compact bottom navigation
-- information grouped by meaning, not by individual metric
+| Screen | Question it answers |
+|---|---|
+| Today | What do I do now? |
+| Plan | Am I on track for the goal? |
+| Runs | How did I do? |
+| Run detail | What happened on this run, and what does it mean? |
 
-The UI must **not** drift toward neon, cyberpunk, glassmorphism, gaming UI, or highly colorful fitness dashboards.
+Principles:
 
----
-
-## 4. Color system
-
-The palette below is derived from the approved reference and should be encoded as shared theme tokens rather than repeated literal values.
-
-### Core neutrals
-
-| Token | Suggested value | Use |
-|---|---:|---|
-| `Background` | `#080D10` | Primary app background |
-| `BackgroundDeep` | `#020609` | Very deep backdrop / system-edge areas |
-| `Surface` | `#0C1215` | Main cards and containers |
-| `SurfaceElevated` | `#131B1E` | Selected/elevated sections |
-| `SurfaceHighlight` | `#1F3233` | Soft selected or highlighted surface |
-| `BorderSubtle` | `#324647` | Thin borders/dividers at low opacity |
-| `TextPrimary` | `#F3F4F5` | Main text |
-| `TextSecondary` | `#B2BABD` | Secondary text |
-| `TextMuted` | `#8B9498` | Labels, metadata, inactive elements |
-
-### Brand/accent
-
-| Token | Suggested value | Use |
-|---|---:|---|
-| `Accent` | `#59CCBF` | Main interactive/brand accent |
-| `AccentMuted` | derived from Accent at low alpha | selected backgrounds, chart fills |
-
-Use **one main accent color** throughout the normal product UI.
-
-Do not assign a unique color to every metric. History may use centrally defined,
-low-saturation workout-type accents as narrow row-edge strips; mint remains the
-dominant accent. Unknown types stay neutral and must not be inferred from pace.
-
-### Semantic colors
-
-Semantic colors are allowed only when meaning is important:
-
-- success: muted green/mint
-- warning: restrained amber
-- error/pain/safety: restrained red
-- informational: default accent or neutral
-
-Rules:
-
-- Do not color ordinary metrics red/green based on superficial positive/negative interpretation.
-- Do not make RPE, HR, pace, distance, continuity, and readiness all different colors by default.
-- Prefer text/icon/status changes before adding another color.
+- A **hero** at the top of every screen. It runs edge to edge and **fades into the page background**. It never ends in a hard edge or a rounded box.
+- Below the hero, **flat cards** on the page background. Group by meaning. Maximum about 4 to 6 cards before a section label.
+- **Numbers are large and tabular.** Labels are small and muted.
+- **A human voice** for coach text. Short sentences, plain words, second person.
+- **Light and dark** are equal citizens. Follow the system setting. Both are specified below.
+- One accent (terracotta). Green means good news only. No other decorative colors.
+- No emoji. No glass, no neon, no shadows. Elevation is 0 everywhere.
 
 ---
 
-## 5. Typography
+## 2. Tokens
 
-Typography should create hierarchy without relying on many colors or cards.
+Put these in `theme/` next to the existing tokens. Extend `OpenRunColors` or add `OpenRunPalette` with a light and a dark instance exposed through a `CompositionLocal` (`LocalOpenRunPalette`). Also map them into the Material3 `lightColorScheme` / `darkColorScheme` (`background`, `surface`, `surfaceContainerHigh`, `onSurface`, `onSurfaceVariant`, `outlineVariant`, `primary`).
 
-Use the app's existing Android-safe font stack unless a dedicated font is deliberately introduced later.
+### 2.1 Color
 
-### Hierarchy
+| Token | Light | Dark | Use |
+|---|---|---|---|
+| `bg` | `#F6EEE3` | `#1C1411` | Page background |
+| `card` | `#FFFAF3` | `#2A1F1A` | Cards, rows, inputs |
+| `ink` | `#2A1C14` | `#F6EEE3` | Primary text, filled bars |
+| `muted` | `#6E5B4E` | `#BBA997` | Secondary text, labels |
+| `line` | `#E6D8C6` | `#3F3027` | Dividers, bar tracks, outlines |
+| `hero` | `#BF4318` | `#A63B15` | Hero background, primary button |
+| `accent` | `#BF4318` | `#FF8A5C` | Chart fills, selected progress |
+| `accentText` | `#BF4318` | `#FF9A6B` | Accent text, active tab |
+| `onAccent` | `#FFFFFF` | `#1C1411` | Text and icons on `accent` fills (white on `#FF8A5C` fails contrast) |
+| `good` | `#2F6B4F` | `#8FD6AE` | Good news text, improving trends |
+| `goodBg` | `#DDEEE3` | `#233A2E` | Good-news chip background |
+| `chip` | `#EFE4D5` | `#3A2C24` | Neutral chip background |
+| `nav` | `#FFFAF3` | `#241915` | Bottom bar background |
+| `dash` | `#A89583` | `#8C7A6B` | Dashed outline for planned items |
+| `band` | `#DDEEE3` | `#2F4A3B` | Target-range band in charts |
+| `map` | `#EFE4D5` | `#241915` | Map placeholder / route backdrop |
+| `heart` | `#B43A52` | `#FF9AA2` | Heart-rate line |
+| `runEasy` | `#3E9C85` | `#5DB7A0` | Run type dot: easy, recovery |
+| `runLong` | `#7D9A6E` | `#A9C29A` | Run type dot: long |
 
-**Screen title**
-- 28–32 sp
-- medium/semibold
-- primary text
+On the hero (both themes): primary text `#FFFFFF`, secondary text `#FFE2D2`, translucent chip `#FFFFFF` at 20%, lane lines `#FFFFFF` at 15%.
+Other workout types (tempo, threshold, intervals, strides, race) keep their existing colors from `OpenRunColors`, adjusted for contrast on `card`.
 
-**Hero value / main metric**
-- 26–32 sp
-- semibold
-- used sparingly
+Rule: filled selected states (week chip, selected date card check) use `accent` + `onAccent`. Primary buttons and the hero use `hero` + white.
 
-**Section title**
-- 18–20 sp
-- medium/semibold
+Contrast checked: white on `#BF4318` is about 5.4:1. White on `#A63B15` is above 6:1. Muted text on `bg` is at least 4.5:1 in both themes. Keep it that way if you change a value.
 
-**Card title / workout title**
-- 16–18 sp
-- medium/semibold
+### 2.2 Typography
 
-**Body**
-- 14–16 sp
-- regular
+Two families, **bundled** in `res/font/` (no network font loading; the app must work offline):
 
-**Metadata / labels**
-- 12–14 sp
-- regular
-- secondary or muted text
+- **Display and numbers:** Bricolage Grotesque, weights 600 and 700.
+- **Text:** Inter, weights 400, 500 and 600.
 
-Rules:
+Numbers use tabular figures (`fontFeatureSettings = "tnum"`).
 
-- Important values are visually stronger than their labels.
-- Do not bold every label.
-- Avoid ALL CAPS except for tiny brand/eyebrow text where intentionally used.
-- Use tabular numerals where practical for metrics.
-- Keep line length comfortable; long explanations should wrap naturally.
+| Style | Family | Size / line | Weight | Use |
+|---|---|---|---|---|
+| `heroDisplay` | Bricolage | 56 / 56 | 700 | Today hero title |
+| `pageTitle` | Bricolage | 44 / 46 | 700 | Plan, Runs, Run, Settings titles |
+| `subTitle` | Bricolage | 40 / 44 | 700 | Checkout, New goal, Inspector titles |
+| `heroMetric` | Bricolage | 34 / 38 | 700 | Run detail metric trio |
+| `bigNumber` | Bricolage | 38 / 42 | 700 | Week total |
+| `miniValue` | Bricolage | 28 / 32 | 700 | Mini stat cards |
+| `cardTitleLg` | Bricolage | 20 / 24 | 700 | Goal card title |
+| `title` | Inter | 16 / 22 | 600 | Card titles, row titles |
+| `body` | Inter | 16 / 24 | 400 | Coach text |
+| `bodySm` | Inter | 15 / 22 | 400 | Descriptions |
+| `meta` | Inter | 14 / 20 | 400 to 600 | Sub lines, chips |
+| `caption` | Inter | 13 / 19 | 400 to 600 | Smallest allowed text |
+| `eyebrow` | Inter | 12 / 16 | 600, +1.6 sp tracking, UPPERCASE | Section labels, hero eyebrow |
 
----
+Nothing below 12 sp. Everything must scale with system font size. Check at 130% and 200%.
 
-## 6. Spacing system
+### 2.3 Shape and spacing
 
-Use a small shared spacing scale:
-
-- `4 dp` — micro spacing
-- `8 dp` — icon/text spacing
-- `12 dp` — compact internal spacing
-- `16 dp` — standard component padding
-- `20 dp` — comfortable card padding
-- `24 dp` — section spacing
-- `32 dp` — major screen separation
-
-Preferred screen horizontal padding: **20 dp**.
-
-Rules:
-
-- More whitespace is preferable to more visual separators.
-- Do not compensate for weak hierarchy by adding more cards.
-- Avoid deeply nested padding layers.
-- Sections should feel clearly separated even without borders.
-
----
-
-## 7. Shapes and borders
-
-The UI should use soft but restrained rounding.
-
-Recommended:
-
-- primary cards: 16–20 dp radius
-- compact controls/chips: 10–14 dp radius
-- pill controls: full/pill radius only when semantically appropriate
-- buttons: 12–16 dp radius
-
-Borders:
-
-- 1 dp maximum for standard cards
-- low contrast
-- often optional
-- selected state may use the accent at low intensity
-
-Do not use heavy outlines around every component.
+| Token | Value |
+|---|---|
+| Page horizontal padding | 20 dp |
+| Gap between cards | 14 dp (12 dp inside grids) |
+| Card padding | 16 dp (mini stat cards 14 × 16) |
+| Card radius | 20 dp |
+| Row radius (list rows) | 16 dp |
+| Pill buttons and option chips | height ≥ 48 dp, radius 24 to 26 dp |
+| Chips (read-only) | height 32 dp, radius 16 dp |
+| Input radius | 14 dp |
+| Progress bar | 10 dp high, radius 5 dp |
+| Touch target | ≥ 48 dp (never below 44 dp) |
+| Elevation | 0 dp. No borders on cards. Dividers use `line` |
 
 ---
 
-## 8. Surface and card rules
+## 3. Core primitives
 
-Cards are for meaningful groups, not individual values.
+Implement these in `ui/components/` (extend `AppVisuals.kt` or add `HeroComponents.kt`). Each needs a `@Preview` in light and dark.
 
-Good:
+### 3.1 `OpenRunHero`
 
-```text
-Today's Workout
-Easy Run
-5.0 km · 6:00–6:45 /km
-[Start]
+Full-width block with a vertical gradient: `hero` from 0% to 62%, then fading to `bg` at 100%.
+```kotlin
+Brush.verticalGradient(
+  0f to palette.hero, 0.62f to palette.hero, 1f to palette.bg
+)
 ```
+- Padding: top 24 dp (16 dp on detail screens that have a back link), horizontal 20 dp, **bottom 72 to 96 dp** (the fade zone is empty on purpose).
+- Content column gap 8 dp. Clip to bounds.
+- Draws `TrackLanes` in the top right (3.2).
+- The body below overlaps the hero by 8 dp (`offset(y = (-8).dp)` or negative top padding via layout) so cards start inside the fade.
+- Slots: `eyebrow`, `title`, `subtitle`, `content`.
 
-Bad:
+### 3.2 `TrackLanes`
 
-```text
-[Distance card] [Pace card]
-[HR card]       [RPE card]
-[Status card]   [Goal card]
-```
+A decorative `Canvas`, 300 × 190 dp, positioned top end with `offset(x = 90.dp)` (right edge cut off) and top about 50 to 70 dp. Four nested stadium outlines (rounded rectangles) in a 260 × 170 viewport:
+`(10,10,240×150, r75)`, `(26,26,208×118, r59)`, `(42,42,176×86, r43)`, `(58,58,144×54, r27)`. Stroke 2 dp, `#FFFFFF` at 15% alpha. No semantics (decorative).
 
-Individual metric tiles are acceptable when they form one deliberate summary row or grid, but should not dominate every screen.
+### 3.3 `OpenRunCard`
 
-Cards should be:
+`card` background, radius 20, padding 16, vertical gap 10, no border, no elevation. Update the existing component. Remove the 1 dp border.
 
-- flat or very subtly elevated
-- low contrast
-- spacious
-- visually quiet
+### 3.4 `SectionLabel`
 
-No glow effects.
-No large gradients as a default surface treatment.
-No decorative background images unless a future feature explicitly calls for them.
+`eyebrow` style in `muted`, horizontal padding 4 dp, top padding 4 dp.
 
----
+### 3.5 `Chip(text, tone)`
 
-## 9. Icons
+Height 32, horizontal padding 12, radius 16, `meta` weight 600. Tones: `Neutral` (`chip` bg, `ink` text), `Good` (`goodBg` bg, `good` text, optional check icon 16 dp), `OnHero` (white 20% bg, white text).
 
-Use simple Material-style line icons.
+### 3.6 Buttons
 
-Rules:
+- `PrimaryButton`: height 48 to 52, pill, `hero` background, white text, `title` weight 600.
+- `HeroButton`: pill, white background, text `#7A2A0C`, used on the hero.
+- `SecondaryButton`: transparent, 1.5 dp `line` outline, `ink` text.
+- `OptionChip(text, selected)`: height 48, pill, 1.5 dp `line` outline on `card`. Default selected option: `ink` fill, `bg` text. Accent-filled selected states, including the Plan week chip and selected date-card check, use `accent` fill with `onAccent` text. Primary buttons and heroes keep `hero` with white text.
 
-- Icons support scanning; they do not decorate every label.
-- Prefer one icon per concept/group, not one per line of text.
-- Default icon color is `TextSecondary` or `Accent`.
-- Avoid multicolor iconography.
-- Keep icon sizes consistent (typically 18–24 dp).
+### 3.7 `KeyValueRow(label, value)`
 
----
+Space between, 15 sp, top divider `line` (first row has none), 9 dp top padding. Label `muted`, value weight 600, right aligned, tabular figures.
 
-## 10. Navigation
+### 3.8 `Metric(value, label)`
 
-Bottom navigation should be compact and visually quiet.
+Value in `heroMetric` (on hero) or `miniValue`; unit or label below in `caption`, `muted` (on hero: `#FFE2D2`).
 
-Preferred behavior:
+### 3.9 `ProgressBar(fraction)`
 
-- dark surface that visually belongs to the page
-- 4–5 destinations maximum
-- icon + short label
-- active item uses the accent
-- inactive items use muted gray
-- no giant floating pill behind the entire active tab
-- no oversized navigation height
+10 dp, `line` track, `accentText` or `ink` fill, radius 5. Animate fill width once on first composition. Skip animation when reduce-motion is on.
 
-Navigation hierarchy should remain stable across the app.
+### 3.10 `MiniStatCard(title, value, unit, delta, tone, sparkline?)`
 
----
+Card with: title (`caption` 600, `muted`), value (`miniValue`) with unit (`meta`, `muted`), delta line (`caption` 600, `good`), optional 120 × 30 sparkline (3 dp stroke, round caps, last point has a 4 dp dot). Used in a 2-column grid with 12 dp gap.
 
-## 11. Tabs and segmented controls
+### 3.11 Charts (Canvas based, no library)
 
-Tabs should resemble the approved reference:
+- `WeekBars`: 7 columns, gap 8. Done = `ink` fill, radius 6. Today done = `accent` fill. Planned = dashed 2 dp `dash` outline. Today planned = solid 2 dp `accent` outline. Rest = 3 dp `line` bar. Height proportional to km. Weekday initials below (`caption`, `muted`, today in `accentText` bold).
+- `LongRunBars`: 7 columns (W1 to W6, goal date). Done = `ink`. Current = `accent`. Future = dashed outline. Goal bar = solid 2 dp `ink` outline on `line` fill. Value label above each bar (12 sp, tabular). Column labels below.
+- `WeeklyDistanceBars`: 8 columns, same styling, 11 sp value labels.
+- `PaceLineChart`: 3 faint grid lines, 3 dp line, 5 dp dots, labels (`m:ss`) under dots. **Faster is higher.** Optional target `band` rectangle (radius 6).
+- `HeartRateChart`: 3 dp `heart` line, 3 grid lines.
+- `SplitBars`: label (28 dp wide), bar (12 dp high, radius 6, width ∝ speed), value right (40 dp wide). Last split uses `accent`.
+- `Sparkline`: see 3.10.
+- Every chart gets a `contentDescription` summarizing the trend in words. Never convey the trend by color alone.
 
-- thin text-based tabs or restrained segmented controls
-- active tab uses accent text and/or a thin accent underline
-- inactive tabs remain muted
-- no rainbow or heavy button-style tabs
+### 3.12 `BottomBar`
 
-Use tabs when switching between related views of the same entity, e.g.:
+3 tabs: **Today, Plan, Runs**. Background `nav`, top divider 1 dp `line`, tab height 56 dp, icon 24 dp (stroke 2 dp), label 12 sp 600. Active = `accentText`, inactive = `muted`. Reuse the drawables `ic_nav_home`, `ic_nav_plan`, `ic_nav_history` (redraw as stroke icons: sun, calendar, route line) and delete `ic_nav_settings` from the bar.
 
-- Overview / Splits / Analysis / Coach
-- Fitness / Load / Trends
+### 3.13 `ListRow` family
 
-Do not use tabs merely to reduce scrolling.
+- `RunRow`: card, radius 16, min height 60, padding 10 × 14. Left: 10 dp dot in run-type color. Then date (2 lines, 13 sp 600 `muted`, 56 dp wide). Then run name (`title`). Right aligned: distance (`title`, tabular) over pace (`caption`, `muted`).
+- `WorkoutRow` (Plan): weekday (36 dp wide, 13 sp 600 `muted`), name + meta, trailing check icon (`good`, 22 dp) if done. Today row = `hero` background with white text and a `TODAY` eyebrow. Future row = dashed outline.
+- `NextUpRow`: date block (44 dp: weekday eyebrow over day number in 22 sp Bricolage), name + meta.
+- `SettingsRow`: min height 60, title + subtitle, trailing chevron or control; rows grouped in one card with `line` dividers.
+- `DisclosureRow`: like `SettingsRow` with a down chevron.
 
----
+### 3.14 Back link
 
-## 12. Buttons
-
-### Primary action
-
-- accent fill
-- high-contrast dark/white text as appropriate
-- clear label
-- full-width only when the action is genuinely primary
-
-Examples:
-
-- Start Run
-- Continue
-- Save
-
-### Secondary action
-
-- surface or transparent background
-- subtle border if needed
-- no competing bright color
-
-Avoid multiple equally strong primary buttons on one screen.
+On detail screens, inside the hero: chevron + label (the parent screen name), min height 44, white, 15 sp 600.
 
 ---
 
-## 13. Status chips
+## 4. Navigation
 
-Status chips should be compact and rare.
+Existing: `Navigation.kt`, tabs Home, History, Plan, Settings.
 
-Good uses:
+New:
 
-- Completed
-- Upcoming
-- Within tolerance
-- High cost
-
-Rules:
-
-- Use neutral/mint by default.
-- Warning/error colors only for meaningful warnings.
-- Do not turn every metadata field into a chip.
+- Tabs: **Today** (route `home`), **Plan** (`plan`), **Runs** (route `history`). Keep the route strings to avoid churn. Change only labels and icons.
+- **Settings** is no longer a tab. It stays a route (`settings`). Open it from the settings icon button (44 dp, top right of the Today hero, 18% white circle). The bottom bar shows only on `home`, `plan`, `history`.
+- Keep all other routes: `performance-profile`, `goal`, `workout-preview` (debug), `planned-workout?workoutId=`, `run?runId=`, `data-inspector?runId=`, `coach?runId=`, `simulator` (debug).
+- **New route:** `run-checkout?runId=`. The post-run checkout moves out of the Run detail "Coach" tab into its own screen. Keep the existing save and edit logic in `RunDetailViewModel`.
+- The coach analysis route is defined but has no entry point today. Link it from Run detail (redesign spec section 5.4).
+- Add a new goal-creation entry from the Goal screen ("Pick a different goal").
+- Edge-to-edge: the hero draws under the status bar. Add status-bar inset padding inside the hero (do not use a separate top bar). Use dark status-bar icons? No: hero is dark in both themes, so use **light** status-bar icons on screens that start with a hero.
 
 ---
 
-## 14. Charts and data visualization
-
-Charts should follow the same restrained visual language.
-
-Rules:
-
-- dark background
-- mint/turquoise primary line
-- subtle grid
-- subtle gradient fill beneath line where useful
-- gray comparison/reference series
-- minimal labeling
-- no rainbow series unless multiple distinct data series genuinely require it
-- no fake scores or decorative percentages
-
-The chart should answer a question, not merely fill space.
-
-Examples:
-
-- pace over distance
-- weekly distance trend
-- training volume trend
-- heart-rate trend when data exists
-
-Do not create visualizations from data that OpenRunCoach does not actually possess.
-
----
-
-## 15. Metric presentation
-
-Metrics should generally use:
-
-```text
-6:27 /km
-Average pace
-```
-
-rather than:
-
-```text
-Average pace: 6:27 /km
-```
-
-for primary summary sections.
-
-A summary row of 3–4 metrics is acceptable when each value is genuinely important.
-
-Compact dashboard and list metrics may use 18–20 sp values with smaller, muted labels;
-reserve hero sizing for the primary action or result. Abbreviate pace units to `/km`.
-Reflow metric groups into fewer columns on narrow screens or at larger font scales
-rather than truncating recorded values. Four metrics should use a balanced 2×2 grid
-when a readable single row is not possible.
-
-Completed Run Overview is an exception: use one compact horizontal card of equal
-metric columns (normally four), each with a vector icon, value, and muted label.
-Separate columns with subtle vertical rules. Omit unavailable metrics and redistribute
-columns. Keep the row at narrow widths/large fonts by allowing horizontal scrolling
-of readable equal-width columns rather than shrinking values or returning to 2×2.
-
-Examples:
-
-- Distance
-- Duration
-- Average pace
-- Average HR
-
-Do not use more metrics than the user can reasonably scan at once.
-
----
-
-## 16. Home / Dashboard rules
-
-The Home screen should answer, in order:
-
-1. What matters today?
-2. What is my next/current workout?
-3. How is this week going?
-4. What progress or recent result should I know about?
-
-Target structure:
-
-```text
-OPENRUNCOACH
-
-Good evening,
-<Name>
-
-Overview | Training | Progress
-
-[Today's / Next Workout]
-
-This Week                 2 / 3 runs
-○  ✓  ●  ○  ○  ○  ○
-
-[Key weekly metric]  [Key trend metric]
-
-[Optional concise coach insight]
-```
-
-Rules:
-
-- Next workout should dominate the dashboard when one exists.
-- Avoid presenting several equally prominent cards.
-- Goal information may appear as context, but should not push the actionable workout below excessive dashboard content.
-- No invented completion percentages.
-
----
-
-## 17. Training Plan rules
-
-The Plan screen should immediately explain the goal, the selected week's work and
-the existing coaching rationale. Use this order:
-
-1. Small Training Plan eyebrow and one compact goal/milestone hero.
-2. Local horizontal week selector with compact date ranges.
-3. One weekly summary above the chronological workout list.
-4. Compact Coach summary with detailed Why this week? collapsed initially.
-5. Secondary Plan details and Previous plans access.
-
-The hero groups goal title, week/horizon and genuine confidence. Completion Run is
-a plan milestone; never label its date Goal date or add a date to TrainingGoal.
-Readiness uses friendly factual wording, separate from plan confidence. Keep date
-selection/rescheduling in a secondary sheet using the existing scheduling actions.
-
-Week navigation stays local and retains selection across background updates and
-return from workout detail. Distinguish Past / Current / Upcoming with text and
-quiet styling; selected/current emphasis must not depend on color alone. Use
-locale-aware short date ranges, including both months/years when needed.
-
-Weekly summaries show genuine planned distance/duration and non-rest sessions.
-For current/past weeks with recorded associations, show actual/planned volume and
-completed-session counts separately. Partial/stopped volume still counts as actual
-training; only existing completion semantics increment completed sessions. Use
-canonical actual summaries through existing physical-run associations, never raw
-provider totals or a new UI deduplication policy. Unknown distance remains unknown.
-A small volume bar is appropriate only with real comparable values; no week score
-or invented percentage. Future weeks show planned values and a provisional label.
-
-Each row/card should expose only the most useful fields:
-
-- day/date
-- workout type
-- planned distance/duration
-- target pace when genuinely applicable to the whole continuous prescription
-- status
-
-Use the shared workout accent palette as a slim scanning strip, the existing
-runner/pace icons and shared effort bars. Avoid large per-workout hero images.
-Keep prescription metadata compact and able to wrap. Repeated or multi-block work
-uses genuine repetition/work summaries and a Structured workout label; never
-present a unique work-segment pace as the entire run's target. Share prescription
-formatting with Home. Keep rationale to at most two short lines; full workout
-reasoning remains in the existing Planned Workout Detail → Coach.
-
-Today is a small explicit label. Surface actual lifecycle/check-in/adjustment and
-execution labels without inventing a missed/failed state from the date alone.
-Explicit rest entries remain compact; empty days need no fabricated rest cards.
-Completion Run gets a restrained milestone label/accent, not another generic Easy
-row. Every workout opens the existing detail implementation.
-
-Completed workouts may show actual values, but must never replace the immutable prescription.
-
-Plan UI should visually distinguish:
-
-- completed
-- current/next
-- future
-- rest
-
-without using four loud colors.
-
-A vertical timeline or restrained list is preferred over a dense card grid.
-
-The Coach summary must only shorten existing week explanation/reasons; detailed
-week/block rationale stays under Why this week? and starts collapsed for each
-selected week. State once that future work is provisional/adaptive. Do not introduce
-new coaching, readiness or progression logic in presentation.
-
-Archive access lives inside Plan. Previous plans may use a small sheet and read-only
-week/workout view over existing saved records, with friendly Replaced plan / Archived
-plan labels. Do not add a bottom-navigation destination or active-plan switching action.
-Keep existing regeneration and milestone actions secondary, with their semantics intact.
-No-plan states retain the existing goal/scheduling path; loading uses lightweight text
-and surfaces. The normal top viewport should show hero, selector, summary and the start
-of the workout list. Allow scrolling and font scaling; never clip important values.
-
----
-
-## 18. Run Detail rules
-
-The approved History and planned/completed workout-detail reference is
-`docs/UI/history-workout-detail-target.png`. Completed and planned workouts share the same
-visual family, while completed screens show actual evidence and planned screens show only
-the prescription until execution exists.
-
-Run Detail should follow this hierarchy:
-
-```text
-Easy Run
-Date · time
-
-Overview | Splits | Analysis | Coach
-
-5.0 km   32:18   6:27/km   146 bpm
-
-[Route or primary chart]
-
-Pace | Elevation | Heart Rate
-
-[Selected chart]
-
-[Relevant comparison / target]
-
-[Coach insight]
-```
-
-Rules:
-
-- Route/chart gets meaningful visual space.
-- Key metrics are shown once, not repeatedly across several cards.
-- The analysis section may be richer but should remain secondary to the actual run data.
-
-Confirmed completed-run patterns:
-
-- Reuse bundled workout heroes only from an actual associated workout type, with
-  a compact dark-gradient header and local tabs below it. Unmatched runs remain neutral.
-  Observe the physical-run association and its prescription reactively, including
-  assignments without checkout. Wait for the initial association read before choosing
-  the header; an execution result must not independently overwrite its workout metadata.
-  Keep the header shallow (about 112 dp at default fonts), allowing readable text to grow.
-- Overview sizes its map/plot against the available viewport and font scale so the
-  primary content is compact at normal phone sizes; retain readable text and scrolling
-  on small screens/large fonts. Its primary order is metric strip, map, metric pill,
-  chart, then two-column summary. Keep the four-column icon/value/label metric card;
-  measure text before requiring horizontal scrolling instead of imposing wide columns.
-  Dashboard plots are approximately 88–116 dp high at default fonts, plus minimal axes;
-  maps flex around 120–192 dp. Do not reduce font scaling to meet these proportions.
-- Detail routes use a real dark/desaturated street map when available, with mint
-  route/start/finish and padded whole-route fitting. MapLibre rendering is independent
-  of replaceable style/tile configuration. Keep required map-data attribution visible.
-- Reuse the dark Canvas silhouette during map loading, offline/tile/style failure.
-  History thumbnails remain Canvas-only; never create a map per list row.
-- Charts use a compact equal-width rounded metric pill, not navigation underlines;
-  keep at least 48 dp touch targets and a stable chart/summary footprint when switching.
-  Pace / Heart Rate / Cadence sit in one dark rounded container with small internal
-  padding and a quiet accent outline only on the selected segment. Offer only drawable
-  recorded series; omit the selector entirely when just one metric is available.
-  Overview / Splits / Analysis / Coach retain text tabs with an active underline and
-  a subtle full-width divider. Use restrained axes/grid, a thin line and
-  subtle mint area fill fading to transparent. Keep actual values/gaps unchanged.
-- Pace target bands apply only to meaningful continuous whole-run prescriptions,
-  never interval work targets. Average/target summaries dominate, with a quiet target key;
-  Fastest 30 sec and off-scale clipping notes belong in Recording diagnostics.
-  Place two equal visual columns directly below the chart, with value above label.
-  Average is off-white; a genuine target is restrained mint with a small parallel-bar
-  range key beside its label. HR uses recorded average/max; cadence retains its existing
-  moving-average preference, explicitly labelled when moving, and recorded maximum.
-  Leave an unavailable second measurement absent while retaining the summary footprint.
-- Split Δ is split pace minus canonical whole-run average pace, including partial
-  splits. Positive means slower and stays neutral; negative means faster and may
-  use restrained mint. Use explicitly aligned Km/Pace/Δ/HR columns (numbers right aligned).
-  Keep Km left aligned; full kilometre rows show their ordinal, partial rows their
-  fractional distance without repeating the unit. Use tabular numerals and thin row
-  dividers, never per-row cards. Omit HR when absent throughout the run. Place the
-  average/half-run summary immediately below the table, ahead of the muted provenance.
-- Negative/positive split compares two equal-distance halves using genuine cumulative
-  distance/time interpolation. Never compare just first/last kilometre or average
-  unweighted paces. ±3 sec/km is Even split; suppress short/uncertain results.
-- Keep cadence/duration in collapsed Split details. Use only average pace and
-  positive/negative/even half-run pacing in the primary summary, with collapsed Half-run
-  details. Do not show fastest/slowest split rankings. Provenance is a small muted caption.
-- Analysis groups Outcome / Session cost / Volume in one compact strip, with friendly
-  values and no invented unknown volume. Use aligned Planned/Actual columns, subtle
-  headers/dividers and slightly stronger actual values. Prioritize distance, pace and
-  checkout RPE; add duration for time-based prescriptions rather than repeating every
-  available metric. Keep continuity as a concise status/detail and confidence as a row.
-  Association follows immediately: Planned workout, title/distance, Change association
-  and Unassign. Full original reasons and additional adherence facts stay under Evidence,
-  collapsed initially. Keep this density at default fonts; allow scrolling at large fonts.
-  Do not visually equate an interval work target with whole-run average pace.
-- Data sources stays collapsed and Ignore run stays a secondary text action.
-
----
-
-## 19. Coach Analysis rules
-
-Coach Analysis should explain the run, not overwhelm the user with evaluator internals.
-
-Suggested order:
-
-1. high-level coaching response
-2. core actual metrics
-3. key execution/adherence evidence
-4. selected supporting trends
-5. concise takeaway/reasons
-
-Internal domain concepts such as `WorkoutResponse`, continuity, adherence, session cost, and confidence may be surfaced when useful, but should use human-readable labels.
-
-Do not create synthetic overall scores unless the domain model explicitly defines them.
-
-Completed-run Coach defaults to recommendation/status, at most 2–4 concise
-evidence-backed observations, and one action-consistent next-training implication.
-Keep lower-priority evidence, confidence, RPE/fatigue, and full original reasons under
-More details. Analysis remains the factual table; Coach is the short takeaway, not
-the same table repeated as paragraphs. No new evaluator or invented conclusion.
-
----
-
-## 20. Progress / Athlete State rules
-
-The visual reference contains generic fitness/readiness scores. OpenRunCoach must **not** copy those scores unless the domain actually supports them.
-
-Use the same visual layout with real OpenRunCoach evidence.
-
-Possible sections:
-
-### Fitness / capability
-- longest continuous distance
-- longest tolerated distance
-- recent volume
-- recent frequency
-- demonstrated capabilities
-
-### Load
-- 7-day / 28-day volume
-- recent session costs
-- tolerated aerobic sessions
-
-### Trends
-- volume trend
-- frequency trend
-- pace trend when valid
-
-### Readiness
-Use actual readiness state and evidence. Do not invent a 0–100 readiness score.
-
-### Goal direction
-GoalStrategy may be shown as human-readable capability priorities, but must not be presented as measured weakness unless evidence supports that conclusion.
-
----
-
-## 21. Empty, loading and unknown states
-
-Unknown data should look intentional, not broken.
-
-Use:
-
-- `Not enough data yet`
-- `Unknown`
-- `No recent evidence`
-
-Do not use `0` when the value is unknown.
-
-Do not invent fallback health/fitness metrics.
-
-Loading states should be subtle and structurally match final content.
-
----
-
-## 22. Accessibility and Android behavior
-
-The approved mockup is a visual reference, not a license to copy iOS-specific behavior.
-
-Production Android rules still apply:
-
-- minimum 48 dp touch targets
-- sufficient text contrast
-- support font scaling
-- avoid clipped metrics at larger font sizes
-- respect system bars/insets
-- use Android navigation/back behavior correctly
-- support narrow devices
-- allow cards to grow vertically for long text
-
-The target is the **visual language**, not an iOS clone.
-
----
-
-## 23. Animation
-
-Animation should be rare and functional.
-
-Allowed examples:
-
-- short screen/content transitions
-- subtle selected-tab transition
-- chart reveal
-- state change feedback
-
-Avoid:
-
-- continuous decorative movement
-- glowing/pulsing backgrounds
-- excessive spring animations
-- animation that delays access to training data
-
----
-
-## 24. What OpenRunCoach must NOT look like
-
-Avoid:
-
-- colorful dashboard mosaics
-- every metric having its own accent color
-- gradients on every card
-- glow/neon effects
-- glassmorphism as a default style
-- excessive nested cards
-- tiny dense text
-- fake AI branding elements
-- generic robot/AI mascots
-- decorative fitness scores
-- made-up progress percentages
-- marketing copy inside functional screens
-
-The product should look like a serious running tool, not a concept-art fitness app.
-
----
-
-## 25. Reusable Compose primitives
-
-Prefer a small set of shared primitives instead of screen-local styling.
-
-Suggested primitives:
-
-- `OrcScreen`
-- `OrcTopBar`
-- `OrcCard`
-- `OrcSectionHeader`
-- `OrcMetric`
-- `OrcMetricRow`
-- `OrcTabs`
-- `OrcStatusChip`
-- `OrcPrimaryButton`
-- `OrcSecondaryButton`
-- `OrcChartContainer`
-- `OrcBottomNavigation`
-
-Names may follow existing project conventions.
-
-Do not create a huge design-system framework. Shared primitives should exist only when they reduce inconsistency or duplication.
-
----
-
-## 26. Implementation rule
-
-UI screens should consume existing ViewModel/domain state.
-
-A visual refactor must not alter:
-
-- TrainingGoal semantics
-- WorkoutExecution
-- WorkoutResponse
-- AthleteState
-- GoalStrategy
-- plan generation
-- continuity evaluation
-- completion tolerance
-- Health Connect behavior
-- Samsung integration
-- repository/storage behavior
-
-If a desired UI element requires data the app does not possess, omit or adapt the element rather than inventing data.
-
----
-
-## 27. Screen review checklist
-
-Before a redesigned screen is considered complete, verify:
-
-### Visual
-- Does it clearly belong to the approved OpenRunCoach design system?
-- Is mint the only dominant accent?
-- Is there enough whitespace?
-- Are cards grouped by meaning rather than individual values?
-- Is the most important information obvious within 2–3 seconds?
-
-### Data
-- Are all values sourced from real app state?
-- Are unknown values shown as unknown instead of zero?
-- Is no fake score/probability/progress value introduced?
-- Are planned and actual values still distinct?
-
-### Interaction
-- Are touch targets at least 48 dp?
-- Does back navigation behave normally on Android?
-- Does text wrap at larger font sizes?
-- Does the screen remain usable on narrow devices?
-
-### Consistency
-- Does it reuse shared theme/components?
-- Are spacing, typography and radius tokens consistent?
-- Is a new color/component genuinely necessary?
-
----
-
-## 28. Rule for AI/Codex UI work
-
-Before making UI changes, an implementation agent must read this file and inspect the approved visual reference.
-
-It must:
-
-1. preserve domain behavior
-2. reuse the shared design system
-3. avoid introducing new colors/styles without a reason
-4. not invent metrics to match a mockup
-5. treat the reference as visual direction rather than product-data specification
-6. keep debug/simulation UI functional even if it is not visually polished
-7. report any requested design element that cannot be implemented faithfully because the required data does not exist
-
----
-
-## 29. Versioning
-
-When the design direction changes intentionally, update this document first or in the same change.
-
-Do not silently evolve the design system screen by screen.
-
-Suggested changelog convention:
-
-```text
-UI Rulebook v1.0 — Minimal dark/mint design system established
-```
+## 5. Copy rules (human voice)
+
+- Second person, present tense, short sentences, no jargon. "Keep it chatty." Not "Maintain conversational effort."
+- A coach text is 1 to 3 sentences: what happened, what it means, what is next.
+- Headlines are plain: "Easy does it today.", "How did it go?", "You're getting faster".
+- Numbers carry units in the label, not in a long sentence.
+- Do not use exclamation marks, emoji, or gamified language (streaks, badges, "crushed it").
+- Keep every existing safety and data wording (for example "This describes how the goal compares with observed data. It is not a prediction." and the "Health data stays on this device." line) unchanged.
+- Dates: use the device locale (the canvas shows English formats).
