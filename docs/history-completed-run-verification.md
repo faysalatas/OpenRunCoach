@@ -1,6 +1,6 @@
 # History and completed-run manual verification
 
-For the user to execute. No build, automated tests, or device verification was performed for this UI pass. Use existing real records; do not clear app data. Compare with `docs/UI/history-workout-detail-target.png`.
+For the user to execute. No build, automated tests, or device verification was performed for this UI pass. Use existing real records; do not clear app data. Compare with `docs/UI/legacy/history-workout-detail-target.png`.
 
 ## 1 — History with route
 

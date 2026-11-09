@@ -1,6 +1,6 @@
 # History / completed-run polish: manual verification
 
-For the user to execute. No Gradle, automated tests, installation, or device verification was executed for this pass. Compare against `docs/UI/history-workout-detail-target.png`. Existing health records must not be cleared.
+For the user to execute. No Gradle, automated tests, installation, or device verification was executed for this pass. Compare against `docs/UI/legacy/history-workout-detail-target.png`. Existing health records must not be cleared.
 
 The later [final visual polish checklist](completed-run-final-polish-verification.md) supersedes visual layout expectations here: chart diagnostics now live in Recording diagnostics, the selector is a pill, and split ranking metrics are removed. Data/calculation/provider regression checks below still apply.
 
