@@ -43,6 +43,11 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import com.example.openruncoach.theme.OpenRunColors
+import com.example.openruncoach.theme.LocalOpenRunPalette
+import com.example.openruncoach.theme.OpenRunType
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import com.example.openruncoach.theme.OpenRunShapeTokens
 import com.example.openruncoach.theme.OpenRunSpacing
 
@@ -61,7 +66,7 @@ fun OpenRunCard(
   modifier: Modifier = Modifier,
   highlighted: Boolean = false,
   contentPadding: PaddingValues = PaddingValues(OpenRunSpacing.CardContent),
-  contentSpacing: Dp = OpenRunSpacing.Compact,
+  contentSpacing: Dp = 10.dp,
   content: @Composable ColumnScope.() -> Unit,
 ) {
   Card(
@@ -69,12 +74,11 @@ fun OpenRunCard(
     shape = OpenRunShapeTokens.Card,
     colors = CardDefaults.cardColors(
       containerColor = if (highlighted) {
-        MaterialTheme.colorScheme.surfaceContainerHighest
+        LocalOpenRunPalette.current.chip
       } else {
-        MaterialTheme.colorScheme.surfaceContainerHigh
+        LocalOpenRunPalette.current.card
       },
     ),
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
   ) {
     Column(
@@ -96,7 +100,8 @@ fun OpenRunSectionHeader(
     horizontalArrangement = Arrangement.SpaceBetween,
     verticalAlignment = Alignment.CenterVertically,
   ) {
-    Text(title, style = MaterialTheme.typography.titleLarge)
+    Text(title.uppercase(), modifier = Modifier.weight(1f).padding(start = 4.dp, top = 4.dp),
+      style = OpenRunType.eyebrow, color = LocalOpenRunPalette.current.muted)
     trailing?.invoke(this)
   }
 }
@@ -117,10 +122,13 @@ fun OpenRunMetric(
   value: String,
   label: String,
   modifier: Modifier = Modifier,
+  onHero: Boolean = false,
 ) {
+  val p = LocalOpenRunPalette.current
   Column(modifier, verticalArrangement = Arrangement.spacedBy(OpenRunSpacing.Micro)) {
-    Text(value, style = MaterialTheme.typography.headlineSmall)
-    Text(label, style = MaterialTheme.typography.labelMedium, color = OpenRunColors.TextMuted)
+    Text(value, style = if (onHero) OpenRunType.heroMetric else OpenRunType.miniValue,
+      color = if (onHero) p.onHero else p.ink)
+    Text(label, style = OpenRunType.caption, color = if (onHero) p.onHeroSecondary else p.muted)
   }
 }
 
@@ -143,31 +151,29 @@ fun OpenRunMetricGroup(
   }
 }
 
-enum class OpenRunStatusTone { NEUTRAL, POSITIVE, WARNING, ERROR }
+enum class OpenRunStatusTone { NEUTRAL, POSITIVE, ON_HERO, WARNING, ERROR }
 
 @Composable
 fun OpenRunStatusChip(
   text: String,
   modifier: Modifier = Modifier,
   tone: OpenRunStatusTone = OpenRunStatusTone.NEUTRAL,
+  showCheck: Boolean = tone == OpenRunStatusTone.POSITIVE,
 ) {
+  val p = LocalOpenRunPalette.current
   val (container, content) = when (tone) {
-    OpenRunStatusTone.NEUTRAL -> MaterialTheme.colorScheme.surfaceContainerHighest to MaterialTheme.colorScheme.onSurfaceVariant
-    OpenRunStatusTone.POSITIVE -> OpenRunColors.AccentContainer to OpenRunColors.Positive
+    OpenRunStatusTone.NEUTRAL -> p.chip to p.ink
+    OpenRunStatusTone.POSITIVE -> p.goodBg to p.good
+    OpenRunStatusTone.ON_HERO -> p.onHeroChip to p.onHero
     OpenRunStatusTone.WARNING -> OpenRunColors.Warning.copy(alpha = 0.14f) to OpenRunColors.Warning
-    OpenRunStatusTone.ERROR -> OpenRunColors.Error.copy(alpha = 0.14f) to OpenRunColors.Error
+    OpenRunStatusTone.ERROR -> MaterialTheme.colorScheme.error.copy(alpha = 0.14f) to MaterialTheme.colorScheme.error
   }
-  Surface(
-    modifier = modifier,
-    shape = OpenRunShapeTokens.Compact,
-    color = container,
-    contentColor = content,
-  ) {
-    Text(
-      text,
-      modifier = Modifier.padding(horizontal = OpenRunSpacing.Compact, vertical = OpenRunSpacing.Small),
-      style = MaterialTheme.typography.labelMedium,
-    )
+  Surface(modifier = modifier, shape = OpenRunShapeTokens.Chip, color = container, contentColor = content) {
+    Row(Modifier.heightIn(min = 32.dp).padding(horizontal = 12.dp, vertical = 5.dp),
+      horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+      if (showCheck) OpenRunGlyph(Glyph.Check, content, Modifier.size(16.dp))
+      Text(text, style = OpenRunType.meta.copy(fontWeight = FontWeight.SemiBold))
+    }
   }
 }
 
@@ -196,7 +202,7 @@ fun OpenRunTabs(
             Text(
               label,
               style = MaterialTheme.typography.labelLarge,
-              color = if (selected) MaterialTheme.colorScheme.primary else OpenRunColors.TextMuted,
+              color = if (selected) MaterialTheme.colorScheme.primary else LocalOpenRunPalette.current.muted,
             )
           }
           Box(
@@ -224,7 +230,7 @@ fun OpenRunTabs(
           Text(
             label,
             style = MaterialTheme.typography.labelLarge,
-            color = if (selected) MaterialTheme.colorScheme.primary else OpenRunColors.TextMuted,
+            color = if (selected) MaterialTheme.colorScheme.primary else LocalOpenRunPalette.current.muted,
           )
         }
         Box(
@@ -275,24 +281,30 @@ fun OpenRunSection(title: String, content: @Composable ColumnScope.() -> Unit) {
   }
 }
 
+/** Shared KeyValueRow, retaining the existing public name and call sites. */
 @Composable
-fun OpenRunEvidenceRow(label: String, value: String) {
-  Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(OpenRunSpacing.Standard)) {
-    Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
-      color = MaterialTheme.colorScheme.onSurfaceVariant)
-    Text(value, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+fun OpenRunEvidenceRow(label: String, value: String, firstRow: Boolean = true) {
+  val p = LocalOpenRunPalette.current
+  BoxWithConstraints(Modifier.fillMaxWidth()) {
+    val stack = maxWidth < 280.dp * LocalDensity.current.fontScale
+    Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+      if (!firstRow) HorizontalDivider(color = p.line)
+      if (stack) {
+        Text(label, style = OpenRunType.bodySm, color = p.muted)
+        Text(value, style = OpenRunType.bodySm.copy(fontWeight = FontWeight.SemiBold), color = p.ink)
+      } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text(label, Modifier.weight(1f), style = OpenRunType.bodySm, color = p.muted)
+        Text(value, Modifier.weight(1f), style = OpenRunType.bodySm.copy(fontWeight = FontWeight.SemiBold),
+          color = p.ink, textAlign = TextAlign.End)
+      }
+    }
   }
 }
 
 @Composable
 fun OpenRunDisclosure(title: String, content: @Composable ColumnScope.() -> Unit) {
   var expanded by rememberSaveable { mutableStateOf(false) }
-  Column {
-    androidx.compose.material3.TextButton(onClick = { expanded = !expanded }) {
-      Text(if (expanded) "Hide $title" else title)
-    }
-    if (expanded) Column(verticalArrangement = Arrangement.spacedBy(OpenRunSpacing.Small), content = content)
-  }
+  OpenRunDisclosureRow(title, expanded, onClick = { expanded = !expanded }, content = content)
 }
 
 @Composable
@@ -307,12 +319,13 @@ fun OpenRunPrimaryButton(
     modifier = modifier.heightIn(min = 48.dp),
     enabled = enabled,
     shape = OpenRunShapeTokens.Button,
+    elevation = null,
     colors = ButtonDefaults.buttonColors(
-      containerColor = MaterialTheme.colorScheme.primary,
-      contentColor = MaterialTheme.colorScheme.onPrimary,
+      containerColor = LocalOpenRunPalette.current.hero,
+      contentColor = LocalOpenRunPalette.current.onHero,
     ),
   ) {
-    Text(text, style = MaterialTheme.typography.labelLarge)
+    Text(text, style = OpenRunType.title)
   }
 }
 
@@ -328,9 +341,10 @@ fun OpenRunSecondaryButton(
     modifier = modifier.heightIn(min = 48.dp),
     enabled = enabled,
     shape = OpenRunShapeTokens.Button,
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    border = BorderStroke(1.5.dp, LocalOpenRunPalette.current.line),
+    colors = ButtonDefaults.outlinedButtonColors(contentColor = LocalOpenRunPalette.current.ink),
   ) {
-    Text(text, style = MaterialTheme.typography.labelLarge)
+    Text(text, style = OpenRunType.title)
   }
 }
 
