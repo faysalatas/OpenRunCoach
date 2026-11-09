@@ -2,7 +2,7 @@
 
 **Status:** Proposed design source of truth (replaces UI Rulebook v1.2 once step 0 lands)
 **Audience:** Codex (or any coding agent) implementing the redesign in Jetpack Compose
-**Canvas:** "OpenRunCoach Concept" design canvas. One board per screen, light and dark, 390 dp wide. Board names are listed in section 5.
+**Canvas:** "OpenRunCoach Concept" design canvas. One board per screen, light and dark, 390 dp wide. Board names are listed in section 5. Exported copies live in `docs/UI/redesign/`.
 
 Read `AGENTS.md`, `docs/repository-workflow.md` and `docs/OpenRunCoach_UI_RULEBOOK.md` first. This spec overrides the rulebook where they conflict. Product logic, ViewModels, repositories and domain models stay as they are.
 
@@ -58,6 +58,7 @@ Put these in `theme/` next to the existing tokens. Extend `OpenRunColors` or add
 | `hero` | `#BF4318` | `#A63B15` | Hero background, primary button |
 | `accent` | `#BF4318` | `#FF8A5C` | Chart fills, selected progress |
 | `accentText` | `#BF4318` | `#FF9A6B` | Accent text, active tab |
+| `onAccent` | `#FFFFFF` | `#1C1411` | Text and icons on `accent` fills (white on `#FF8A5C` fails contrast) |
 | `good` | `#2F6B4F` | `#8FD6AE` | Good news text, improving trends |
 | `goodBg` | `#DDEEE3` | `#233A2E` | Good-news chip background |
 | `chip` | `#EFE4D5` | `#3A2C24` | Neutral chip background |
@@ -71,6 +72,8 @@ Put these in `theme/` next to the existing tokens. Extend `OpenRunColors` or add
 
 On the hero (both themes): primary text `#FFFFFF`, secondary text `#FFE2D2`, translucent chip `#FFFFFF` at 20%, lane lines `#FFFFFF` at 15%.
 Other workout types (tempo, threshold, intervals, strides, race) keep their existing colors from `OpenRunColors`, adjusted for contrast on `card`.
+
+Rule: filled selected states (week chip, selected date card check) use `accent` + `onAccent`. Primary buttons and the hero use `hero` + white.
 
 Contrast checked: white on `#BF4318` is about 5.4:1. White on `#A63B15` is above 6:1. Muted text on `bg` is at least 4.5:1 in both themes. Keep it that way if you change a value.
 
@@ -210,24 +213,26 @@ New:
 
 ## 5. Screens
 
-Board names refer to the canvas. "L" = light, "D" = dark. Same composition in both.
+Board names refer to the canvas (each board has a light and a dark version, titled e.g. "Plan · light"). Same composition in both.
+
+**Reference files** (in the repo under `docs/UI/redesign/`): `design-tokens.json` (all colors and sizes), `sources/<Board>.dc.html` (exact markup per board, e.g. `Plan2.dc.html` light, `PlanDark.dc.html` dark), and PNG exports named `<screen>-light.png` / `<screen>-dark.png`. If a PNG and this spec disagree, ask; do not guess. If tokens in `design-tokens.json` and section 2 disagree, section 2 wins.
 
 | Screen | Board (L / D) | Kotlin file today |
 |---|---|---|
-| Today (before run) | Today v2 / Today v2 dark | `ui/home/HomeScreen.kt` |
-| Today (after run) | Today after run / dark | `HomeScreen.kt` |
-| Today (rest day) | Today rest day / dark | `HomeScreen.kt` |
-| Plan | Plan v2 / dark | `ui/plan/PlanScreen.kt` |
-| Runs | Runs v2 / dark | `ui/history/HistoryScreen.kt` |
-| Run detail | Run detail v2 / dark | `ui/health/RunDetailScreen.kt` |
-| Post-run checkout | Post-run checkout / dark | `RunDetailScreen.kt` (inline today) |
-| Coach analysis | Coach insight / dark | `ui/coach/CoachDetailScreen.kt` |
-| Workout detail | Workout detail / dark | `ui/workout/WorkoutDetailScreen.kt` |
-| Goal date | Goal / dark | `ui/goal/GoalScreen.kt` |
-| New goal (step 2 of 5) | New goal / dark | `GoalScreen.kt` |
-| Performance profile | Performance profile / dark | `ui/profile/PerformanceProfileScreen.kt` |
-| Settings | Settings / dark | `ui/settings/SettingsScreen.kt` |
-| Health data inspector | Health data inspector / dark | `ui/inspection/HealthDataInspectorScreen.kt` |
+| Today (before run) | Today · before run | `ui/home/HomeScreen.kt` |
+| Today (after run) | Today · after run | `HomeScreen.kt` |
+| Today (rest day) | Today · rest day | `HomeScreen.kt` |
+| Plan | Plan | `ui/plan/PlanScreen.kt` |
+| Runs | Runs | `ui/history/HistoryScreen.kt` |
+| Run detail | Run detail | `ui/health/RunDetailScreen.kt` |
+| Post-run checkout | Post-run checkout | `RunDetailScreen.kt` (inline today) |
+| Coach analysis | Coach insight | `ui/coach/CoachDetailScreen.kt` |
+| Workout detail | Workout detail | `ui/workout/WorkoutDetailScreen.kt` |
+| Goal date | Goal date | `ui/goal/GoalScreen.kt` |
+| New goal (step 2 of 5) | New goal | `GoalScreen.kt` |
+| Performance profile | Performance profile | `ui/profile/PerformanceProfileScreen.kt` |
+| Settings | Settings | `ui/settings/SettingsScreen.kt` |
+| Health data inspector | Health data inspector | `ui/inspection/HealthDataInspectorScreen.kt` |
 
 All screens are one vertical scroll (`LazyColumn` or `Column` + `verticalScroll`) inside the hero + body structure. No tabs inside screens (except where noted).
 
@@ -259,7 +264,7 @@ Hero (title "Complete 10K", eyebrow `TRAINING PLAN`, subline `Completion Run Sat
 
 1. Card "Longest run, toward 10 km" with `LongRunBars`.
 2. Card "Weekly distance" with `WeeklyDistanceBars` and a one-line explanation.
-3. Horizontal scroller of week `OptionChip`s (Week 1 …). Selected = `hero` fill with white text.
+3. Horizontal scroller of week `OptionChip`s (Week 1 …). Selected = `accent` fill with `onAccent` text (matches the PNG).
 4. Row: "Week 2 · Nov 2–8" and `done of planned km`.
 5. `WorkoutRow`s for the week (done, done, done, today).
 6. `SectionLabel` "WHY THIS WEEK" + `body` text (existing plan explanation).

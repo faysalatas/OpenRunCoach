@@ -1,6 +1,6 @@
 # Completed Run Detail — final visual polish verification
 
-For the user to execute against `docs/UI/history-workout-detail-target.png`.
+For the user to execute against `docs/UI/legacy/history-workout-detail-target.png`.
 This pass ran no Gradle tasks, automated tests, installation, or device verification.
 Keep existing records; no reset, uninstall, or data clearing is needed.
 
