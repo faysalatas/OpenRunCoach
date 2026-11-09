@@ -8,7 +8,7 @@ The long-term goal is a transparent, explainable running coach inspired by feedb
 
 - Native Android app written in Kotlin and Jetpack Compose
 - System-following light/dark Material 3 theme with a warm terracotta palette and bundled Bricolage Grotesque / Inter fonts (screen migration in progress)
-- Bottom navigation with Home, History, Plan, and Settings
+- Bottom navigation with Today (`home`), Plan (`plan`), and Runs (`history`); Settings opens from the Today hero
 - Week and day selector with run indicators
 - Read-only Health Connect integration
 - Compatibility with Samsung Health and Galaxy Watch workouts when Samsung Health exposes them through Health Connect
@@ -570,4 +570,6 @@ Step 0 establishes [UI Rulebook v2.0](docs/OpenRunCoach_UI_RULEBOOK.md) from the
 
 Step 1 implements the shared light/dark palette (`LocalOpenRunPalette`, including `onAccent`), Material 3 mappings, tabular typography, spacing and shape tokens. Fonts are bundled offline with [licenses and provenance](docs/fonts/README.md). The theme follows the system by default; callers can still supply an explicit theme for previews. The [theme token gallery](app/src/main/java/com/example/openruncoach/theme/ThemePreview.kt) shows both themes without app data. Existing static `OpenRunColors` callers retain compatibility aliases to the dark palette until their scheduled component/screen migration; Step 1 does not complete screen-level light-theme styling. See [Step 1 verification and screenshots](docs/theme-step-1-verification.md).
 
-Step 2 evolves the existing [shared visuals](app/src/main/java/com/example/openruncoach/ui/components/AppVisuals.kt) and adds the fading hero/track lanes, option and hero controls, responsive list rows, mini stats and seven Canvas-only chart primitives. All charts require an accessible description. Missing line samples leave gaps; absent chart/stat data stays hidden. Split bars use `speed / fastestSpeed`, with no exaggeration or minimum width. [Gallery screenshots and verification](docs/primitives-step-2-verification.md) cover light/dark themes at 100%, 130% and 200% fonts. Existing screens, routes and navigation are unchanged; Step 3 has not started.
+Step 2 evolves the existing [shared visuals](app/src/main/java/com/example/openruncoach/ui/components/AppVisuals.kt) and adds the fading hero/track lanes, option and hero controls, responsive list rows, mini stats and seven Canvas-only chart primitives. All charts require an accessible description. Missing line samples leave gaps; absent chart/stat data stays hidden. Split bars use `speed / fastestSpeed`, with no exaggeration or minimum width. [Gallery screenshots and verification](docs/primitives-step-2-verification.md) cover light/dark themes at 100%, 130% and 200% fonts.
+
+Step 3 adds the three-tab navigation shell (Today, Plan, Runs), a Settings entry in the Today hero, and edge-to-edge hero/status-bar handling. Existing route strings remain available. The new `run-checkout?runId=` destination is a stub linking to the existing run-details checkout; it does not save feedback itself. Today retains its existing body until Step 4. See [light/dark screenshots and route verification](docs/navigation-step-3-verification.md).

@@ -3,6 +3,13 @@ package com.example.openruncoach
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBarsPadding
+import com.example.openruncoach.ui.components.*
+import com.example.openruncoach.theme.LocalOpenRunPalette
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -27,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
+import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -60,32 +68,26 @@ private object Routes {
   const val WORKOUT_DETAIL = "planned-workout"
   const val RUN_ID = "runId"
   const val WORKOUT_ID = "workoutId"
+  const val RUN_CHECKOUT = "run-checkout"
 }
 
-private data class BottomDestination(val route: String, val label: String, val icon: Int)
-
-private val bottomDestinations = listOf(
-  BottomDestination(Routes.HOME, "Home", R.drawable.ic_nav_home),
-  BottomDestination(Routes.HISTORY, "History", R.drawable.ic_nav_history),
-  BottomDestination(Routes.PLAN, "Plan", R.drawable.ic_nav_plan),
-  BottomDestination(Routes.SETTINGS, "Settings", R.drawable.ic_nav_settings),
-)
-
 @Composable
-fun MainNavigation() {
+fun MainNavigation(navController: NavHostController = rememberNavController()) {
   val environment = LocalOpenRunCoachEnvironment.current
-  val navController = rememberNavController()
   val backStackEntry by navController.currentBackStackEntryAsState()
   val currentDestination = backStackEntry?.destination
-  val showBottomBar = bottomDestinations.any { destination ->
-    currentDestination?.hierarchy?.any { it.route == destination.route } == true
-  }
+  val currentRoute = currentDestination?.route
+  val showBottomBar = showsBottomBar(currentRoute)
+  val heroScreen = routeHasHero(currentRoute)
+  NavigationSystemBars(heroScreen)
 
   Scaffold(
+    containerColor = LocalOpenRunPalette.current.bg,
+    contentWindowInsets = WindowInsets(0, 0, 0, 0),
     topBar = {
       if (environment.isSimulation) {
         Surface(
-          modifier = Modifier.fillMaxWidth(),
+          modifier = Modifier.fillMaxWidth().statusBarsPadding(),
           color = MaterialTheme.colorScheme.tertiaryContainer,
         ) {
           Text(
@@ -97,47 +99,13 @@ fun MainNavigation() {
       }
     },
     bottomBar = {
-      if (showBottomBar) {
-        Column {
-          HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
-          NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
-            bottomDestinations.forEach { destination ->
-              val selected = currentDestination?.hierarchy?.any { it.route == destination.route } == true
-              NavigationBarItem(
-                selected = selected,
-                colors = NavigationBarItemDefaults.colors(
-                  selectedIconColor = MaterialTheme.colorScheme.primary,
-                  selectedTextColor = MaterialTheme.colorScheme.primary,
-                  indicatorColor = Color.Transparent,
-                  unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                  unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                ),
-                onClick = {
-                  if (!selected) {
-                    if (destination.route == Routes.HOME) {
-                      navController.popBackStack(Routes.HOME, inclusive = false, saveState = true)
-                    } else {
-                      navController.navigate(destination.route) {
-                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                        launchSingleTop = true
-                        restoreState = true
-                      }
-                    }
-                  }
-                },
-                icon = {
-                  Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(painterResource(destination.icon), contentDescription = null)
-                    Box(
-                      Modifier.padding(top = 3.dp).width(18.dp).height(2.dp).background(
-                        if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                      ),
-                    )
-                  }
-                },
-                label = { Text(destination.label, style = MaterialTheme.typography.labelSmall) },
-              )
-            }
+      if (showBottomBar) OpenRunBottomBar(currentRoute) { route ->
+        if (route != currentRoute) {
+          if (route == Routes.HOME) navController.popBackStack(Routes.HOME, inclusive = false, saveState = true)
+          else navController.navigate(route) {
+            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
           }
         }
       }
@@ -146,11 +114,17 @@ fun MainNavigation() {
     NavHost(
       navController = navController,
       startDestination = Routes.HOME,
-      modifier = Modifier.padding(innerPadding),
+      modifier = Modifier.padding(
+        top = if (environment.isSimulation) innerPadding.calculateTopPadding() else if (heroScreen) 0.dp
+          else WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
+        bottom = if (showBottomBar) innerPadding.calculateBottomPadding()
+          else WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
+      ),
     ) {
       composable(Routes.HOME) {
         HomeScreen(
           onViewPlan = { navController.navigate(Routes.PLAN) },
+          onOpenSettings = { navController.navigate(Routes.SETTINGS) },
           onOpenDetailedProgress = { navController.navigate(Routes.PERFORMANCE_PROFILE) },
         )
       }
@@ -215,6 +189,16 @@ fun MainNavigation() {
         )
       }
       composable(
+        route = "${Routes.RUN_CHECKOUT}?${Routes.RUN_ID}={${Routes.RUN_ID}}",
+        arguments = listOf(navArgument(Routes.RUN_ID) { type = NavType.StringType }),
+      ) { entry ->
+        RunCheckoutStub(
+          runId = entry.arguments?.getString(Routes.RUN_ID).orEmpty(),
+          onBack = navController::navigateUp,
+          onOpenRun = { id -> navController.navigate(runDetailRoute(id)) },
+        )
+      }
+      composable(
         route = "${Routes.COACH_DETAIL}?${Routes.RUN_ID}={${Routes.RUN_ID}}",
         arguments = listOf(navArgument(Routes.RUN_ID) { type = NavType.StringType }),
       ) { entry ->
@@ -234,3 +218,19 @@ private fun coachDetailRoute(runId: String) = "${Routes.COACH_DETAIL}?${Routes.R
 private fun dataInspectorRoute(runId: String) = "${Routes.DATA_INSPECTOR}?${Routes.RUN_ID}=${Uri.encode(runId)}"
 
 private fun workoutDetailRoute(workoutId: String) = "${Routes.WORKOUT_DETAIL}?${Routes.WORKOUT_ID}=${Uri.encode(workoutId)}"
+
+/** Step 3 destination only; the existing run-detail checkout remains available unchanged. */
+@Composable
+internal fun RunCheckoutStub(runId: String, onBack: () -> Unit, onOpenRun: (String) -> Unit) {
+  Column {
+    OpenRunHero("Post-run checkout", backLabel = "Run", onBack = onBack)
+    OpenRunHeroBody {
+      OpenRunCard {
+        Text("Open run details to complete or edit your checkout.")
+        OpenRunPrimaryButton("Open run details", { onOpenRun(runId) })
+      }
+    }
+  }
+}
+
+internal fun runCheckoutRoute(runId: String) = "${Routes.RUN_CHECKOUT}?${Routes.RUN_ID}=${Uri.encode(runId)}"
