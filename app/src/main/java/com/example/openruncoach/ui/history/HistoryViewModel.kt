@@ -2,6 +2,8 @@ package com.example.openruncoach.ui.history
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.openruncoach.data.AthletePerformanceProfileRepository
+import com.example.openruncoach.domain.profile.AthletePerformanceProfile
 import com.example.openruncoach.data.RunRepository
 import com.example.openruncoach.data.RunRouteRepository
 import com.example.openruncoach.data.WorkoutExecutionRepository
@@ -17,6 +19,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 
 data class HistoryRunItem(
@@ -35,6 +38,8 @@ data class HistoryUiState(
   val errorMessage: String? = null,
   val showIgnored: Boolean = false,
   val ignoredCount: Int = 0,
+  val profile: AthletePerformanceProfile? = null,
+  val completedWorkoutTypesByRunId: Map<String, WorkoutType> = emptyMap(),
 )
 
 class HistoryViewModel(
@@ -42,6 +47,7 @@ class HistoryViewModel(
   runRouteRepository: RunRouteRepository,
   private val workoutExecutionRepository: WorkoutExecutionRepository,
   zoneId: ZoneId = ZoneId.systemDefault(),
+  profileRepository: AthletePerformanceProfileRepository? = null,
 ) : ViewModel() {
   private val showIgnored = MutableStateFlow(false)
 
@@ -75,7 +81,10 @@ class HistoryViewModel(
       groups = groups,
       showIgnored = showingIgnored,
       ignoredCount = ignored.size,
+      completedWorkoutTypesByRunId = workoutExecutionRepository.getCompletedWorkoutTypesByRunId(),
     )
+  }.combine(profileRepository?.observeProfile()?.catch { emit(null) } ?: flowOf(null)) { state, profile ->
+    state.copy(profile = profile)
   }.catch {
     emit(HistoryUiState(isLoading = false, errorMessage = "Could not load run history."))
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HistoryUiState())
