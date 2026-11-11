@@ -31,7 +31,7 @@ internal val bottomDestinations = listOf(
 )
 
 internal fun showsBottomBar(route: String?) = bottomDestinations.any { it.route == route }
-internal fun routeHasHero(route: String?) = route == "home" || route?.startsWith("run-checkout?") == true
+internal fun routeHasHero(route: String?) = route == "home" || route == "plan" || route?.startsWith("run-checkout?") == true
 
 @Composable
 internal fun OpenRunBottomBar(selectedRoute: String?, onSelect: (String) -> Unit) {
