@@ -4,6 +4,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.*
+import com.example.openruncoach.theme.*
+import com.example.openruncoach.ui.components.OpenRunCard
+import com.example.openruncoach.ui.components.OpenRunDisclosure
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -57,96 +61,37 @@ import kotlin.math.roundToInt
 @Composable
 fun RunChartsSection(
   metrics: RunMetrics,
-  charts: RunChartData,
+  charts: RunChartData?,
   paceTarget: PaceTarget? = null,
   chartHeight: Dp = 108.dp,
 ) {
-  val colors = LocalRunChartColors.current
-  val available = listOfNotNull(
-    charts.pace?.takeIf(::hasDrawableSeries)?.let { "Pace" },
-    charts.heartRate?.takeIf(::hasDrawableSeries)?.let { "Heart Rate" },
-    charts.cadence?.takeIf(::hasDrawableSeries)?.let { "Cadence" },
-  )
-  if (available.isEmpty()) return
-  var selected by rememberSaveable { mutableStateOf("Pace") }
-  val active = selected.takeIf { it in available } ?: available.first()
-  Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-    if (available.size > 1) ChartMetricSelector(available, active) { selected = it }
-    if (active == "Pace") charts.pace?.let { chart ->
-      ChartSection(
-        title = "Pace",
-        subtitle = "min/km",
-        chart = chart,
-        durationSeconds = charts.durationSeconds,
-        color = colors.pace,
-        targetRange = paceTarget,
-        height = chartHeight,
-      )
-      RunComparisonSummary(
-        firstValue = charts.averagePaceSecondsPerKm?.let { formatPace(it).replace(" min/km", " /km") },
-        firstLabel = "Average pace",
-        secondValue = paceTarget?.let { "${paceClock(it.minimumSecondsPerKm)}–${paceClock(it.maximumSecondsPerKm)} /km" },
-        secondLabel = "Target range",
-        accentSecond = paceTarget != null,
-        targetKey = paceTarget != null,
-      )
-    }
-    if (active == "Heart Rate") charts.heartRate?.let { chart ->
-      ChartSection(
-        title = "Heart Rate",
-        subtitle = "bpm",
-        chart = chart,
-        durationSeconds = charts.durationSeconds,
-        color = colors.heartRate,
-        height = chartHeight,
-      )
-      RunComparisonSummary(
-        metrics.averageHeartRate?.value?.let { "${it.roundToInt()} bpm" }, "Average HR",
-        metrics.maxHeartRate?.value?.let { "${it.roundToInt()} bpm" }, "Max HR",
-      )
-    }
-    if (active == "Cadence") charts.cadence?.let { chart ->
-      ChartSection(
-        title = "Cadence",
-        subtitle = "spm",
-        chart = chart,
-        durationSeconds = charts.durationSeconds,
-        color = colors.cadence,
-        height = chartHeight,
-      )
-      RunComparisonSummary(
-        (metrics.movingAverageCadence ?: metrics.averageCadence)?.value?.let { "${it.roundToInt()} spm" },
-        if (metrics.movingAverageCadence != null) "Avg. moving cadence" else "Average cadence",
-        metrics.maxCadence?.value?.let { "${it.roundToInt()} spm" }, "Max cadence",
-      )
-    }
-  }
-}
-
-@Composable
-private fun ChartMetricSelector(labels: List<String>, selected: String, onSelected: (String) -> Unit) {
-  val shape = RoundedCornerShape(16.dp)
-  val segmentShape = RoundedCornerShape(12.dp)
-  Row(Modifier.fillMaxWidth().clip(shape)
-    .background(MaterialTheme.colorScheme.surfaceContainerHigh).selectableGroup()) {
-    labels.forEach { label ->
-      val active = label == selected
-      Box(
-        Modifier.weight(1f).heightIn(min = 48.dp)
-          .selectable(active, onClick = { onSelected(label) }, role = Role.Tab).padding(3.dp),
-        contentAlignment = Alignment.Center,
-      ) {
-        Box(
-          Modifier.fillMaxWidth()
-            .background(if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.06f) else Color.Transparent, segmentShape)
-            .border(1.dp, if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f) else Color.Transparent, segmentShape)
-            .padding(horizontal = 4.dp, vertical = 6.dp),
-          contentAlignment = Alignment.Center,
-        ) {
-          Text(label, style = MaterialTheme.typography.labelMedium,
-            color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+  val p = LocalOpenRunPalette.current
+  Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    charts?.pace?.takeIf(::hasDrawableSeries)?.let { chart -> OpenRunCard {
+      FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text("Pace", style = OpenRunType.title)
+        charts?.averagePaceSecondsPerKm?.let { Text("avg ${paceClock(it)} /km", style = OpenRunType.meta, color = p.muted) }
       }
+      ChartSection("Pace", "min/km", chart, (charts?.durationSeconds ?: metrics.durationSeconds.value), p.accent, chartHeight, paceTarget)
+      Text(if (paceTarget != null) "Shaded: target range. Higher means faster." else "Higher means faster.", style = OpenRunType.meta, color = p.muted)
+      paceTarget?.let { Text("Target ${paceClock(it.minimumSecondsPerKm)}–${paceClock(it.maximumSecondsPerKm)} /km", style = OpenRunType.meta, color = p.muted) }
+    } }
+    val hrChart = charts?.heartRate?.takeIf(::hasDrawableSeries)
+    if (hrChart != null || metrics.averageHeartRate != null || metrics.maxHeartRate != null) OpenRunCard {
+      FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text("Heart rate", style = OpenRunType.title)
+        val hr = listOfNotNull(metrics.averageHeartRate?.value?.let { "avg ${it.roundToInt()}" }, metrics.maxHeartRate?.value?.let { "max ${it.roundToInt()}" }).joinToString(" · ")
+        if (hr.isNotBlank()) Text("$hr bpm", style = OpenRunType.meta, color = p.muted)
+      }
+      hrChart?.let { ChartSection("Heart rate", "bpm", it, (charts?.durationSeconds ?: metrics.durationSeconds.value), p.heart, chartHeight) }
+    }
+    val cadence = charts?.cadence?.takeIf(::hasDrawableSeries)
+    if (cadence != null || metrics.averageCadence != null || metrics.movingAverageCadence != null || metrics.maxCadence != null) OpenRunCard {
+      Text("Cadence", style = OpenRunType.title)
+      val values = listOfNotNull(metrics.movingAverageCadence?.value?.let { "${it.roundToInt()} spm moving avg" },
+        metrics.averageCadence?.value?.let { "${it.roundToInt()} spm session avg" }, metrics.maxCadence?.value?.let { "${it.roundToInt()} spm max" }).joinToString(" · ")
+      if (values.isNotBlank()) Text(values, style = OpenRunType.meta, color = p.muted)
+      cadence?.let { OpenRunDisclosure("Cadence chart") { ChartSection("Cadence", "spm", it, (charts?.durationSeconds ?: metrics.durationSeconds.value), p.accent, chartHeight) } }
     }
   }
 }
@@ -236,9 +181,10 @@ private fun LineChart(
   axisWidth: Dp,
   targetRange: PaceTarget? = null,
 ) {
-  val gridColor = LocalRunChartColors.current.grid
-  val referenceColor = LocalRunChartColors.current.reference
-  val surfaceColor = MaterialTheme.colorScheme.surface
+  val gridColor = LocalOpenRunPalette.current.line
+  val referenceColor = LocalOpenRunPalette.current.muted
+  val palette = LocalOpenRunPalette.current
+  val surfaceColor = palette.card
   val points = remember(chart) { chart.points }
   val bounds = remember(chart) {
     val minimum = points.minOfOrNull { it.value } ?: 0.0
@@ -296,7 +242,7 @@ private fun LineChart(
         line to area
       }
       val fill = Brush.verticalGradient(listOf(lineColor.copy(alpha = 0.14f), Color.Transparent), endY = size.height)
-      val lineStroke = Stroke(width = 1.4.dp.toPx(), cap = StrokeCap.Round)
+      val lineStroke = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
       val dash = PathEffect.dashPathEffect(floatArrayOf(8.dp.toPx(), 6.dp.toPx()))
       onDrawBehind {
         gridFractions.forEach { fraction ->
@@ -309,7 +255,7 @@ private fun LineChart(
           val top = minOf(firstY, secondY).coerceIn(0f, size.height)
           val bottom = maxOf(firstY, secondY).coerceIn(0f, size.height)
           if (bottom > top) drawRect(
-            color = lineColor.copy(alpha = 0.07f),
+            color = palette.band,
             topLeft = Offset(0f, top),
             size = androidx.compose.ui.geometry.Size(size.width, bottom - top),
           )
@@ -325,7 +271,7 @@ private fun LineChart(
           )
         }
         paths.forEach { (line, area) ->
-          drawPath(area, fill)
+          // No area fill: recorded line and optional target band only.
           drawPath(line, lineColor, style = lineStroke)
         }
       }

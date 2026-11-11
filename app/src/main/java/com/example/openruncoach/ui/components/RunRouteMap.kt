@@ -21,7 +21,9 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.openruncoach.BuildConfig
 import com.example.openruncoach.domain.route.RunRoutePoint
-import com.example.openruncoach.theme.OpenRunColors
+import com.example.openruncoach.theme.LocalOpenRunPalette
+import com.example.openruncoach.theme.OpenRunPalette
+import androidx.compose.ui.platform.LocalInspectionMode
 import com.example.openruncoach.theme.OpenRunShapeTokens
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
@@ -51,14 +53,15 @@ fun RunRouteMap(
   modifier: Modifier = Modifier,
   configuration: RouteMapConfiguration = RouteMapConfiguration(BuildConfig.ROUTE_MAP_STYLE_URI),
 ) {
+  val palette = LocalOpenRunPalette.current
   val context = LocalContext.current
   val lifecycleOwner = LocalLifecycleOwner.current
   val geometry = remember(points) { prepareRouteMapGeometry(points) }
-  if (geometry == null || configuration.styleUri.isBlank()) {
+  if (geometry == null || configuration.styleUri.isBlank() || LocalInspectionMode.current) {
     RunRouteCanvas(points, modifier, RunRouteCanvasStyle.DETAIL)
     return
   }
-  val controller = remember(context, configuration, lifecycleOwner) { RouteMapController(context, configuration) }
+  val controller = remember(context, configuration, lifecycleOwner, palette) { RouteMapController(context, configuration, palette) }
   DisposableEffect(controller, lifecycleOwner) {
     val observer = LifecycleEventObserver { _, event ->
       when (event) {
@@ -85,7 +88,7 @@ fun RunRouteMap(
   }
 }
 
-private class RouteMapController(context: Context, configuration: RouteMapConfiguration) : ComponentCallbacks {
+private class RouteMapController(context: Context, configuration: RouteMapConfiguration, private val palette: OpenRunPalette) : ComponentCallbacks {
   private val applicationContext = context.applicationContext
   private var map: MapLibreMap? = null
   private var style: Style? = null
@@ -103,7 +106,7 @@ private class RouteMapController(context: Context, configuration: RouteMapConfig
   init {
     MapLibre.getInstance(applicationContext)
     view = MapView(context, MapLibreMapOptions.createFromAttributes(context)
-      .textureMode(true).foregroundLoadColor(OpenRunColors.Surface.toArgb())
+      .textureMode(true).foregroundLoadColor(palette.map.toArgb())
       .setPrefetchZoomDelta(0).compassEnabled(false).logoEnabled(false)
       .rotateGesturesEnabled(false).tiltGesturesEnabled(false).scrollGesturesEnabled(false)
       .zoomGesturesEnabled(false).doubleTapGesturesEnabled(false).quickZoomGesturesEnabled(false))
@@ -157,7 +160,7 @@ private class RouteMapController(context: Context, configuration: RouteMapConfig
     // Subdue only basemap layers, before adding the full-strength local route.
     style.layers.forEach { layer ->
       when (layer) {
-        is BackgroundLayer -> layer.setProperties(backgroundColor(OpenRunColors.Background.toArgb()))
+        is BackgroundLayer -> layer.setProperties(backgroundColor(palette.map.toArgb()))
         is LineLayer -> layer.setProperties(lineOpacity(0.6f))
         is SymbolLayer -> layer.setProperties(textOpacity(0.45f), iconOpacity(0.25f))
       }
@@ -166,11 +169,11 @@ private class RouteMapController(context: Context, configuration: RouteMapConfig
     style.addSource(GeoJsonSource(START_SOURCE))
     style.addSource(GeoJsonSource(FINISH_SOURCE))
     style.addLayer(LineLayer("run-route-line", ROUTE_SOURCE).withProperties(
-      lineColor(OpenRunColors.Accent.toArgb()), lineWidth(3f), lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND)))
+      lineColor(palette.accent.toArgb()), lineWidth(3f), lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND)))
     style.addLayer(CircleLayer("run-start", START_SOURCE).withProperties(
-      circleRadius(5f), circleColor(OpenRunColors.Accent.toArgb()), circleStrokeWidth(2f), circleStrokeColor(OpenRunColors.Surface.toArgb())))
+      circleRadius(5f), circleColor(palette.accent.toArgb()), circleStrokeWidth(2f), circleStrokeColor(palette.map.toArgb())))
     style.addLayer(CircleLayer("run-finish", FINISH_SOURCE).withProperties(
-      circleRadius(6f), circleColor(OpenRunColors.Surface.toArgb()), circleStrokeWidth(2f), circleStrokeColor(OpenRunColors.Accent.toArgb())))
+      circleRadius(6f), circleColor(palette.map.toArgb()), circleStrokeWidth(2f), circleStrokeColor(palette.accent.toArgb())))
   }
 
   private fun updateSources() {

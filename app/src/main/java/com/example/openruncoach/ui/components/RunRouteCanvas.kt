@@ -37,9 +37,9 @@ fun RunRouteCanvas(
   val background = if (style == RunRouteCanvasStyle.COMPACT) {
     palette.map
   } else {
-    palette.card
+    palette.map
   }
-  val shape = RoundedCornerShape(if (style == RunRouteCanvasStyle.COMPACT) 12.dp else 18.dp)
+  val shape = RoundedCornerShape(if (style == RunRouteCanvasStyle.COMPACT) 12.dp else 20.dp)
   Spacer(
     modifier
       .clip(shape)
