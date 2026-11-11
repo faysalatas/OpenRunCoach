@@ -41,6 +41,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.openruncoach.ui.coach.CoachDetailScreen
+import com.example.openruncoach.ui.health.RunCheckoutScreen
 import com.example.openruncoach.ui.health.RunDetailScreen
 import com.example.openruncoach.ui.history.HistoryScreen
 import com.example.openruncoach.ui.goal.GoalScreen
@@ -188,6 +189,7 @@ fun MainNavigation(navController: NavHostController = rememberNavController()) {
           onBack = navController::navigateUp,
           onInspectHealthData = { selectedRunId -> navController.navigate(dataInspectorRoute(selectedRunId)) },
           onCoachAnalysis = { selectedRunId -> navController.navigate(coachDetailRoute(selectedRunId)) },
+          onCheckout = { selectedRunId -> navController.navigate(runCheckoutRoute(selectedRunId)) },
         )
       }
       composable(
@@ -203,10 +205,9 @@ fun MainNavigation(navController: NavHostController = rememberNavController()) {
         route = "${Routes.RUN_CHECKOUT}?${Routes.RUN_ID}={${Routes.RUN_ID}}",
         arguments = listOf(navArgument(Routes.RUN_ID) { type = NavType.StringType }),
       ) { entry ->
-        RunCheckoutStub(
+        RunCheckoutScreen(
           runId = entry.arguments?.getString(Routes.RUN_ID).orEmpty(),
           onBack = navController::navigateUp,
-          onOpenRun = { id -> navController.navigate(runDetailRoute(id)) },
         )
       }
       composable(
@@ -229,19 +230,5 @@ private fun coachDetailRoute(runId: String) = "${Routes.COACH_DETAIL}?${Routes.R
 private fun dataInspectorRoute(runId: String) = "${Routes.DATA_INSPECTOR}?${Routes.RUN_ID}=${Uri.encode(runId)}"
 
 private fun workoutDetailRoute(workoutId: String) = "${Routes.WORKOUT_DETAIL}?${Routes.WORKOUT_ID}=${Uri.encode(workoutId)}"
-
-/** Step 3 destination only; the existing run-detail checkout remains available unchanged. */
-@Composable
-internal fun RunCheckoutStub(runId: String, onBack: () -> Unit, onOpenRun: (String) -> Unit) {
-  Column {
-    OpenRunHero("Post-run checkout", backLabel = "Run", onBack = onBack)
-    OpenRunHeroBody {
-      OpenRunCard {
-        Text("Open run details to complete or edit your checkout.")
-        OpenRunPrimaryButton("Open run details", { onOpenRun(runId) })
-      }
-    }
-  }
-}
 
 internal fun runCheckoutRoute(runId: String) = "${Routes.RUN_CHECKOUT}?${Routes.RUN_ID}=${Uri.encode(runId)}"

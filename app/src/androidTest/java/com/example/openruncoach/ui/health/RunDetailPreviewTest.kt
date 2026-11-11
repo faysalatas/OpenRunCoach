@@ -32,7 +32,7 @@ class RunDetailPreviewTest(private val dark: Boolean, private val scale: Float) 
       val config=Configuration(LocalConfiguration.current).apply { uiMode=if(dark) Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO; fontScale=scale }
       CompositionLocalProvider(LocalInspectionMode provides true,LocalConfiguration provides config,LocalDensity provides Density(LocalDensity.current.density,scale)) {
         OpenRunCoachTheme { RunDetailContent(RunDetailPreviewData.state(),RunDetailPreviewData.clock,
-          DetailActions(coach={clicks+="coach"},inspect={clicks+="inspect"},toggleRunRelevance={clicks+="visibility"}),scroll=scroll) }
+          DetailActions(coach={clicks+="coach"},inspect={clicks+="inspect"},checkout={clicks+="checkout"},toggleRunRelevance={clicks+="visibility"}),scroll=scroll) }
       }
     }
     compose.onNodeWithText("Overview").assertDoesNotExist()
@@ -54,6 +54,7 @@ class RunDetailPreviewTest(private val dark: Boolean, private val scale: Float) 
       compose.runOnIdle { scroll.dispatchRawDelta(height*.9f) }
       check(++page<40)
     }
+    compose.onNodeWithText("Post-run checkout").performScrollTo().performClick()
     compose.onNodeWithText("Coach analysis").performScrollTo().performClick()
     compose.onNodeWithText("Health data inspector").performScrollTo().performClick()
     compose.onNodeWithText("Data sources").performScrollTo().performClick()
@@ -64,7 +65,7 @@ class RunDetailPreviewTest(private val dark: Boolean, private val scale: Float) 
     compose.runOnIdle { assertFalse(clicks.contains("visibility")) }
     compose.onNodeWithText("Ignore run").performClick()
     compose.onNodeWithText("Confirm").performClick()
-    compose.runOnIdle { assertTrue(clicks.containsAll(listOf("coach","inspect","visibility"))) }
+    compose.runOnIdle { assertTrue(clicks.containsAll(listOf("checkout","coach","inspect","visibility"))) }
   }
   private fun capture(name:String) {
     val context=InstrumentationRegistry.getInstrumentation().targetContext
