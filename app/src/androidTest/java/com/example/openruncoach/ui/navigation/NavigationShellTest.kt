@@ -84,7 +84,7 @@ class NavigationShellTest {
     }
   }
 
-  @Test fun everyExistingRouteAndNewCheckoutStubStillOpens() {
+  @Test fun everyExistingRouteAndCheckoutStillOpens() {
     launch(false)
     val routes = listOf("home", "plan", "history", "settings", "performance-profile", "goal", "workout-preview",
       "planned-workout?workoutId=missing-fixture", "run?runId=missing-fixture", "data-inspector?runId=missing-fixture",
@@ -96,7 +96,24 @@ class NavigationShellTest {
       if (route in listOf("home", "plan", "history")) compose.onNodeWithTag("bottom-navigation").assertExists()
       else compose.onNodeWithTag("bottom-navigation").assertDoesNotExist()
     }
-    compose.onNodeWithText("Open run details").performClick()
-    compose.runOnIdle { assertEquals("run?runId={runId}", nav.currentDestination?.route) }
+    compose.onNodeWithText("Run").performClick()
+    compose.runOnIdle { assertEquals("simulator", nav.currentDestination?.route) }
   }
+  @Test fun runDetailCheckoutLinkOpensTheDedicatedEditorAndReturns() {
+    launch(false)
+    val run = com.example.openruncoach.ui.health.RunDetailPreviewData.state().run!!
+    kotlinx.coroutines.runBlocking { database!!.runDao().upsertAll(listOf(com.example.openruncoach.data.local.RunEntity(
+      run.healthConnectRecordId,run.startTime.toEpochMilli(),run.endTime.toEpochMilli(),run.durationSeconds,run.distanceMeters,
+      run.averageHeartRate,run.maxHeartRate,run.averagePaceSecondsPerKm,run.endTime.toEpochMilli()))) }
+    compose.runOnIdle { nav.navigate("run?runId=${run.healthConnectRecordId}") }
+    compose.waitUntil(10_000) { compose.onAllNodesWithText("Post-run checkout").fetchSemanticsNodes().isNotEmpty() }
+    compose.onNodeWithText("Post-run checkout").performScrollTo().performClick()
+    compose.waitForIdle()
+    compose.runOnIdle { assertEquals("run-checkout?runId={runId}",nav.currentDestination?.route) }
+    compose.onNodeWithText("How did it go?").assertExists()
+    compose.onNodeWithTag("bottom-navigation").assertDoesNotExist()
+    compose.onNodeWithText("Run").performClick()
+    compose.runOnIdle { assertEquals("run?runId={runId}",nav.currentDestination?.route) }
+  }
+
 }

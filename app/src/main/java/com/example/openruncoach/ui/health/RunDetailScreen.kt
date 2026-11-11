@@ -115,17 +115,16 @@ fun RunDetailScreen(
   onInspectHealthData: (String) -> Unit,
   modifier: Modifier = Modifier,
   onCoachAnalysis: (String) -> Unit = {},
+  onCheckout: (String) -> Unit = {},
 ) {
   val viewModel = runDetailViewModel(runId)
   val state by viewModel.uiState.collectAsStateWithLifecycle()
   RunDetailContent(state, LocalOpenRunCoachEnvironment.current.clock, DetailActions(
-    onBack = onBack, inspect = { onInspectHealthData(runId) }, coach = { onCoachAnalysis(runId) },
+    onBack = onBack, inspect = { onInspectHealthData(runId) }, coach = { onCoachAnalysis(runId) }, checkout = { onCheckout(runId) },
     refreshMetrics = viewModel::refreshMetrics, toggleSourceDetails = viewModel::toggleSourceDetails,
     toggleMetricDetails = viewModel::toggleMetricDetails, toggleRunRelevance = viewModel::toggleRunRelevance,
     showAssignmentCandidates = viewModel::showAssignmentCandidates, hideAssignmentCandidates = viewModel::hideAssignmentCandidates,
     assignToWorkout = viewModel::assignToWorkout, unassignWorkout = viewModel::unassignWorkout,
-    editFeedback = viewModel::editFeedback, cancelFeedbackEdit = viewModel::cancelFeedbackEdit,
-    updateForm = viewModel::updateForm, saveFeedback = viewModel::saveFeedback,
   ), modifier, !LocalOpenRunCoachEnvironment.current.isSimulation)
 }
 
@@ -161,13 +160,11 @@ internal fun runDetailViewModel(runId: String): RunDetailViewModel {
 }
 
 internal data class DetailActions(
-  val onBack: () -> Unit = {}, val inspect: () -> Unit = {}, val coach: () -> Unit = {},
+  val onBack: () -> Unit = {}, val inspect: () -> Unit = {}, val coach: () -> Unit = {}, val checkout: () -> Unit = {},
   val refreshMetrics: () -> Unit = {}, val toggleSourceDetails: () -> Unit = {},
   val toggleMetricDetails: () -> Unit = {}, val toggleRunRelevance: () -> Unit = {},
   val showAssignmentCandidates: () -> Unit = {}, val hideAssignmentCandidates: () -> Unit = {},
   val assignToWorkout: (String) -> Unit = {}, val unassignWorkout: () -> Unit = {},
-  val editFeedback: () -> Unit = {}, val cancelFeedbackEdit: () -> Unit = {},
-  val updateForm: ((FeedbackForm) -> FeedbackForm) -> Unit = {}, val saveFeedback: () -> Unit = {},
 )
 
 @Composable
@@ -175,8 +172,6 @@ internal fun RunDetailContent(state: RunDetailUiState, clock: java.time.Clock, a
   modifier: Modifier = Modifier, showProviderActions: Boolean = true,
   scroll: androidx.compose.foundation.ScrollState = rememberScrollState()) {
   val p = LocalOpenRunPalette.current
-  val scope = rememberCoroutineScope()
-  val checkoutPosition = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
   var confirmVisibility by rememberSaveable { mutableStateOf(false) }
   val run = state.run
   CompositionLocalProvider(LocalContentColor provides p.ink) {
@@ -245,18 +240,13 @@ internal fun RunDetailContent(state: RunDetailUiState, clock: java.time.Clock, a
                 elevation?.let { OpenRunMiniStatCard("Elevation", "+${formatNumber(it.value)}", "m", modifier = Modifier.widthIn(min = 140.dp).weight(1f)) }
               }
               OpenRunCard {
-                OpenRunSettingsRow("Post-run checkout", if (state.feedback == null) "Complete post-run checkout ›" else "View or edit how this run felt", onClick = {
-                  actions.editFeedback(); scope.launch { checkoutPosition.bringIntoView() }
-                })
-                HorizontalDivider(color = p.line)
+                OpenRunSettingsRow("Post-run checkout", if (state.feedback == null) "Complete post-run checkout ›" else "View or edit how this run felt", onClick = actions.checkout, firstRow = true)
                 OpenRunSettingsRow("Coach analysis", "What this run means for your plan", onClick = actions.coach)
                 if (showProviderActions && run.isCanonical) {
-                  HorizontalDivider(color = p.line)
                   OpenRunSettingsRow("Health data inspector", "Where each number comes from", onClick = actions.inspect)
                 }
               }
               CompletedCoach(state)
-              Column(Modifier.bringIntoViewRequester(checkoutPosition)) { FeedbackCard(state, actions) }
               RunDataSources(state, showProviderActions, actions)
               OpenRunSecondaryButton(if (run.relevance == RunRelevance.IGNORED) "Restore run" else "Ignore run",
                 { confirmVisibility = true }, enabled = !state.isUpdatingRelevance)
@@ -773,25 +763,6 @@ private fun MetricProvenance(metric: MetricValue<out Number>) {
 }
 
 @Composable
-private fun FeedbackCard(state: RunDetailUiState, viewModel: DetailActions) {
-  DetailCard("Post-run Checkout") {
-    when {
-      !state.feedbackLoaded -> Text("Loading feedback…")
-      state.isEditingFeedback -> FeedbackEditor(state, viewModel)
-      state.feedback == null -> {
-        Text("Add how the run felt to receive a coach analysis.")
-        Button(onClick = viewModel.editFeedback) { Text("Complete checkout") }
-      }
-      else -> {
-        FeedbackSummary(state.feedback)
-        Button(onClick = viewModel.editFeedback) { Text("Edit checkout") }
-      }
-    }
-    if (state.saved) Text("Checkout saved.", color = MaterialTheme.colorScheme.primary)
-  }
-}
-
-@Composable
 private fun FeedbackSummary(feedback: RunFeedback) {
   LabelValue("RPE", "${feedback.rpe}/10")
   LabelValue("Pain", feedback.painLevel.displayName())
@@ -799,58 +770,6 @@ private fun FeedbackSummary(feedback: RunFeedback) {
   LabelValue("Completion", feedback.completionStatus.displayName())
   feedback.readiness?.let { LabelValue("Readiness", "$it/5") }
   feedback.notes?.let { LabelValue("Notes", it) }
-}
-
-@Composable
-private fun FeedbackEditor(state: RunDetailUiState, viewModel: DetailActions) {
-  Text("How hard was this run?", style = MaterialTheme.typography.titleMedium)
-  OutlinedTextField(
-    value = state.form.rpe,
-    onValueChange = { value -> viewModel.updateForm { it.copy(rpe = value) } },
-    label = { Text("RPE: 1–10") },
-    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-    singleLine = true,
-  )
-  ChoiceRow(
-    "Cardio",
-    listOf(CardioEffort.EASY to "Easy", CardioEffort.APPROPRIATE to "Appropriate", CardioEffort.HARD to "Hard", CardioEffort.LIMIT to "Limit"),
-    state.form.cardioEffort,
-  ) { selected -> viewModel.updateForm { it.copy(cardioEffort = selected) } }
-  ChoiceRow(
-    "Muscle fatigue",
-    listOf(MuscleFatigue.NONE to "None", MuscleFatigue.MILD to "Mild", MuscleFatigue.MODERATE to "Moderate", MuscleFatigue.SEVERE to "Severe"),
-    state.form.muscleFatigue,
-  ) { selected -> viewModel.updateForm { it.copy(muscleFatigue = selected) } }
-  ChoiceRow(
-    "Pain",
-    listOf(PainLevel.NONE to "None", PainLevel.MILD to "Mild", PainLevel.SIGNIFICANT to "Significant"),
-    state.form.painLevel,
-  ) { selected -> viewModel.updateForm { it.copy(painLevel = selected) } }
-  ChoiceRow(
-    "Completion",
-    listOf(CompletionStatus.COMPLETED to "Completed", CompletionStatus.PARTIAL to "Partial", CompletionStatus.ABORTED to "Aborted"),
-    state.form.completionStatus,
-  ) { selected -> viewModel.updateForm { it.copy(completionStatus = selected) } }
-  OutlinedTextField(
-    value = state.form.readiness,
-    onValueChange = { value -> viewModel.updateForm { it.copy(readiness = value) } },
-    label = { Text("Readiness: 1–5 (optional)") },
-    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-    singleLine = true,
-  )
-  OutlinedTextField(
-    value = state.form.notes,
-    onValueChange = { value -> viewModel.updateForm { it.copy(notes = value) } },
-    label = { Text("Notes (optional)") },
-    minLines = 3,
-  )
-  Row(horizontalArrangement = Arrangement.spacedBy(ItemSpacing)) {
-    Button(onClick = viewModel.saveFeedback, enabled = !state.isSaving) {
-      Text(if (state.feedback == null) "Save checkout" else "Update checkout")
-    }
-    TextButton(onClick = viewModel.cancelFeedbackEdit, enabled = !state.isSaving) { Text("Cancel") }
-  }
-  if (state.isSaving) Text("Saving checkout…")
 }
 
 @Composable
@@ -913,18 +832,6 @@ private fun DetailCard(title: String, content: @Composable () -> Unit) {
 @Composable
 private fun LabelValue(label: String, value: String) {
   OpenRunEvidenceRow(label, value)
-}
-
-@Composable
-private fun <T> ChoiceRow(label: String, options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
-  Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-    Text(label)
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(ItemSpacing)) {
-      options.forEach { (value, text) ->
-        FilterChip(selected = selected == value, onClick = { onSelect(value) }, label = { Text(text) })
-      }
-    }
-  }
 }
 
 private fun PainLevel.displayName() = when (this) {
