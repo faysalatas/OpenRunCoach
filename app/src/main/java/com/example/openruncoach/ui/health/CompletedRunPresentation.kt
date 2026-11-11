@@ -7,6 +7,7 @@ import com.example.openruncoach.domain.workout.WorkoutPurpose
 import com.example.openruncoach.domain.workout.WorkoutType
 import com.example.openruncoach.domain.metrics.PreparedRunChart
 import com.example.openruncoach.domain.route.RunSplit
+import com.example.openruncoach.domain.workout.displayName
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToLong
@@ -39,3 +40,11 @@ internal fun PreparedRunChart.hasClippedPaceSamples(target: PaceTarget?): Boolea
 internal fun RunSplit.kilometreLabel(): String = if (partial) {
   "%.2f".format(Locale.getDefault(), distanceMeters / 1_000.0)
 } else ordinal.toString()
+
+internal fun runTitle(state: RunDetailUiState): String = state.plannedWorkout?.name?.takeIf(String::isNotBlank)
+  ?: state.plannedWorkout?.type?.let { it.displayName() } ?: "Run"
+
+internal fun runSubtitle(state: RunDetailUiState, clock: java.time.Clock): String? = state.run?.let { run ->
+  listOfNotNull(run.startTime.atZone(clock.zone).format(java.time.format.DateTimeFormatter.ofPattern("EEE d MMM · HH:mm", Locale.getDefault())),
+    run.sourceAppName?.takeIf(String::isNotBlank)).joinToString(" · ")
+}

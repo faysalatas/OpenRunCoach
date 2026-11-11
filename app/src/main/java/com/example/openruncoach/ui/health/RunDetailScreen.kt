@@ -1,7 +1,18 @@
 package com.example.openruncoach.ui.health
 
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.material3.*
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
+import com.example.openruncoach.theme.*
+import com.example.openruncoach.ui.components.*
+import kotlinx.coroutines.launch
+
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,10 +46,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.input.KeyboardType
@@ -60,9 +67,6 @@ import com.example.openruncoach.data.WorkoutAssignmentState
 import com.example.openruncoach.data.WorkoutResponseRepository
 import com.example.openruncoach.LocalOpenRunCoachEnvironment
 import com.example.openruncoach.BuildConfig
-import com.example.openruncoach.R
-import com.example.openruncoach.ui.components.CompletedRunMetric
-import com.example.openruncoach.ui.components.CompletedRunMetrics
 import com.example.openruncoach.domain.coaching.CoachingEngine
 import com.example.openruncoach.domain.CardioEffort
 import com.example.openruncoach.domain.CompletionStatus
@@ -95,14 +99,12 @@ import com.example.openruncoach.ui.common.formatDuration
 import com.example.openruncoach.ui.common.formatPace
 import com.example.openruncoach.ui.components.ItemSpacing
 import com.example.openruncoach.ui.components.ScreenPadding
-import com.example.openruncoach.ui.components.OpenRunTabs
 import com.example.openruncoach.ui.components.OpenRunSection
 import com.example.openruncoach.ui.components.OpenRunEvidenceRow
 import com.example.openruncoach.ui.components.OpenRunCard
 import com.example.openruncoach.ui.components.OpenRunDisclosure
 import com.example.openruncoach.ui.components.RunRouteMap
 import com.example.openruncoach.theme.OpenRunSpacing
-import com.example.openruncoach.ui.workout.heroImageResource
 import java.util.Locale
 import java.time.format.DateTimeFormatter
 
@@ -112,10 +114,26 @@ fun RunDetailScreen(
   onBack: () -> Unit,
   onInspectHealthData: (String) -> Unit,
   modifier: Modifier = Modifier,
+  onCoachAnalysis: (String) -> Unit = {},
 ) {
+  val viewModel = runDetailViewModel(runId)
+  val state by viewModel.uiState.collectAsStateWithLifecycle()
+  RunDetailContent(state, LocalOpenRunCoachEnvironment.current.clock, DetailActions(
+    onBack = onBack, inspect = { onInspectHealthData(runId) }, coach = { onCoachAnalysis(runId) },
+    refreshMetrics = viewModel::refreshMetrics, toggleSourceDetails = viewModel::toggleSourceDetails,
+    toggleMetricDetails = viewModel::toggleMetricDetails, toggleRunRelevance = viewModel::toggleRunRelevance,
+    showAssignmentCandidates = viewModel::showAssignmentCandidates, hideAssignmentCandidates = viewModel::hideAssignmentCandidates,
+    assignToWorkout = viewModel::assignToWorkout, unassignWorkout = viewModel::unassignWorkout,
+    editFeedback = viewModel::editFeedback, cancelFeedbackEdit = viewModel::cancelFeedbackEdit,
+    updateForm = viewModel::updateForm, saveFeedback = viewModel::saveFeedback,
+  ), modifier, !LocalOpenRunCoachEnvironment.current.isSimulation)
+}
+
+@Composable
+internal fun runDetailViewModel(runId: String): RunDetailViewModel {
   val context = LocalContext.current
   val environment = LocalOpenRunCoachEnvironment.current
-  val viewModel: RunDetailViewModel = viewModel(key = runId) {
+  return viewModel(key = runId) {
     val database = environment.database
     val settingsRepository = RunSettingsRepository(context)
     val profileRepository = environment.profileRepository()
@@ -140,179 +158,140 @@ fun RunDetailScreen(
       CoachingEngine(environment.clock),
     )
   }
-  val state by viewModel.uiState.collectAsStateWithLifecycle()
-  var selectedTab by rememberSaveable(runId) { mutableStateOf(0) }
+}
 
-  BoxWithConstraints(modifier.fillMaxSize()) {
-    val fontScale = LocalDensity.current.fontScale.coerceAtLeast(1f)
-    // Reserve readable header/control/metric space; only the map and plot flex.
-    // Small viewports and large fonts retain scrolling instead of shrinking text.
-    val checkoutHeight = if (state.feedbackLoaded && state.feedback == null) 56.dp else 0.dp
-    val updateHeight = if (state.isUpdatingMetrics || state.metricsUpdateError) 32.dp * fontScale else 0.dp
-    // Header, text tabs, metric strip, 48 dp selector, axes, summary and gaps.
-    // At default fonts the remaining space goes to a shallow map and dashboard plot.
-    val plotBudget = (maxHeight - 500.dp * fontScale - checkoutHeight - updateHeight).coerceAtLeast(0.dp)
-    val chartHeight = (plotBudget * 0.4f).coerceIn(88.dp * fontScale, 116.dp * fontScale)
-    val mapHeight = (plotBudget - chartHeight).coerceIn(120.dp, 192.dp)
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-      when {
-        !state.runLoaded || (state.run != null && !state.associationLoaded) -> {
-          TextButton(onClick = onBack) { Text("‹ Back") }
-          Text("Loading run…", Modifier.padding(ScreenPadding))
-        }
-        state.run == null -> {
-          TextButton(onClick = onBack) { Text("‹ Back") }
-          Text("Run not found.", Modifier.padding(ScreenPadding))
-        }
-        else -> {
-          val run = state.run!!
-          val averagePace = run.averagePaceSecondsPerKm
-          val averageHeartRate = state.metrics?.averageHeartRate?.value ?: run.averageHeartRate
-          CompletedRunHeader(
-            title = state.plannedWorkout?.name?.takeIf(String::isNotBlank) ?: state.plannedWorkout?.type?.displayName() ?: "Run",
-            date = run.startTime.atZone(environment.clock.zone)
-              .format(DateTimeFormatter.ofPattern("EEE, d MMM yyyy · HH:mm", Locale.getDefault())),
-            heroResource = state.plannedWorkout?.type?.heroImageResource(),
-            onBack = onBack,
-          )
-          Column(
-            Modifier.padding(horizontal = ScreenPadding, vertical = OpenRunSpacing.Small),
-            verticalArrangement = Arrangement.spacedBy(OpenRunSpacing.Small),
-          ) {
-            OpenRunTabs(
-              tabs = listOf("Overview", "Splits", "Analysis", "Coach"),
-              selectedIndex = selectedTab,
-              onSelected = { selectedTab = it },
-              distributeEvenly = true,
-            )
-            if (state.feedbackLoaded && state.feedback == null && selectedTab != 3) {
-              TextButton(onClick = {
-                selectedTab = 3
-                viewModel.editFeedback()
-              }, enabled = !state.isSaving) { Text("Complete post-run checkout ›") }
-            }
-            if (state.isUpdatingMetrics) Text("Updating run data…", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (state.metricsUpdateError) Text(
-              "Could not update run metrics. Saved data is still available.",
-              color = MaterialTheme.colorScheme.error,
-            )
-            when (selectedTab) {
-              0 -> CompletedOverview(
-                state = state,
-                averagePace = averagePace,
-                averageHeartRate = averageHeartRate,
-                mapHeight = mapHeight,
-                chartHeight = chartHeight,
-                showProviderActions = !environment.isSimulation,
-                onRefreshMetrics = viewModel::refreshMetrics,
-                onInspectHealthData = { onInspectHealthData(runId) },
-                onToggleSourceDetails = viewModel::toggleSourceDetails,
-                onToggleMetricDetails = viewModel::toggleMetricDetails,
-                onToggleRunRelevance = viewModel::toggleRunRelevance,
-              )
-              1 -> CompletedSplits(state)
-              2 -> CompletedAnalysis(state, viewModel)
-              3 -> CompletedCoach(state, viewModel)
-            }
+internal data class DetailActions(
+  val onBack: () -> Unit = {}, val inspect: () -> Unit = {}, val coach: () -> Unit = {},
+  val refreshMetrics: () -> Unit = {}, val toggleSourceDetails: () -> Unit = {},
+  val toggleMetricDetails: () -> Unit = {}, val toggleRunRelevance: () -> Unit = {},
+  val showAssignmentCandidates: () -> Unit = {}, val hideAssignmentCandidates: () -> Unit = {},
+  val assignToWorkout: (String) -> Unit = {}, val unassignWorkout: () -> Unit = {},
+  val editFeedback: () -> Unit = {}, val cancelFeedbackEdit: () -> Unit = {},
+  val updateForm: ((FeedbackForm) -> FeedbackForm) -> Unit = {}, val saveFeedback: () -> Unit = {},
+)
+
+@Composable
+internal fun RunDetailContent(state: RunDetailUiState, clock: java.time.Clock, actions: DetailActions = DetailActions(),
+  modifier: Modifier = Modifier, showProviderActions: Boolean = true,
+  scroll: androidx.compose.foundation.ScrollState = rememberScrollState()) {
+  val p = LocalOpenRunPalette.current
+  val scope = rememberCoroutineScope()
+  val checkoutPosition = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+  var confirmVisibility by rememberSaveable { mutableStateOf(false) }
+  val run = state.run
+  CompositionLocalProvider(LocalContentColor provides p.ink) {
+    Column(modifier.fillMaxSize().background(p.bg).verticalScroll(scroll).testTag("run-detail-scroll")) {
+      OpenRunHero(title = runTitle(state), backLabel = "Runs", onBack = actions.onBack,
+        subtitle = run?.let { runSubtitle(state, clock) }) {
+        if (run != null) BoxWithConstraints(Modifier.fillMaxWidth()) {
+          val columns = if (maxWidth < 96.dp * 3 * LocalDensity.current.fontScale) 1 else 3
+          val metrics = listOfNotNull(
+            run.distanceMeters?.let { formatDistance(it).removeSuffix(" km") to "km" },
+            (formatActualDuration(run.durationSeconds) to "time"),
+            run.averagePaceSecondsPerKm?.let { paceClock(it) to "pace /km" })
+          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            metrics.chunked(columns).forEach { row -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+              row.forEach { (value,label) -> OpenRunMetric(value, label, Modifier.weight(1f), onHero = true) }
+            } }
           }
         }
       }
-      state.error?.let { Text(it, Modifier.padding(ScreenPadding), color = MaterialTheme.colorScheme.error) }
-    }
-  }
-}
-
-@Composable
-private fun CompletedRunHeader(title: String, date: String, heroResource: Int?, onBack: () -> Unit) {
-  Box(Modifier.fillMaxWidth().heightIn(min = 112.dp)) {
-    heroResource?.let { resource ->
-      Image(painterResource(resource), contentDescription = null,
-        modifier = Modifier.matchParentSize(), contentScale = ContentScale.Crop)
-      Box(Modifier.matchParentSize().background(Brush.verticalGradient(
-        0f to Color.Black.copy(alpha = 0.18f),
-        0.55f to Color.Black.copy(alpha = 0.28f),
-        1f to MaterialTheme.colorScheme.background.copy(alpha = 0.88f),
-      )))
-    }
-    Column(Modifier.padding(horizontal = ScreenPadding, vertical = OpenRunSpacing.Micro)) {
-      TextButton(onClick = onBack, contentPadding = PaddingValues(horizontal = 0.dp)) {
-        Text("‹ Back", color = if (heroResource != null) Color.White else MaterialTheme.colorScheme.primary)
-      }
-      Text(title, style = MaterialTheme.typography.headlineSmall,
-        color = if (heroResource != null) Color.White else MaterialTheme.colorScheme.onSurface)
-      Text(date, style = MaterialTheme.typography.bodySmall,
-        color = if (heroResource != null) Color.White.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-  }
-}
-
-@Composable
-private fun CompletedOverview(
-  state: RunDetailUiState,
-  averagePace: Double?,
-  averageHeartRate: Double?,
-  mapHeight: Dp,
-  chartHeight: Dp,
-  showProviderActions: Boolean,
-  onRefreshMetrics: () -> Unit,
-  onInspectHealthData: () -> Unit,
-  onToggleSourceDetails: () -> Unit,
-  onToggleMetricDetails: () -> Unit,
-  onToggleRunRelevance: () -> Unit,
-) {
-  val run = state.run ?: return
-  val distance = run.distanceMeters
-  val metrics = buildList {
-    distance?.let { add(CompletedRunMetric(formatDistance(it), "Distance", R.drawable.ic_run)) }
-    add(CompletedRunMetric(formatActualDuration(run.durationSeconds), "Duration", R.drawable.ic_stopwatch))
-    averagePace?.let { add(CompletedRunMetric(formatPace(it).replace(" min/km", " /km"), "Avg. pace", R.drawable.ic_pace)) }
-    averageHeartRate?.let { add(CompletedRunMetric("%.0f bpm".format(Locale.getDefault(), it), "Avg. HR", R.drawable.ic_heart)) }
-  }
-  CompletedRunMetrics(metrics)
-  state.routeData?.route?.points?.takeIf { it.size >= 2 }?.let { points ->
-    RunRouteMap(
-      points = points,
-      modifier = Modifier.fillMaxWidth().height(mapHeight),
-    )
-  }
-  state.metrics?.let { runMetrics ->
-    state.charts?.let { charts ->
-      RunChartsSection(runMetrics, charts, state.plannedWorkout.wholeRunPaceTarget(), chartHeight)
-    }
-  }
-  OpenRunDisclosure("Data sources") {
-    LabelValue("Summary", run.displaySourceName)
-    state.routeData?.route?.let { route ->
-      LabelValue("Route", route.sourceAppName?.takeIf(String::isNotBlank) ?: route.source.displayName())
-    }
-    state.metrics?.let { metric ->
-      (metric.movingAverageCadence ?: metric.averageCadence)?.let {
-        LabelValue("Cadence", it.sourceAppName?.takeIf(String::isNotBlank) ?: it.source.displayName())
-      }
-      metric.averageHeartRate?.let {
-        LabelValue("Heart rate", it.sourceAppName?.takeIf(String::isNotBlank) ?: it.source.displayName())
-      }
-    }
-    OpenRunDisclosure("Recording diagnostics") {
-      state.charts?.fastestThirtySecondPaceSecondsPerKm?.let {
-        LabelValue("Fastest 30 sec", formatPace(it).replace(" min/km", " /km"))
-      }
-      state.charts?.pace?.let { chart ->
-        if (chart.hasClippedPaceSamples(state.plannedWorkout.wholeRunPaceTarget())) {
-          Text("Off-scale pace samples clipped for display", style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+      Box(Modifier.fillMaxWidth(), contentAlignment = androidx.compose.ui.Alignment.TopCenter) {
+        OpenRunHeroBody(Modifier.widthIn(max = 600.dp).fillMaxWidth().padding(bottom = 24.dp)) {
+          when {
+            !state.runLoaded || (run != null && !state.associationLoaded) -> Text("Loading run…", style = OpenRunType.body)
+            run == null -> OpenRunCard { Text("Run not found.", style = OpenRunType.body) }
+            else -> {
+              FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (state.workoutResponse?.adherence == com.example.openruncoach.domain.workout.PrescriptionAdherence.AS_PLANNED)
+                  OpenRunStatusChip("As planned", tone = OpenRunStatusTone.POSITIVE)
+                state.plannedWorkout.wholeRunPaceTarget()?.let {
+                  val label = "${paceClock(it.minimumSecondsPerKm)}–${paceClock(it.maximumSecondsPerKm)} /km"
+                  OpenRunStatusChip(if (state.workoutResponse?.paceResponse == PaceResponse.ON_TARGET) "Pace in target $label" else "Target $label")
+                }
+                state.feedback?.let { OpenRunStatusChip("Effort ${it.rpe} / 10") }
+              }
+              OpenRunSectionHeader("YOUR COACH")
+              val coach = coachPresentation(state)
+              val summary = listOfNotNull(coach.observations.firstOrNull(), coach.implication).joinToString(". ")
+              Text(summary.ifBlank { if (state.feedback == null) "Complete the post-run checkout to receive a coaching interpretation."
+                else "No coaching decision is available for this run." }, style = OpenRunType.body)
+              state.routeData?.route?.points?.takeIf { it.size >= 2 }?.let {
+                RunRouteMap(it, Modifier.fillMaxWidth().height(170.dp).clip(OpenRunShapeTokens.Card))
+              }
+              if (state.isUpdatingMetrics) Text("Updating run data…", style = OpenRunType.meta)
+              if (state.metricsUpdateError) Text("Could not update run metrics. Saved data is still available.", color = MaterialTheme.colorScheme.error)
+              state.metrics?.let { RunChartsSection(it, state.charts, state.plannedWorkout.wholeRunPaceTarget()) }
+              if (state.metrics?.averageHeartRate == null && run.averageHeartRate != null) OpenRunCard {
+                Text("Recorded heart rate", style = OpenRunType.title)
+                Text(listOfNotNull(run.averageHeartRate?.let { "avg ${formatNumber(it)}" }, run.maxHeartRate?.let { "max $it" }).joinToString(" · ") + " bpm", style = OpenRunType.meta)
+              }
+              if (state.routeData?.splits?.isNotEmpty() == true) OpenRunCard {
+                Text("Splits", style = OpenRunType.title)
+                val splits = state.routeData.splits.filter { it.averagePaceSecondsPerKm.isFinite() && it.averagePaceSecondsPerKm > 0 }
+                SplitBars(splits.map { SplitBar(it.kilometreLabel(), (1000 / it.averagePaceSecondsPerKm).toFloat(), paceClock(it.averagePaceSecondsPerKm)) },
+                  "Recorded split pace. Width is proportional to speed; the fastest split fills its track. " + splits.joinToString { "${it.kilometreLabel()}: ${paceClock(it.averagePaceSecondsPerKm)} per km" })
+                SplitSummary(state)
+                OpenRunDisclosure("Split details") { CompletedSplits(state) }
+              }
+              OpenRunCard {
+                Text("Plan vs. run", style = OpenRunType.title)
+                CompletedAnalysis(state, actions)
+              }
+              val cadence = state.metrics?.let { it.movingAverageCadence ?: it.averageCadence }
+              val elevation = state.metrics?.elevationGainMeters
+              if (cadence != null || elevation != null) FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                cadence?.let { OpenRunMiniStatCard("Cadence", "%.0f".format(it.value), "spm", modifier = Modifier.widthIn(min = 140.dp).weight(1f)) }
+                elevation?.let { OpenRunMiniStatCard("Elevation", "+${formatNumber(it.value)}", "m", modifier = Modifier.widthIn(min = 140.dp).weight(1f)) }
+              }
+              OpenRunCard {
+                OpenRunSettingsRow("Post-run checkout", if (state.feedback == null) "Complete post-run checkout ›" else "View or edit how this run felt", onClick = {
+                  actions.editFeedback(); scope.launch { checkoutPosition.bringIntoView() }
+                })
+                HorizontalDivider(color = p.line)
+                OpenRunSettingsRow("Coach analysis", "What this run means for your plan", onClick = actions.coach)
+                if (showProviderActions && run.isCanonical) {
+                  HorizontalDivider(color = p.line)
+                  OpenRunSettingsRow("Health data inspector", "Where each number comes from", onClick = actions.inspect)
+                }
+              }
+              CompletedCoach(state)
+              Column(Modifier.bringIntoViewRequester(checkoutPosition)) { FeedbackCard(state, actions) }
+              RunDataSources(state, showProviderActions, actions)
+              OpenRunSecondaryButton(if (run.relevance == RunRelevance.IGNORED) "Restore run" else "Ignore run",
+                { confirmVisibility = true }, enabled = !state.isUpdatingRelevance)
+            }
+          }
+          state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
       }
-      SourceCard(state, onToggleSourceDetails)
-      state.metrics?.let { RunMetricsCard(it, state.showMetricDetails, onToggleMetricDetails) }
-      if (showProviderActions) {
-        TextButton(onClick = onRefreshMetrics, enabled = !state.isUpdatingMetrics) { Text("Refresh metrics") }
-        if (run.isCanonical) TextButton(onClick = onInspectHealthData) { Text("Inspect Health Data") }
-      }
     }
+    if (confirmVisibility && run != null) AlertDialog(onDismissRequest = { confirmVisibility = false },
+      title = { Text(if (run.relevance == RunRelevance.IGNORED) "Restore run?" else "Ignore run?") },
+      text = { Text(if (run.relevance == RunRelevance.IGNORED) "This run will return to your history and training evidence."
+        else "This run will be hidden from normal history and training evidence. You can restore it from Ignored runs.") },
+      confirmButton = { TextButton({ confirmVisibility = false; actions.toggleRunRelevance() }) { Text("Confirm") } },
+      dismissButton = { TextButton({ confirmVisibility = false }) { Text("Cancel") } })
   }
-  TextButton(onClick = onToggleRunRelevance, enabled = !state.isUpdatingRelevance) {
-    Text(if (run.relevance == RunRelevance.IGNORED) "Restore run" else "Ignore run")
+}
+
+@Composable
+private fun RunDataSources(state: RunDetailUiState, showProviderActions: Boolean, actions: DetailActions) {
+  val run = state.run ?: return
+  OpenRunDisclosure("Data sources") {
+    LabelValue("Summary", run.displaySourceName)
+    state.routeData?.route?.let { LabelValue("Route", it.sourceAppName?.takeIf(String::isNotBlank) ?: it.source.displayName()) }
+    state.metrics?.let { metrics ->
+      (metrics.movingAverageCadence ?: metrics.averageCadence)?.let { LabelValue("Cadence", it.sourceAppName?.takeIf(String::isNotBlank) ?: it.source.displayName()) }
+      metrics.averageHeartRate?.let { LabelValue("Heart rate", it.sourceAppName?.takeIf(String::isNotBlank) ?: it.source.displayName()) }
+    }
+    OpenRunDisclosure("Recording diagnostics") {
+      if (state.charts?.pace?.hasClippedPaceSamples(state.plannedWorkout.wholeRunPaceTarget()) == true)
+        Text("Off-scale pace samples clipped for display", style = OpenRunType.meta)
+      SourceCard(state, actions.toggleSourceDetails)
+      state.metrics?.let { RunMetricsCard(it, state.showMetricDetails, actions.toggleMetricDetails) }
+      if (showProviderActions) TextButton(actions.refreshMetrics, enabled = !state.isUpdatingMetrics) { Text("Refresh metrics") }
+    }
   }
 }
 
@@ -478,7 +457,7 @@ private fun SplitsUnavailable() {
 }
 
 @Composable
-private fun CompletedAnalysis(state: RunDetailUiState, viewModel: RunDetailViewModel) {
+private fun CompletedAnalysis(state: RunDetailUiState, viewModel: DetailActions) {
   val response = state.workoutResponse
   if (response == null) {
     OpenRunSection("Analysis") {
@@ -608,7 +587,7 @@ private fun PlannedActualRow(widths: List<Dp>, gap: Dp, label: String, planned: 
 }
 
 @Composable
-private fun WorkoutAssociationCard(state: RunDetailUiState, viewModel: RunDetailViewModel) {
+private fun WorkoutAssociationCard(state: RunDetailUiState, viewModel: DetailActions) {
   Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(OpenRunSpacing.Micro)) {
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
     Text("Planned workout", style = MaterialTheme.typography.labelMedium,
@@ -620,7 +599,7 @@ private fun WorkoutAssociationCard(state: RunDetailUiState, viewModel: RunDetail
     val assigned = state.plannedWorkout
     if (assigned == null) {
       Text("This run is not associated with a prescription.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-      Button(onClick = viewModel::showAssignmentCandidates, enabled = !state.isUpdatingAssociation) {
+      Button(onClick = viewModel.showAssignmentCandidates, enabled = !state.isUpdatingAssociation) {
         Text("Assign to workout")
       }
     } else {
@@ -629,11 +608,11 @@ private fun WorkoutAssociationCard(state: RunDetailUiState, viewModel: RunDetail
       Text(listOfNotNull(assigned.name.ifBlank { assigned.type.displayName() }, distance).joinToString(" · "),
         style = MaterialTheme.typography.bodyMedium)
       Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-        TextButton(onClick = viewModel::showAssignmentCandidates, enabled = !state.isUpdatingAssociation,
+        TextButton(onClick = viewModel.showAssignmentCandidates, enabled = !state.isUpdatingAssociation,
           contentPadding = PaddingValues(horizontal = 0.dp)) {
           Text("Change association")
         }
-        TextButton(onClick = viewModel::unassignWorkout, enabled = !state.isUpdatingAssociation,
+        TextButton(onClick = viewModel.unassignWorkout, enabled = !state.isUpdatingAssociation,
           contentPadding = PaddingValues(horizontal = 0.dp)) {
           Text("Unassign")
         }
@@ -670,13 +649,13 @@ private fun WorkoutAssociationCard(state: RunDetailUiState, viewModel: RunDetail
           }
         }
       }
-      TextButton(onClick = viewModel::hideAssignmentCandidates) { Text("Cancel") }
+      TextButton(onClick = viewModel.hideAssignmentCandidates) { Text("Cancel") }
     }
   }
 }
 
 @Composable
-private fun CompletedCoach(state: RunDetailUiState, viewModel: RunDetailViewModel) {
+private fun CompletedCoach(state: RunDetailUiState) {
   val presentation = coachPresentation(state)
   OpenRunCard {
     Text("Coach Insight", style = MaterialTheme.typography.titleMedium)
@@ -708,11 +687,7 @@ private fun CompletedCoach(state: RunDetailUiState, viewModel: RunDetailViewMode
       }
     }
   }
-  if (state.feedback == null || state.isEditingFeedback) FeedbackCard(state, viewModel)
-  else {
-    TextButton(onClick = viewModel::editFeedback) { Text("Edit checkout") }
-    if (state.saved) Text("Checkout saved.", color = MaterialTheme.colorScheme.primary)
-  }
+
 }
 
 private fun StructuredWorkout.assignmentPaceTarget(): PaceTarget? = blocks
@@ -798,18 +773,18 @@ private fun MetricProvenance(metric: MetricValue<out Number>) {
 }
 
 @Composable
-private fun FeedbackCard(state: RunDetailUiState, viewModel: RunDetailViewModel) {
+private fun FeedbackCard(state: RunDetailUiState, viewModel: DetailActions) {
   DetailCard("Post-run Checkout") {
     when {
       !state.feedbackLoaded -> Text("Loading feedback…")
       state.isEditingFeedback -> FeedbackEditor(state, viewModel)
       state.feedback == null -> {
         Text("Add how the run felt to receive a coach analysis.")
-        Button(onClick = viewModel::editFeedback) { Text("Complete checkout") }
+        Button(onClick = viewModel.editFeedback) { Text("Complete checkout") }
       }
       else -> {
         FeedbackSummary(state.feedback)
-        Button(onClick = viewModel::editFeedback) { Text("Edit checkout") }
+        Button(onClick = viewModel.editFeedback) { Text("Edit checkout") }
       }
     }
     if (state.saved) Text("Checkout saved.", color = MaterialTheme.colorScheme.primary)
@@ -827,7 +802,7 @@ private fun FeedbackSummary(feedback: RunFeedback) {
 }
 
 @Composable
-private fun FeedbackEditor(state: RunDetailUiState, viewModel: RunDetailViewModel) {
+private fun FeedbackEditor(state: RunDetailUiState, viewModel: DetailActions) {
   Text("How hard was this run?", style = MaterialTheme.typography.titleMedium)
   OutlinedTextField(
     value = state.form.rpe,
@@ -870,10 +845,10 @@ private fun FeedbackEditor(state: RunDetailUiState, viewModel: RunDetailViewMode
     minLines = 3,
   )
   Row(horizontalArrangement = Arrangement.spacedBy(ItemSpacing)) {
-    Button(onClick = viewModel::saveFeedback, enabled = !state.isSaving) {
+    Button(onClick = viewModel.saveFeedback, enabled = !state.isSaving) {
       Text(if (state.feedback == null) "Save checkout" else "Update checkout")
     }
-    TextButton(onClick = viewModel::cancelFeedbackEdit, enabled = !state.isSaving) { Text("Cancel") }
+    TextButton(onClick = viewModel.cancelFeedbackEdit, enabled = !state.isSaving) { Text("Cancel") }
   }
   if (state.isSaving) Text("Saving checkout…")
 }

@@ -187,6 +187,7 @@ fun MainNavigation(navController: NavHostController = rememberNavController()) {
           runId = runId,
           onBack = navController::navigateUp,
           onInspectHealthData = { selectedRunId -> navController.navigate(dataInspectorRoute(selectedRunId)) },
+          onCoachAnalysis = { selectedRunId -> navController.navigate(coachDetailRoute(selectedRunId)) },
         )
       }
       composable(
