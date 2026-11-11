@@ -31,8 +31,9 @@ private fun Modifier.optionalClick(onClick: (() -> Unit)?) =
   if (onClick == null) this else clickable(role = Role.Button, onClick = onClick)
 
 @Composable
-fun OpenRunRunRow(date: String, name: String, distance: String, pace: String?, modifier: Modifier = Modifier,
+fun OpenRunRunRow(date: String, name: String, distance: String?, pace: String?, modifier: Modifier = Modifier,
   dotColor: Color? = null, onClick: (() -> Unit)? = null,
+  note: String? = null, thumbnail: (@Composable () -> Unit)? = null,
 ) {
   val p = LocalOpenRunPalette.current
   Surface(modifier.fillMaxWidth().optionalClick(onClick), shape = OpenRunShapeTokens.Row, color = p.card) {
@@ -40,17 +41,29 @@ fun OpenRunRunRow(date: String, name: String, distance: String, pace: String?, m
       val stack = maxWidth < 280.dp * LocalDensity.current.fontScale
       if (stack) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-          Canvas(Modifier.size(10.dp)) { drawCircle(dotColor ?: p.muted) }
-          Text(date, style = OpenRunType.caption, color = p.muted)
+          if (thumbnail != null) thumbnail() else Canvas(Modifier.size(10.dp)) { drawCircle(dotColor ?: p.muted) }
+          Text(listOfNotNull(date, note).joinToString(" · "), style = OpenRunType.caption, color = p.muted)
         }
         Text(name, style = OpenRunType.title)
-        Text(listOfNotNull(distance, pace).joinToString(" · "), style = OpenRunType.meta)
+        val metrics = listOfNotNull(distance, pace).joinToString(" · ")
+        if (metrics.isNotBlank()) Text(metrics, style = OpenRunType.meta)
       } else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Canvas(Modifier.size(10.dp)) { drawCircle(dotColor ?: p.muted) }
-        Text(date, Modifier.width(56.dp), style = OpenRunType.caption.copy(fontWeight = FontWeight.SemiBold), color = p.muted)
-        Text(name, Modifier.weight(1f), style = OpenRunType.title)
-        Column(horizontalAlignment = Alignment.End) {
-          Text(distance, style = OpenRunType.title)
+        if (thumbnail != null) {
+          thumbnail()
+          Column(Modifier.weight(1f)) {
+            Text(name, style = OpenRunType.title)
+            Text(listOfNotNull(date, note).joinToString(" · "), style = OpenRunType.caption, color = p.muted)
+          }
+        } else {
+          Canvas(Modifier.size(10.dp)) { drawCircle(dotColor ?: p.muted) }
+          Text(date, Modifier.width(56.dp), style = OpenRunType.caption.copy(fontWeight = FontWeight.SemiBold), color = p.muted)
+          Column(Modifier.weight(1f)) {
+            Text(name, style = OpenRunType.title)
+            if (!note.isNullOrBlank()) Text(note, style = OpenRunType.caption, color = p.muted)
+          }
+        }
+        if (!distance.isNullOrBlank() || !pace.isNullOrBlank()) Column(horizontalAlignment = Alignment.End) {
+          if (!distance.isNullOrBlank()) Text(distance, style = OpenRunType.title)
           if (!pace.isNullOrBlank()) Text(pace, style = OpenRunType.caption, color = p.muted)
         }
       }

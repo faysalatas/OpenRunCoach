@@ -3,6 +3,9 @@ package com.example.openruncoach.ui.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.openruncoach.data.RunFeedbackRepository
+import com.example.openruncoach.data.AthletePerformanceProfileRepository
+import com.example.openruncoach.data.RunRouteRepository
+import com.example.openruncoach.data.RunMetricsRepository
 import com.example.openruncoach.data.RunRepository
 import com.example.openruncoach.data.TrainingGoalRepository
 import com.example.openruncoach.data.TrainingPlanRepository
@@ -52,6 +55,7 @@ data class HomeUiState(
   val hasActivePlan: Boolean = false,
   val activeGoal: HomeGoalSummary? = null,
   val errorMessage: String? = null,
+  val todaySources: HomeTodaySources? = null,
 )
 
 data class HomeWorkoutSummary(
@@ -64,6 +68,7 @@ data class HomeWorkoutSummary(
   val paceLabel: String?,
   val intensity: HomeWorkoutIntensity?,
   val adaptationReason: String? = null,
+  val workoutId: String? = null,
 )
 
 enum class HomeWorkoutIntensity(val label: String, val activeBars: Int) {
@@ -127,6 +132,9 @@ class HomeViewModel(
   private val coachingEngine: CoachingEngine = CoachingEngine(),
   private val clock: Clock = Clock.systemDefaultZone(),
   private val zoneId: ZoneId = clock.zone,
+  profileRepository: AthletePerformanceProfileRepository? = null,
+  routeRepository: RunRouteRepository? = null,
+  metricsRepository: RunMetricsRepository? = null,
 ) : ViewModel() {
   private val selectedWeekStart = MutableStateFlow(weekStart(LocalDate.now(clock)))
 
@@ -148,7 +156,15 @@ class HomeViewModel(
     val run = runState.latestRun
     val feedbackFlow = if (run == null) flowOf(null) else feedbackRepository.observeFeedbackForRun(run.healthConnectRecordId)
     val responseFlow = if (run == null) flowOf(null) else workoutResponseRepository.observeForRun(run.healthConnectRecordId)
+    val routeFlow = if (run == null) flowOf(null) else
+      routeRepository?.observe(run.healthConnectRecordId)?.catch { emit(null) } ?: flowOf(null)
+    val metricsFlow = if (run == null) flowOf(null) else
+      metricsRepository?.observeActualRunMetrics(run.healthConnectRecordId)?.catch { emit(null) } ?: flowOf(null)
     combine(feedbackFlow, responseFlow) { feedback, response -> runState.toUiState(feedback, response) }
+      .combine(metricsFlow) { state, metrics -> state.copy(todaySources = state.todaySources?.copy(latestMetrics = metrics)) }
+      .combine(routeFlow) { state, route -> state.copy(todaySources = state.todaySources?.copy(route = route)) }
+  }.combine(profileRepository?.observeProfile()?.catch { emit(null) } ?: flowOf(null)) { state, profile ->
+    state.copy(todaySources = state.todaySources?.copy(profile = profile))
   }.catch {
     emit(HomeUiState(isLoading = false, greeting = greeting(), errorMessage = "Could not load training data."))
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState(greeting = greeting()))
@@ -187,6 +203,8 @@ class HomeViewModel(
       ),
       hasActivePlan = plan != null,
       activeGoal = goal?.toHomeSummary(),
+      todaySources = HomeTodaySources(canonicalRuns, plan, goal, feedback, response,
+        completedWorkoutTypesByRunId),
     )
   }
 
@@ -215,6 +233,7 @@ private fun TrainingPlan?.upcomingWorkoutSummaries(today: LocalDate): List<HomeW
     .map { entry ->
       val prescription = entry.workout.listSummary()
       HomeWorkoutSummary(
+        workoutId = entry.workout.id,
         name = entry.workout.name,
         type = entry.workout.type,
         date = entry.workout.date,

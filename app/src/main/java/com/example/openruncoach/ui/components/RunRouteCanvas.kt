@@ -16,7 +16,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.example.openruncoach.domain.route.RunRoutePoint
-import com.example.openruncoach.theme.OpenRunColors
+import com.example.openruncoach.theme.LocalOpenRunPalette
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.floor
@@ -30,13 +30,14 @@ fun RunRouteCanvas(
   modifier: Modifier = Modifier,
   style: RunRouteCanvasStyle = RunRouteCanvasStyle.DETAIL,
 ) {
+  val palette = LocalOpenRunPalette.current
   val pointLimit = if (style == RunRouteCanvasStyle.COMPACT) 180 else 2_000
   val geometry = remember(points, pointLimit) { prepareRouteGeometry(points, pointLimit) }
   if (geometry.size < 2) return
   val background = if (style == RunRouteCanvasStyle.COMPACT) {
-    OpenRunColors.Surface
+    palette.map
   } else {
-    OpenRunColors.SurfaceElevated
+    palette.card
   }
   val shape = RoundedCornerShape(if (style == RunRouteCanvasStyle.COMPACT) 12.dp else 18.dp)
   Spacer(
@@ -73,7 +74,7 @@ fun RunRouteCanvas(
           val offset = project(point)
           if (index == 0) path.moveTo(offset.x, offset.y) else path.lineTo(offset.x, offset.y)
         }
-        val routeWidth = if (style == RunRouteCanvasStyle.COMPACT) 2.dp.toPx() else 3.dp.toPx()
+        val routeWidth = 3.dp.toPx()
         val start = project(geometry.first())
         val finish = project(geometry.last())
         val markerRadius = if (style == RunRouteCanvasStyle.COMPACT) 3.dp.toPx() else 5.dp.toPx()
@@ -81,7 +82,7 @@ fun RunRouteCanvas(
         val gridWidth = 1.dp.toPx()
         onDrawBehind {
           if (style == RunRouteCanvasStyle.DETAIL) {
-            val gridColor = OpenRunColors.BorderSubtle.copy(alpha = 0.22f)
+            val gridColor = palette.line.copy(alpha = 0.22f)
             for (index in 1..3) {
               val x = size.width * index / 4f
               val y = size.height * index / 4f
@@ -89,11 +90,11 @@ fun RunRouteCanvas(
               drawLine(gridColor, Offset(0f, y), Offset(size.width, y), gridWidth)
             }
           }
-          drawPath(path, OpenRunColors.Accent, style = Stroke(routeWidth, cap = StrokeCap.Round))
-          drawCircle(OpenRunColors.Accent, markerRadius, start)
+          drawPath(path, palette.accent, style = Stroke(routeWidth, cap = StrokeCap.Round))
+          drawCircle(palette.accent, markerRadius, start)
           drawCircle(background, markerRadius * 1.45f, finish)
           drawCircle(
-            OpenRunColors.Accent,
+            palette.accent,
             markerRadius * 1.2f,
             finish,
             style = Stroke(markerWidth),

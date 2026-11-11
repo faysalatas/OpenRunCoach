@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.semantics.*
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.openruncoach.theme.*
@@ -38,6 +39,9 @@ fun OpenRunHero(
   backLabel: String? = null,
   onBack: (() -> Unit)? = null,
   header: (@Composable RowScope.() -> Unit)? = null,
+  titleStyle: TextStyle = OpenRunType.pageTitle,
+  subtitleStyle: TextStyle = OpenRunType.meta,
+  eyebrowLeading: (@Composable () -> Unit)? = null,
   content: @Composable ColumnScope.() -> Unit = {},
 ) {
   val p = LocalOpenRunPalette.current
@@ -45,14 +49,18 @@ fun OpenRunHero(
     .background(Brush.verticalGradient(0f to p.hero, 0.62f to p.hero, 1f to p.bg))) {
     TrackLanes(Modifier.align(Alignment.TopEnd).offset(x = 90.dp, y = 60.dp))
     CompositionLocalProvider(LocalContentColor provides p.onHero) {
-      Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top)).padding(horizontal = 20.dp)
+      Column(Modifier.align(Alignment.TopCenter).widthIn(max = 600.dp).fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top)).padding(horizontal = 20.dp)
         .padding(top = if (backLabel == null) 24.dp else 16.dp, bottom = 88.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (header != null) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, content = header)
         if (backLabel != null && onBack != null) OpenRunBackLink(backLabel, onBack)
-        if (!eyebrow.isNullOrBlank()) Text(eyebrow, style = OpenRunType.eyebrow, color = p.onHeroSecondary)
-        Text(title, style = OpenRunType.pageTitle)
-        if (!subtitle.isNullOrBlank()) Text(subtitle, style = OpenRunType.meta, color = p.onHeroSecondary)
+        if (!eyebrow.isNullOrBlank()) Row(verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+          eyebrowLeading?.invoke()
+          Text(eyebrow, style = OpenRunType.eyebrow, color = p.onHeroSecondary)
+        }
+        Text(title, style = titleStyle)
+        if (!subtitle.isNullOrBlank()) Text(subtitle, style = subtitleStyle, color = p.onHeroSecondary)
         content()
       }
     }

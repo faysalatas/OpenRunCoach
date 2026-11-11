@@ -1,89 +1,43 @@
 package com.example.openruncoach.ui.home
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.VerticalDivider
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.openruncoach.LocalOpenRunCoachEnvironment
-import com.example.openruncoach.data.HealthConnectRepository
-import com.example.openruncoach.data.RunFeedbackRepository
-import com.example.openruncoach.data.RunRepository
-import com.example.openruncoach.data.RunSettingsRepository
-import com.example.openruncoach.data.TrainingGoalRepository
-import com.example.openruncoach.data.TrainingPlanRepository
-import com.example.openruncoach.data.WorkoutExecutionRepository
-import com.example.openruncoach.data.WorkoutResponseRepository
+import com.example.openruncoach.data.*
 import com.example.openruncoach.domain.coaching.CoachingEngine
 import com.example.openruncoach.domain.plan.TrainingPlanGenerator
-import com.example.openruncoach.theme.OpenRunColors
-import com.example.openruncoach.theme.OpenRunShapeTokens
-import com.example.openruncoach.theme.OpenRunSpacing
-import com.example.openruncoach.ui.common.formatDistance
-import com.example.openruncoach.ui.common.formatPace
-import com.example.openruncoach.ui.common.formatUserDate
-import com.example.openruncoach.ui.components.OpenRunCard
-import com.example.openruncoach.ui.components.OpenRunHero
-import com.example.openruncoach.ui.components.OpenRunSettingsIcon
-import com.example.openruncoach.ui.components.WorkoutIntensitySignal
-import com.example.openruncoach.ui.components.OpenRunInsightCard
-import com.example.openruncoach.ui.components.OpenRunTabs
-import com.example.openruncoach.ui.components.ScreenPadding
-import com.example.openruncoach.ui.workout.heroImageResource
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
-import java.time.format.FormatStyle
-import java.time.format.TextStyle
-import java.util.Locale
-import kotlin.math.abs
-import kotlin.math.roundToLong
-
-private enum class HomeTab { OVERVIEW, TRAINING, PROGRESS }
+import com.example.openruncoach.theme.*
+import com.example.openruncoach.ui.components.*
 
 @Composable
 fun HomeScreen(
@@ -91,6 +45,11 @@ fun HomeScreen(
   onOpenDetailedProgress: () -> Unit,
   modifier: Modifier = Modifier,
   onOpenSettings: () -> Unit = {},
+  onOpenWorkout: (String) -> Unit = {},
+  onOpenRun: (String) -> Unit = {},
+  onOpenGoal: () -> Unit = onViewPlan,
+  onOpenCheckout: (String) -> Unit = {},
+  onRetry: () -> Unit = {},
 ) {
   val context = LocalContext.current
   val environment = LocalOpenRunCoachEnvironment.current
@@ -98,663 +57,255 @@ fun HomeScreen(
     val database = environment.database
     val settingsRepository = RunSettingsRepository(context)
     val profiles = environment.profileRepository()
-    val completion = com.example.openruncoach.data.GoalCompletionRepository(database, environment.clock)
+    val completion = GoalCompletionRepository(database, environment.clock)
     val executions = WorkoutExecutionRepository(database, environment.clock)
     HomeViewModel(
       RunRepository(database.runDao(), HealthConnectRepository(context), settingsRepository, clock = environment.clock,
         postRunReconciler = environment.postRunReconciler()),
       RunFeedbackRepository(database, environment.clock),
-      TrainingPlanRepository(
-        database,
-        generator = TrainingPlanGenerator(environment.clock),
-        completionRepository = completion,
-        clock = environment.clock,
-      ),
+      TrainingPlanRepository(database, generator = TrainingPlanGenerator(environment.clock),
+        completionRepository = completion, clock = environment.clock),
       TrainingGoalRepository(database, profiles),
-      WorkoutResponseRepository(database),
-      executions,
-      CoachingEngine(environment.clock),
-      environment.clock,
+      WorkoutResponseRepository(database), executions, CoachingEngine(environment.clock), environment.clock,
+      profileRepository = profiles, routeRepository = RunRouteRepository(database.runRouteDao()),
+      metricsRepository = RunMetricsRepository(database.runMetricsDao()),
     )
   }
   val state by viewModel.uiState.collectAsStateWithLifecycle()
-  val errorMessage = state.errorMessage
-  var selectedTab by rememberSaveable { mutableStateOf(HomeTab.OVERVIEW) }
+  HomeContent(homePresentation(state, environment.clock), HomeActions(
+    onOpenSettings, onOpenWorkout, onOpenRun, onOpenGoal, onOpenCheckout, onOpenDetailedProgress, onRetry,
+  ), modifier)
+}
 
-  Column(
-    modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-    verticalArrangement = Arrangement.spacedBy(OpenRunSpacing.Compact),
-  ) {
-    HomeNavigationEntry(state.greeting, LocalDate.now(environment.clock), onOpenSettings)
-    Column(Modifier.padding(horizontal = ScreenPadding), verticalArrangement = Arrangement.spacedBy(OpenRunSpacing.Compact)) {
-      OpenRunTabs(
-        tabs = listOf("Overview", "Training", "Progress"),
-        selectedIndex = selectedTab.ordinal,
-        onSelected = { index -> selectedTab = HomeTab.entries[index] },
-        distributeEvenly = true,
-      )
+internal data class HomeActions(
+  val settings: () -> Unit = {},
+  val workout: (String) -> Unit = {},
+  val run: (String) -> Unit = {},
+  val goal: () -> Unit = {},
+  val checkout: (String) -> Unit = {},
+  val form: () -> Unit = {},
+  val retry: () -> Unit = {},
+)
 
+@Composable
+internal fun HomeContent(model: HomePresentation, actions: HomeActions = HomeActions(), modifier: Modifier = Modifier,
+  scrollState: ScrollState = rememberScrollState(),
+) {
+  val p = LocalOpenRunPalette.current
+  Column(modifier.fillMaxSize().background(p.bg).testTag("today-scroll").verticalScroll(scrollState),
+    horizontalAlignment = Alignment.CenterHorizontally) {
+    OpenRunHero(title = model.title, eyebrow = model.eyebrow, subtitle = model.subtitle,
+      titleStyle = OpenRunType.heroDisplay,
+      subtitleStyle = OpenRunType.bodySm.copy(fontSize = 19.sp, lineHeight = 27.sp),
+      header = {
+        Text(model.date, Modifier.weight(1f), style = OpenRunType.eyebrow.copy(fontSize = 13.sp, lineHeight = 19.sp), color = p.onHeroSecondary)
+        OpenRunSettingsIcon(actions.settings)
+      },
+      eyebrowLeading = if (model.dayState == HomeDayState.AfterRun && !model.loading && model.error == null) {
+        { Box(Modifier.size(24.dp).background(p.goodBg, CircleShape), contentAlignment = Alignment.Center) {
+          OpenRunGlyph(Glyph.Check, p.good, Modifier.size(16.dp))
+        } }
+      } else null,
+    ) {
+      model.reason?.let { Text(it, Modifier.widthIn(max = 270.dp), style = OpenRunType.bodySm, color = p.onHeroSecondary) }
+      if (model.heroMetrics.isNotEmpty()) HomeHeroMetrics(model.heroMetrics)
+      if (model.dayState == HomeDayState.RestDay && !model.loading && model.error == null) model.nextUp.firstOrNull()?.let {
+        Text("Next: ${it.weekday} ${it.day} · ${it.name}", style = OpenRunType.bodySm, color = p.onHeroSecondary)
+      }
       when {
-        state.isLoading -> Text(
-          "Loading your training…",
-          style = MaterialTheme.typography.bodyMedium,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        errorMessage != null -> OpenRunInsightCard(
-          title = "Training data unavailable",
-          body = errorMessage,
-        )
-        else -> when (selectedTab) {
-          HomeTab.OVERVIEW -> OverviewContent(
-            state = state,
-            onViewPlan = onViewPlan,
-            onPreviousWeek = viewModel::previousWeek,
-            onNextWeek = viewModel::nextWeek,
-          )
-          HomeTab.TRAINING -> TrainingContent(state, onViewPlan)
-          HomeTab.PROGRESS -> ProgressContent(state.progress, onOpenDetailedProgress)
+        model.runId != null -> OpenRunHeroButton("See run details", { actions.run(model.runId) })
+        model.workoutId != null -> {
+          OpenRunHeroButton(if (model.dayState == HomeDayState.RestDay) "See next workout" else "See workout",
+            { actions.workout(model.workoutId) })
         }
       }
-      Spacer(Modifier.size(OpenRunSpacing.Small))
     }
-  }
-}
-
-@Composable
-internal fun HomeNavigationEntry(greeting: String, today: LocalDate, onOpenSettings: () -> Unit) {
-  OpenRunHero(title = "Today", subtitle = greeting, header = {
-    Text(today.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.getDefault())).uppercase(Locale.getDefault()),
-      Modifier.weight(1f), style = com.example.openruncoach.theme.OpenRunType.eyebrow,
-      color = com.example.openruncoach.theme.LocalOpenRunPalette.current.onHeroSecondary)
-    OpenRunSettingsIcon(onOpenSettings)
-  })
-}
-
-@Composable
-private fun OverviewContent(
-  state: HomeUiState,
-  onViewPlan: () -> Unit,
-  onPreviousWeek: () -> Unit,
-  onNextWeek: () -> Unit,
-) {
-  WorkoutHero(state.nextWorkout, state.hasActivePlan, onViewPlan)
-  state.week?.let { week -> CurrentWeekSection(week, onPreviousWeek, onNextWeek) }
-  state.weeklyMetrics?.let { metrics -> WeeklyMetricCards(metrics) }
-}
-
-@Composable
-private fun TrainingContent(state: HomeUiState, onViewPlan: () -> Unit) {
-  Text("Training", style = MaterialTheme.typography.titleLarge)
-  WorkoutHero(state.nextWorkout, state.hasActivePlan, onViewPlan)
-  Column(verticalArrangement = Arrangement.spacedBy(OpenRunSpacing.Small)) {
-    Text("Upcoming", style = MaterialTheme.typography.titleMedium)
-    val following = state.upcomingWorkouts.drop(1)
-    if (following.isEmpty()) {
-      Text(
-        if (state.hasActivePlan) "No additional workouts are currently scheduled."
-        else "Create a plan when you are ready to schedule training.",
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-      )
-    } else {
-      following.forEach { workout -> UpcomingWorkoutRow(workout) }
-    }
-  }
-  Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-    Text(
-      if (state.hasActivePlan) "Active training plan" else "No active plan",
-      Modifier.weight(1f),
-      style = MaterialTheme.typography.bodyMedium,
-      color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    TextButton(onClick = onViewPlan) { Text("Open full plan ›") }
-  }
-}
-
-@Composable
-private fun UpcomingWorkoutRow(workout: HomeWorkoutSummary) {
-  Row(
-    Modifier.fillMaxWidth().padding(vertical = OpenRunSpacing.Small),
-    horizontalArrangement = Arrangement.spacedBy(OpenRunSpacing.Standard),
-    verticalAlignment = Alignment.CenterVertically,
-  ) {
-    Text(
-      workout.date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault()),
-      modifier = Modifier.weight(0.22f),
-      style = MaterialTheme.typography.labelLarge,
-      color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    Column(Modifier.weight(0.78f), verticalArrangement = Arrangement.spacedBy(OpenRunSpacing.Micro)) {
-      Text(workout.name, style = MaterialTheme.typography.titleSmall)
-      workout.adaptationReason?.let {
-        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-      }
-      Text(
-        (listOf(formatUserDate(workout.date)) + workout.details.take(1)).joinToString(" · "),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-      )
-    }
-  }
-}
-
-@Composable
-private fun ProgressContent(progress: HomeProgressSummary?, onViewProgress: () -> Unit) {
-  Text("Progress", style = MaterialTheme.typography.titleLarge)
-  Text("Last 4 weeks", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-  if (progress == null) {
-    Text("Progress data is unavailable.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-    return
-  }
-  OpenRunCard(contentPadding = PaddingValues(OpenRunSpacing.Standard)) {
-    Text("Easy pace", style = MaterialTheme.typography.titleMedium)
-    Text("Comparable completed Easy runs", style = MaterialTheme.typography.bodySmall,
-      color = MaterialTheme.colorScheme.onSurfaceVariant)
-    FourWeekPaceChart(progress.weeks)
-    FourWeekValueLabels(progress.weeks, pace = true)
-    val first = progress.firstEasyPaceSecondsPerKm
-    val latest = progress.latestEasyPaceSecondsPerKm
-    val change = progress.paceChangeSecondsPerKm
-    if (first != null && latest != null && change != null) {
-      Text(
-        "${formatPaceClock(first)} → ${formatPaceClock(latest)} /km",
-        style = MaterialTheme.typography.titleMedium,
-      )
-      Text(
-        when {
-          change > 0L -> "$change s/km faster"
-          change < 0L -> "${abs(change)} s/km slower"
-          else -> "No change in observed pace"
-        },
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-      )
-    } else {
-      Text("Not enough comparable runs yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-  }
-  OpenRunCard(contentPadding = PaddingValues(OpenRunSpacing.Standard)) {
-    Text("Weekly distance", style = MaterialTheme.typography.titleMedium)
-    Text("All recorded running activity", style = MaterialTheme.typography.bodySmall,
-      color = MaterialTheme.colorScheme.onSurfaceVariant)
-    DistanceBars(progress.weeks.map(HomeProgressWeek::totalDistanceMeters))
-    FourWeekValueLabels(progress.weeks, pace = false)
-  }
-  Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-    TextButton(onClick = onViewProgress) { Text("View detailed progress ›") }
-  }
-}
-
-@Composable
-private fun FourWeekPaceChart(weeks: List<HomeProgressWeek>) {
-  val values = weeks.map(HomeProgressWeek::easyPaceSecondsPerKm)
-  val known = values.mapNotNull { it }
-  val accent = MaterialTheme.colorScheme.primary
-  val grid = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
-  Canvas(Modifier.fillMaxWidth().height(116.dp)) {
-    if (known.isEmpty()) return@Canvas
-    repeat(3) { index ->
-      val y = size.height * index / 2f
-      drawLine(grid, androidx.compose.ui.geometry.Offset(0f, y), androidx.compose.ui.geometry.Offset(size.width, y), 1.dp.toPx())
-    }
-    val minimum = known.minOrNull() ?: return@Canvas
-    val maximum = known.maxOrNull() ?: return@Canvas
-    val range = (maximum - minimum).takeIf { it > 0.0 }
-    val horizontalInset = 4.dp.toPx()
-    fun point(index: Int, value: Double) = androidx.compose.ui.geometry.Offset(
-      x = if (values.size <= 1) size.width / 2f
-      else horizontalInset + index * (size.width - horizontalInset * 2f) / (values.size - 1),
-      // Lower min/km is faster, so it is intentionally drawn higher.
-      y = range?.let { ((value - minimum) / it).toFloat() * size.height * 0.72f + size.height * 0.14f }
-        ?: size.height / 2f,
-    )
-    val path = Path()
-    var drawing = false
-    values.forEachIndexed { index, value ->
-      if (value == null) {
-        drawing = false
-      } else {
-        val current = point(index, value)
-        if (drawing) path.lineTo(current.x, current.y) else path.moveTo(current.x, current.y)
-        drawing = true
-        drawCircle(accent, 3.dp.toPx(), current)
-      }
-    }
-    drawPath(path, accent, style = Stroke(2.dp.toPx()))
-  }
-}
-
-@Composable
-private fun FourWeekValueLabels(weeks: List<HomeProgressWeek>, pace: Boolean) {
-  Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(OpenRunSpacing.Micro)) {
-    weeks.forEach { week ->
-      Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-          if (pace) week.easyPaceSecondsPerKm?.let(::formatPaceClock) ?: "—"
-          else formatDistance(week.totalDistanceMeters),
-          style = MaterialTheme.typography.labelMedium,
-        )
-        Text(
-          week.startDate.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.SHORT).withLocale(Locale.getDefault())),
-          style = MaterialTheme.typography.labelSmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-      }
-    }
-  }
-}
-
-@Composable
-private fun WorkoutHero(workout: HomeWorkoutSummary?, hasActivePlan: Boolean, onViewPlan: () -> Unit) {
-  Surface(
-    modifier = Modifier.fillMaxWidth().clickable(onClickLabel = "View training plan", onClick = onViewPlan),
-    shape = OpenRunShapeTokens.Card,
-    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-  ) {
-    Box(Modifier.fillMaxWidth().heightIn(min = 168.dp)) {
-      workout?.type?.heroImageResource()?.let { imageResource ->
-        Image(
-          painter = painterResource(imageResource),
-          contentDescription = null,
-          modifier = Modifier.matchParentSize(),
-          contentScale = ContentScale.Crop,
-        )
-        Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.18f)))
-        Box(Modifier.matchParentSize().background(Brush.horizontalGradient(
-          0f to Color.Black.copy(alpha = 0.70f),
-          0.68f to Color.Black.copy(alpha = 0.24f),
-          1f to Color.Black.copy(alpha = 0.06f),
-        )))
-        Box(Modifier.matchParentSize().background(Brush.verticalGradient(
-          0f to Color.Transparent,
-          1f to Color.Black.copy(alpha = 0.60f),
-        )))
-      }
-      Column(
-        Modifier.fillMaxWidth().padding(
-          start = OpenRunSpacing.Standard,
-          top = OpenRunSpacing.Compact,
-          end = OpenRunSpacing.Standard,
-          bottom = OpenRunSpacing.Comfortable,
-        ),
-        verticalArrangement = Arrangement.spacedBy(OpenRunSpacing.Micro),
-      ) {
-        Text(
-          when {
-            workout?.isToday == true -> "Today's Workout"
-            workout != null -> "Next Workout"
-            else -> "Training"
-          },
-          style = MaterialTheme.typography.labelLarge,
-          color = if (workout != null) Color.White.copy(alpha = 0.84f) else MaterialTheme.colorScheme.primary,
-        )
-        if (workout != null) {
-          Text(
-            workout.name,
-            modifier = Modifier.padding(end = 48.dp),
-            style = MaterialTheme.typography.headlineSmall,
-            color = Color.White,
-          )
-          Text(
-            if (workout.isToday) "Today" else formatUserDate(workout.date),
-            style = MaterialTheme.typography.bodySmall,
-            color = Color.White.copy(alpha = 0.78f),
-          )
-          workout.adaptationReason?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.84f),
-              modifier = Modifier.padding(end = 40.dp))
+    OpenRunHeroBody(Modifier.widthIn(max = 600.dp).fillMaxWidth()) {
+      when {
+        model.loading -> {
+          Text("Loading your training…", style = OpenRunType.body, color = p.muted)
+          repeat(2) { Box(Modifier.fillMaxWidth().height(120.dp).background(p.line, OpenRunShapeTokens.Card)
+            .clearAndSetSemantics {}) }
+        }
+        model.error != null -> OpenRunCard {
+          Text("Training data unavailable", style = OpenRunType.title)
+          Text(model.error, style = OpenRunType.body)
+          OpenRunSecondaryButton("Try again", actions.retry)
+        }
+        else -> {
+          if (model.quickFacts.isNotEmpty()) HomeQuickFacts(model.quickFacts)
+          if (model.chips.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            model.chips.forEach { OpenRunStatusChip(it.label, tone = if (it.good) OpenRunStatusTone.POSITIVE else OpenRunStatusTone.NEUTRAL) }
           }
-          Spacer(Modifier.height(OpenRunSpacing.Small))
-          HeroMetadata(workout)
-        } else {
-          Text(
-            if (hasActivePlan) "No upcoming workout" else "No active training plan",
-            style = MaterialTheme.typography.headlineSmall,
-          )
-          Text(
-            if (hasActivePlan) "Open your plan to review what comes next."
-            else "Create a plan to get your next workout.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
-          Spacer(Modifier.height(OpenRunSpacing.Small))
-          Text("View plan ›", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+          model.checkoutRunId?.let { runId -> OpenRunCard(Modifier.testTag("today-checkout")) {
+            Text("How did it feel?", style = OpenRunType.cardTitleLg)
+            Text("Your checkout helps plan what comes next.", style = OpenRunType.bodySm, color = p.muted)
+            // A quick choice alone cannot supply the mandatory checkout answers. Never fabricate them.
+            TextButton({ actions.checkout(runId) }, contentPadding = PaddingValues(0.dp)) {
+              Text("Add details ›", style = OpenRunType.title, color = p.accentText)
+            }
+          } }
+          model.coach?.let { text -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            OpenRunSectionHeader("YOUR COACH")
+            Text(text, Modifier.padding(horizontal = 4.dp), style = OpenRunType.body, color = p.ink)
+          } }
+          model.goal?.let { HomeGoalCard(it, actions.goal) }
+          model.week?.let { HomeWeekCard(it) }
+          if (model.form.isNotEmpty()) {
+            OpenRunSectionHeader("YOUR FORM · LAST 4 WEEKS", trailing = {
+              TextButton(actions.form) { Text("Details", style = OpenRunType.caption, color = p.accentText) }
+            })
+            HomeFormGrid(model.form)
+          }
+          model.lastRun?.let { run ->
+            OpenRunSectionHeader("LAST RUN")
+            OpenRunRunRow(run.date, run.title, run.distance, run.pace,
+              onClick = { actions.run(run.id) },
+              note = if (run.asPlanned) "As planned" else null,
+              thumbnail = if (run.route.isNotEmpty()) {
+                { RunRouteCanvas(run.route, Modifier.size(64.dp, 48.dp), RunRouteCanvasStyle.COMPACT) }
+              } else null)
+          }
+          if (model.nextUp.isNotEmpty()) {
+            OpenRunSectionHeader("NEXT UP")
+            model.nextUp.forEach { workout -> OpenRunNextUpRow(workout.weekday, workout.day, workout.name, workout.meta,
+              onClick = workout.id?.let { id -> { actions.workout(id) } }) }
+          }
         }
       }
-      if (workout != null) {
-        Box(
-          modifier = Modifier.align(Alignment.CenterEnd).padding(end = OpenRunSpacing.Standard)
-            .size(40.dp).background(Color.Black.copy(alpha = 0.22f), CircleShape),
-          contentAlignment = Alignment.Center,
-        ) {
-          Icon(
-            painter = painterResource(com.example.openruncoach.R.drawable.ic_arrow_forward),
-            contentDescription = null,
-            tint = Color.White,
-            modifier = Modifier.size(20.dp),
-          )
+      Spacer(Modifier.height(12.dp))
+    }
+  }
+}
+
+@Composable
+private fun HomeHeroMetrics(metrics: List<HomeFact>) {
+  BoxWithConstraints(Modifier.fillMaxWidth()) {
+    val columns = (maxWidth / (105.dp * LocalDensity.current.fontScale)).toInt().coerceIn(1, 3)
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+      metrics.chunked(columns).forEach { row -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        row.forEach { OpenRunMetric(it.value, it.label, Modifier.weight(1f), onHero = true) }
+        repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+      } }
+    }
+  }
+}
+
+@Composable
+private fun HomeQuickFacts(facts: List<HomeFact>) {
+  val p = LocalOpenRunPalette.current
+  OpenRunCard(Modifier.testTag("today-quick-facts"), contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)) {
+    Row(Modifier.fillMaxWidth().drawBehind {
+      for (index in 1 until facts.size) {
+        val x = size.width * index / facts.size
+        drawLine(p.line, Offset(x, 0f), Offset(x, size.height), 1.dp.toPx())
+      }
+    }) {
+      facts.forEach { fact ->
+        Column(Modifier.weight(1f).testTag("today-fact").padding(horizontal = 6.dp),
+          verticalArrangement = Arrangement.spacedBy(3.dp)) {
+          Text(fact.value, style = OpenRunType.cardTitleLg.copy(fontSize = 22.sp, lineHeight = 26.sp))
+          Text(fact.label, style = OpenRunType.caption, color = p.muted)
         }
       }
     }
   }
 }
 
-private enum class HeroMetadataKind { DISTANCE, PACE, INTENSITY }
-
 @Composable
-private fun HeroMetadata(workout: HomeWorkoutSummary) {
-  val items = buildList {
-    workout.distanceLabel?.let { add(HeroMetadataKind.DISTANCE to it) }
-    workout.paceLabel?.let { add(HeroMetadataKind.PACE to it) }
-    workout.intensity?.let { add(HeroMetadataKind.INTENSITY to it.label) }
-  }
-  if (items.isEmpty()) return
-  Row(
-    Modifier.fillMaxWidth(),
-    verticalAlignment = Alignment.CenterVertically,
-  ) {
-    items.forEachIndexed { index, (kind, label) ->
-      if (index > 0) {
-        Box(Modifier.width(17.dp).height(20.dp), contentAlignment = Alignment.Center) {
-          VerticalDivider(
-            thickness = 1.dp,
-            color = Color.White.copy(alpha = 0.28f),
-          )
+private fun HomeGoalCard(goal: HomeGoalPresentation, onClick: () -> Unit) {
+  val p = LocalOpenRunPalette.current
+  OpenRunCard(Modifier.testTag("today-goal").clickable(role = Role.Button, onClick = onClick)) {
+    Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+      goal.progress?.let { fraction ->
+        val reveal = chartReveal(true)
+        Canvas(Modifier.size(52.dp).semantics {
+          contentDescription = "${goal.title}, longest recorded run progress"
+          progressBarRangeInfo = ProgressBarRangeInfo(fraction, 0f..1f)
+        }) {
+          val inset = 3.dp.toPx()
+          val arcSize = Size(size.width - inset * 2, size.height - inset * 2)
+          drawArc(p.line, -90f, 360f, false, Offset(inset, inset), arcSize, style = Stroke(6.dp.toPx()))
+          drawArc(p.accent, -90f, 360f * fraction * reveal, false, Offset(inset, inset), arcSize,
+            style = Stroke(6.dp.toPx(), cap = StrokeCap.Round))
         }
       }
-      Row(
-        Modifier.weight(
-          when {
-            items.size < 3 -> 1f
-            kind == HeroMetadataKind.PACE -> 1.35f
-            kind == HeroMetadataKind.DISTANCE -> 0.9f
-            else -> 1f
-          },
-        ),
-        horizontalArrangement = Arrangement.spacedBy(OpenRunSpacing.Micro, Alignment.CenterHorizontally),
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        when (kind) {
-          HeroMetadataKind.DISTANCE -> Icon(
-            painterResource(com.example.openruncoach.R.drawable.ic_run),
-            contentDescription = null,
-            tint = Color.White.copy(alpha = 0.86f),
-            modifier = Modifier.size(18.dp),
-          )
-          HeroMetadataKind.PACE -> Icon(
-            painterResource(com.example.openruncoach.R.drawable.ic_stopwatch),
-            contentDescription = null,
-            tint = Color.White.copy(alpha = 0.86f),
-            modifier = Modifier.size(18.dp),
-          )
-          HeroMetadataKind.INTENSITY -> WorkoutIntensitySignal(workout.intensity?.activeBars ?: 0)
+      Column(Modifier.weight(1f)) {
+        Text(goal.title, style = OpenRunType.cardTitleLg)
+        goal.subtitle?.let { Text(it, style = OpenRunType.meta, color = p.muted) }
+      }
+    }
+    goal.bars.forEachIndexed { index, bar ->
+      FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(bar.label, style = OpenRunType.meta)
+        Text(bar.value, style = OpenRunType.meta.copy(fontWeight = FontWeight.SemiBold))
+      }
+      OpenRunProgressBar(bar.fraction, "${bar.label}: ${bar.value}", useInk = index > 0)
+    }
+  }
+}
+
+@Composable
+private fun HomeWeekCard(week: HomeWeekPresentation) {
+  val p = LocalOpenRunPalette.current
+  OpenRunCard(Modifier.testTag("today-week")) {
+    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+      Text("This week", style = OpenRunType.title)
+      Text(week.dateRange, style = OpenRunType.meta, color = p.muted)
+    }
+    if (week.distance != null) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.Bottom) {
+      Text(week.distance, style = OpenRunType.bigNumber)
+      Text(if (week.plannedDistance != null) "of ${week.plannedDistance} km" else "km done", style = OpenRunType.meta, color = p.muted)
+    } else week.plannedDistance?.let { Text("$it km planned", style = OpenRunType.miniValue) }
+    WeekBars(week.bars, week.description)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+      week.chips.forEach { OpenRunStatusChip(it.label, tone = if (it.good) OpenRunStatusTone.POSITIVE else OpenRunStatusTone.NEUTRAL) }
+    }
+  }
+}
+
+@Composable
+private fun HomeFormGrid(stats: List<HomeStat>) {
+  BoxWithConstraints(Modifier.fillMaxWidth()) {
+    val gridWidth = maxWidth
+    val columns = if (gridWidth < 280.dp * LocalDensity.current.fontScale) 1 else 2
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+      stats.chunked(columns).forEach { row ->
+        val density = LocalDensity.current
+        var rowHeight by remember(row, gridWidth, density.fontScale) { mutableIntStateOf(0) }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+          row.forEach { stat ->
+            OpenRunMiniStatCard(stat.title, stat.value, stat.unit, stat.delta,
+              Modifier.weight(1f).heightIn(min = with(density) { rowHeight.toDp() }).onSizeChanged {
+                if (it.height > rowHeight) rowHeight = it.height
+              }, good = stat.good, sparkline = when {
+                stat.readiness != null -> { { ReadinessSegments(stat.readiness) } }
+                stat.points.any { it.value != null } -> { { Sparkline(stat.points,
+                  "Weekly easy-run pace over the last four weeks. Higher means faster; gaps mean missing data.", good = stat.good) } }
+                else -> null
+              })
+          }
+          repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
         }
-        Text(label, style = MaterialTheme.typography.labelMedium, color = Color.White)
       }
     }
   }
 }
 
 @Composable
-private fun CurrentWeekSection(
-  week: HomeWeekSummary,
-  onPreviousWeek: () -> Unit,
-  onNextWeek: () -> Unit,
-) {
-  val defaultSelection = week.days.firstOrNull { it.isToday }
-    ?: week.days.firstOrNull { it.hasRun || it.hasPlannedWorkout }
-    ?: week.days.first()
-  var selectedDate by rememberSaveable(week.dateRangeLabel) { mutableStateOf(defaultSelection.date.toString()) }
-  val selectedDay = week.days.firstOrNull { it.date.toString() == selectedDate } ?: defaultSelection
-  Column(
-    modifier = Modifier.padding(horizontal = OpenRunSpacing.Micro, vertical = OpenRunSpacing.Micro),
-    verticalArrangement = Arrangement.spacedBy(OpenRunSpacing.Small),
-  ) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-      Text(
-        if (week.isCurrentWeek) "This Week" else "Selected Week",
-        Modifier.weight(1f),
-        style = MaterialTheme.typography.titleMedium,
-      )
-      Text(
-        week.progressLabel,
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-      )
-    }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-      TextButton(
-        onClick = onPreviousWeek,
-        modifier = Modifier.semantics { contentDescription = "Previous week" },
-      ) { Text("‹", style = MaterialTheme.typography.titleLarge) }
-      Text(
-        week.dateRangeLabel,
-        Modifier.weight(1f),
-        textAlign = TextAlign.Center,
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-      )
-      TextButton(
-        onClick = onNextWeek,
-        modifier = Modifier.semantics { contentDescription = "Next week" },
-      ) { Text("›", style = MaterialTheme.typography.titleLarge) }
-    }
-    Row(Modifier.fillMaxWidth()) {
-      week.days.forEach { day ->
-        WeekDayIndicator(
-          day = day,
-          selected = day.date == selectedDay.date,
-          onSelect = { selectedDate = day.date.toString() },
-          modifier = Modifier.weight(1f),
-        )
-      }
-    }
-    Row(
-      Modifier.fillMaxWidth().padding(top = OpenRunSpacing.Micro),
-      horizontalArrangement = Arrangement.spacedBy(OpenRunSpacing.Small, Alignment.CenterHorizontally),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      Text(
-        selectedDay.date.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.getDefault()),
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-      )
-      Text("·", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
-      Text(
-        selectedDay.workoutTypeLabel ?: "No run or workout",
-        style = MaterialTheme.typography.labelLarge,
-        color = if (selectedDay.workoutTypeLabel != null) MaterialTheme.colorScheme.primary
-        else MaterialTheme.colorScheme.onSurfaceVariant,
-      )
+private fun ReadinessSegments(value: Float) {
+  val p = LocalOpenRunPalette.current
+  Canvas(Modifier.fillMaxWidth().height(8.dp).semantics {
+    contentDescription = "Average reported readiness, $value out of 5"
+    progressBarRangeInfo = ProgressBarRangeInfo(value, 0f..5f)
+  }) {
+    val gap = 4.dp.toPx()
+    val width = (size.width - gap * 4) / 5
+    repeat(5) { index ->
+      val offset = Offset(index * (width + gap), 0f)
+      drawRoundRect(p.line, offset, Size(width, size.height), CornerRadius(4.dp.toPx()))
+      val fraction = (value - index).coerceIn(0f, 1f)
+      if (fraction > 0) drawRoundRect(p.good, offset, Size(width * fraction, size.height), CornerRadius(4.dp.toPx()))
     }
   }
-}
-
-@Composable
-private fun WeekDayIndicator(
-  day: HomeWeekDay,
-  selected: Boolean,
-  onSelect: () -> Unit,
-  modifier: Modifier = Modifier,
-) {
-  val description = buildString {
-    append(day.date.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.getDefault()))
-    if (day.isToday) append(", today")
-    when {
-      day.hasRun -> append(", run recorded")
-      day.hasPlannedWorkout -> append(", workout planned")
-      else -> append(", no planned workout")
-    }
-  }
-  Column(
-    modifier = modifier.heightIn(min = 48.dp).clickable(onClickLabel = "Select ${day.dayLabel}", onClick = onSelect),
-    horizontalAlignment = Alignment.CenterHorizontally,
-    verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
-  ) {
-    Surface(
-      modifier = Modifier.size(20.dp).semantics { contentDescription = description },
-      shape = CircleShape,
-      color = when {
-        day.isToday && day.hasRun -> MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-        day.hasRun -> MaterialTheme.colorScheme.primary
-        day.hasPlannedWorkout -> MaterialTheme.colorScheme.surfaceContainerHighest
-        else -> Color.Transparent
-      },
-      border = when {
-        selected -> BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
-        day.isToday -> BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
-        day.hasPlannedWorkout -> BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.65f))
-        else -> BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-      },
-    ) {
-      Box(contentAlignment = Alignment.Center) {
-        Text(
-          when {
-            day.hasRun -> "✓"
-            day.hasPlannedWorkout -> "•"
-            else -> ""
-          },
-          style = MaterialTheme.typography.labelSmall,
-          color = when {
-            day.isToday && day.hasRun -> MaterialTheme.colorScheme.primary
-            day.hasRun -> MaterialTheme.colorScheme.onPrimary
-            else -> MaterialTheme.colorScheme.onSurfaceVariant
-          },
-        )
-      }
-    }
-    Text(
-      day.dayLabel,
-      style = MaterialTheme.typography.labelSmall,
-      color = if (day.isToday || selected) MaterialTheme.colorScheme.primary else OpenRunColors.TextMuted,
-    )
-  }
-}
-
-@Composable
-private fun WeeklyMetricCards(metrics: HomeWeeklyMetrics) {
-  Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(OpenRunSpacing.Compact)) {
-    WeeklyMetricCard(
-      label = if (metrics.distanceIsPlanned) "Planned Distance" else "Total Distance",
-      value = formatDistance(metrics.totalDistanceMeters),
-      modifier = Modifier.weight(1f),
-      supporting = formatDistanceComparison(metrics.distanceDifferenceMeters),
-    ) { DistanceBars(metrics.days.map(HomeDailyMetric::distanceMeters)) }
-    WeeklyMetricCard(
-      label = "Avg. Pace",
-      value = formatCompactPace(metrics.averagePaceSecondsPerKm),
-      modifier = Modifier.weight(1f),
-      supporting = if (metrics.runCount == 0) "No actual runs"
-      else formatPaceComparison(metrics.paceDifferenceSecondsPerKm),
-    ) { PaceSparkline(metrics.days.map(HomeDailyMetric::averagePaceSecondsPerKm)) }
-  }
-}
-
-@Composable
-private fun WeeklyMetricCard(
-  label: String,
-  value: String,
-  modifier: Modifier,
-  supporting: String? = null,
-  chart: @Composable () -> Unit,
-) {
-  val cardHeight = (156f * LocalDensity.current.fontScale.coerceIn(1f, 1.5f)).dp
-  OpenRunCard(
-    modifier = modifier.height(cardHeight),
-    contentPadding = PaddingValues(OpenRunSpacing.Compact),
-    contentSpacing = OpenRunSpacing.Micro,
-  ) {
-    Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    Text(value, style = MaterialTheme.typography.titleLarge)
-    Text(
-      supporting.orEmpty(),
-      minLines = 2,
-      maxLines = 2,
-      style = MaterialTheme.typography.labelSmall,
-      color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    Spacer(Modifier.weight(1f))
-    chart()
-  }
-}
-
-@Composable
-private fun DistanceBars(values: List<Double?>) {
-  val accent = MaterialTheme.colorScheme.primary
-  Canvas(Modifier.fillMaxWidth().height(34.dp)) {
-    if (values.isEmpty()) return@Canvas
-    val maximum = values.mapNotNull { it }.maxOrNull()?.takeIf { it > 0.0 }
-    val slotWidth = size.width / values.size
-    val barWidth = slotWidth * 0.42f
-    values.forEachIndexed { index, value ->
-      if (value == null) return@forEachIndexed
-      val fraction = if (maximum != null) (value / maximum).toFloat() else 0f
-      val barHeight = size.height * fraction
-      val left = index * slotWidth + (slotWidth - barWidth) / 2f
-      drawRoundRect(
-        color = accent.copy(alpha = 0.78f),
-        topLeft = androidx.compose.ui.geometry.Offset(left, size.height - barHeight.coerceAtLeast(2.dp.toPx())),
-        size = androidx.compose.ui.geometry.Size(barWidth, barHeight.coerceAtLeast(2.dp.toPx())),
-        cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()),
-      )
-    }
-  }
-}
-
-@Composable
-private fun PaceSparkline(values: List<Double?>) {
-  val accent = MaterialTheme.colorScheme.primary
-  val known = values.mapNotNull { it }
-  Canvas(Modifier.fillMaxWidth().height(34.dp)) {
-    if (values.isEmpty() || known.isEmpty()) return@Canvas
-    val minimum = known.minOrNull() ?: return@Canvas
-    val maximum = known.maxOrNull() ?: return@Canvas
-    val range = (maximum - minimum).takeIf { it > 0.0 }
-    fun point(index: Int, value: Double) = androidx.compose.ui.geometry.Offset(
-      x = if (values.size == 1) size.width / 2f else index * size.width / (values.size - 1),
-      y = range?.let { ((value - minimum) / it).toFloat() * size.height * 0.72f + size.height * 0.14f }
-        ?: size.height / 2f,
-    )
-    val path = Path()
-    var drawing = false
-    values.forEachIndexed { index, value ->
-      if (value == null) {
-        drawing = false
-      } else {
-        val current = point(index, value)
-        if (drawing) path.lineTo(current.x, current.y) else path.moveTo(current.x, current.y)
-        drawing = true
-        drawCircle(accent, radius = 1.8.dp.toPx(), center = current)
-      }
-    }
-    drawPath(path, accent, style = Stroke(width = 1.5.dp.toPx()))
-  }
-}
-
-private fun formatCompactPace(paceSecondsPerKm: Double?): String =
-  formatPace(paceSecondsPerKm).replace(" min/km", " /km")
-
-private fun formatPaceComparison(differenceSecondsPerKm: Double?): String {
-  differenceSecondsPerKm ?: return "Not enough 4-week history yet"
-  val seconds = abs(differenceSecondsPerKm.roundToLong())
-  return when {
-    differenceSecondsPerKm > 0.5 -> "$seconds sec/km faster vs. last 4 weeks"
-    differenceSecondsPerKm < -0.5 -> "$seconds sec/km slower vs. last 4 weeks"
-    else -> "No pace change vs. last 4 weeks"
-  }
-}
-
-private fun formatDistanceComparison(differenceMeters: Double?): String {
-  differenceMeters ?: return "Not enough 4-week history yet"
-  val differenceKm = differenceMeters / 1_000.0
-  return when {
-    differenceKm > 0.005 -> "+%.2f km vs. last 4 weeks".format(Locale.getDefault(), differenceKm)
-    differenceKm < -0.005 -> "%.2f km vs. last 4 weeks".format(Locale.getDefault(), differenceKm)
-    else -> "No distance change vs. last 4 weeks"
-  }
-}
-
-private fun formatPaceClock(paceSecondsPerKm: Double): String {
-  val seconds = paceSecondsPerKm.roundToLong()
-  return "%d:%02d".format(Locale.getDefault(), seconds / 60, seconds % 60)
 }

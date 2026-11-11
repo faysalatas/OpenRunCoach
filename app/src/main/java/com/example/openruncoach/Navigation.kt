@@ -125,6 +125,16 @@ fun MainNavigation(navController: NavHostController = rememberNavController()) {
         HomeScreen(
           onViewPlan = { navController.navigate(Routes.PLAN) },
           onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+          onOpenWorkout = { navController.navigate(workoutDetailRoute(it)) },
+          onOpenRun = { navController.navigate(runDetailRoute(it)) },
+          onOpenGoal = { navController.navigate(Routes.GOAL) },
+          onOpenCheckout = { navController.navigate(runCheckoutRoute(it)) },
+          onRetry = {
+            navController.navigate(Routes.HOME) {
+              popUpTo(Routes.HOME) { inclusive = true }
+              launchSingleTop = true
+            }
+          },
           onOpenDetailedProgress = { navController.navigate(Routes.PERFORMANCE_PROFILE) },
         )
       }
